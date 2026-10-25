@@ -96,6 +96,7 @@ int main()
         [](imtg::ActionContext&, const DeleteItem&) { return imtg::Result<void>(); });
     assert(restarted_handle);
     assert(!restarted_registry.make_token(handle, DeleteItem{1}));
+    assert(!registry.make_token(restarted_handle.value(), DeleteItem{2}));
     assert(restarted_registry.invoke(token_result.value(), [](const imtg::ActionCommand&) {
         return imtg::Result<void>();
     }));
@@ -121,6 +122,20 @@ int main()
     assert(!restarted_registry.invoke(token_result.value(), [](const imtg::ActionCommand&) {
         return imtg::Result<void>();
     }));
+
+    const auto replacement = restarted_registry.register_action<DeleteItem>(
+        imtg::ActionId{"delete.v1"}, delete_codec(1),
+        [](imtg::ActionContext&, const DeleteItem&) { return imtg::Result<void>(); });
+    assert(replacement);
+    assert(!restarted_registry.make_token(handle, DeleteItem{3}));
+    imtg::UiBuilder stale_builder(&restarted_registry);
+    {
+        auto root_result = stale_builder.begin("screen");
+        assert(root_result);
+        auto root = std::move(root_result).value();
+        assert(!stale_builder.button("stale", "Stale", handle, DeleteItem{3}));
+        assert(stale_builder.button("replacement", "Replacement", replacement.value(), DeleteItem{3}));
+    }
 
     imtg::ActionRegistry concurrent_registry(token_codec, clock);
     const auto concurrent_handle = concurrent_registry.register_action<DeleteItem>(

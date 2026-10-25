@@ -88,10 +88,13 @@ public:
         return m_encode(payload);
     }
 
+    [[nodiscard]] Result<void> validate() const;
+
 private:
     friend class ActionRegistry;
     ActionId m_action_id;
     std::uint32_t m_payload_version{};
+    std::uint64_t m_generation{};
     const ActionRegistry* m_owner = nullptr;
     std::function<Result<std::string>(const Payload&)> m_encode;
 };
@@ -134,11 +137,14 @@ public:
         if (m_entries.find(action_id.value) != m_entries.end()) {
             return Error{ErrorCode::InvalidArgument, "action id is already registered"};
         }
+        const auto generation = m_next_generation++;
+        entry->generation = generation;
         m_entries.emplace(action_id.value, std::move(entry));
 
         ActionHandle<Payload> handle;
         handle.m_action_id = std::move(action_id);
         handle.m_payload_version = payload_version;
+        handle.m_generation = generation;
         handle.m_owner = this;
         handle.m_encode = std::move(encode);
         return handle;
@@ -156,7 +162,8 @@ public:
         {
             std::shared_lock<std::shared_mutex> lock(m_mutex);
             const auto found = m_entries.find(handle.action_id().value);
-            if (found == m_entries.end() || found->second->payload_version != handle.payload_version()) {
+            if (found == m_entries.end() || found->second->payload_version != handle.payload_version()
+                || found->second->generation != handle.m_generation) {
                 return Error{ErrorCode::UnknownAction, "action route is not registered"};
             }
         }
@@ -173,9 +180,30 @@ public:
 
     [[nodiscard]] Result<void> unregister_action(const ActionId& action_id);
 
+    template <typename Payload>
+    [[nodiscard]] Result<void> validate_handle(const ActionHandle<Payload>& handle) const
+    {
+        if (!handle.is_valid() || handle.m_owner != this) {
+            return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
+        }
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        const auto found = m_entries.find(handle.action_id().value);
+        if (found == m_entries.end()) {
+            return Error{ErrorCode::UnknownAction, "action route is not registered"};
+        }
+        if (found->second->generation != handle.m_generation) {
+            return Error{ErrorCode::InvalidArgument, "action handle is stale"};
+        }
+        if (found->second->payload_version != handle.payload_version()) {
+            return Error{ErrorCode::PayloadVersionMismatch, "action payload version is incompatible"};
+        }
+        return Result<void>();
+    }
+
 private:
     struct Entry {
         std::uint32_t payload_version{};
+        std::uint64_t generation{};
         std::function<Result<void>(ActionContext&, std::string_view)> invoke;
     };
 
@@ -183,7 +211,17 @@ private:
     const IClock& m_clock;
     mutable std::shared_mutex m_mutex;
     std::unordered_map<std::string, std::shared_ptr<Entry>> m_entries;
+    std::uint64_t m_next_generation = 1;
 };
+
+template <typename Payload>
+Result<void> ActionHandle<Payload>::validate() const
+{
+    if (m_owner == nullptr) {
+        return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
+    }
+    return m_owner->validate_handle(*this);
+}
 
 } // namespace imtg
 

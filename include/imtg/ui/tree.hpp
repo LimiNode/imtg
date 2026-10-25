@@ -29,12 +29,13 @@ struct ButtonDescriptor {
     std::string action_id;
     std::uint32_t payload_version{};
     std::string payload;
+    bool validated = false;
 
     friend bool operator==(const ButtonDescriptor& left,
                            const ButtonDescriptor& right) noexcept
     {
         return left.action_id == right.action_id && left.payload_version == right.payload_version
-            && left.payload == right.payload;
+            && left.payload == right.payload && left.validated == right.validated;
     }
 };
 
@@ -102,7 +103,7 @@ public:
         std::size_t m_node_index = 0;
     };
 
-    UiBuilder() = default;
+    explicit UiBuilder(ActionRegistry* registry = nullptr) : m_registry(registry) {}
     UiBuilder(const UiBuilder&) = delete;
     UiBuilder& operator=(const UiBuilder&) = delete;
 
@@ -129,6 +130,11 @@ public:
                                       const ActionHandle<Payload>& action,
                                       const Payload& payload)
     {
+        const auto validation = m_registry != nullptr ? m_registry->validate_handle(action)
+                                                       : action.validate();
+        if (!validation) {
+            return validation.error();
+        }
         const auto encoded = action.encode_payload(payload);
         if (!encoded) {
             return encoded.error();
@@ -136,7 +142,8 @@ public:
         return append_node(NodeKind::Button, id, label,
                            ButtonDescriptor{action.action_id().value,
                                             action.payload_version(),
-                                            encoded.value()});
+                                            encoded.value(),
+                                            true});
     }
 
     template <typename Payload>
@@ -170,6 +177,7 @@ private:
     std::vector<Frame> m_stack;
     bool m_finished = false;
     bool m_scope_error = false;
+    ActionRegistry* m_registry = nullptr;
 };
 
 } // namespace imtg
