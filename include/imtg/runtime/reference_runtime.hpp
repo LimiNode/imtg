@@ -142,6 +142,7 @@ public:
                      std::size_t queue_capacity);
     ReferenceRuntime(const ReferenceRuntime&) = delete;
     ReferenceRuntime& operator=(const ReferenceRuntime&) = delete;
+    /// The owner must destroy the runtime from a non-worker thread after shutdown().
     ~ReferenceRuntime();
 
     [[nodiscard]] Result<void> submit(ConversationKey key, std::string action_token);
