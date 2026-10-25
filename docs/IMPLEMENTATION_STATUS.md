@@ -10,7 +10,7 @@
 | Immediate-Mode UI tree | `partial` | M1b implements immutable tree nodes, stable paths, RAII scopes, duplicate detection, and offline tests; components remain intentionally small |
 | Callback actions and typed events | `partial` | M1c implements typed versioned action registry, plain injectable codec boundary, scoped context, restart reconstruction, and offline tests; Telegram authentication remains M3 |
 | Controllers and application model | `partial` | M1d reference runtime provides render/command callbacks; richer controller composition remains planned |
-| Conversation scheduler and reference runtime | `partial` | M1d bounded worker pool, global/per-key admission limits, serial mailboxes, synchronous commands, fake reconciler, shutdown and notification tests; sanitizer/CI hardening remains |
+| Conversation scheduler and reference runtime | `partial` | M1d bounded worker pool with per-key serial mailboxes, bounded queues, synchronous commands, fake reconciler, shutdown and notification tests |
 | FSM and sessions | `planned` | M2 persistence/recovery tests |
 | Storage contracts | `contract-only` | [STORAGE.md](contracts/STORAGE.md); no implementation |
 | MDBX backend | `planned` | M2 conformance suite and adapter |
@@ -18,6 +18,6 @@
 | Render intents, reconciliation, and outbox | `planned` | M1d fake reconciliation; M2/M3 durable uncertain-outcome tests |
 | Localization | `planned` | M4 catalog, fallback, and pluralization tests |
 | Users, chats, history, access control, jobs | `planned` | M4/M5 service and retention tests |
-| Build targets, releases, CI | `implemented` | CMake install/export package, Debug/Release CTest, Ubuntu ASan/UBSan job, and CI matrix; TSan remains platform-dependent and is not enabled |
+| Build targets, releases, CI | `implemented` | CMake install/export package, Debug/Release CTest, and CI matrix |
 
 README sketches and this design do not imply a working build. This table must be updated whenever a later PR changes implementation coverage.
