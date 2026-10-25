@@ -1,18 +1,20 @@
 # Implementation status
 
-**As of D0:** the repository contains documentation only.
+**As of M1a:** the repository contains the first Telegram-free core foundation; UI rendering, action routing, scheduler, storage adapters, and delivery remain planned.
 
 | Area | Status | Evidence / next proof |
 |---|---|---|
 | Architecture and contracts | `contract-only` | Markdown documents in `docs/`; review links and invariants |
-| Immediate-Mode UI tree | `planned` | M1 must add deterministic tree tests |
-| Callback actions and typed events | `planned` | M1 contract tests for scope and dispatch |
-| Controllers and application model | `planned` | M1 design review and Telegram-free test app |
+| CMake `imtg_core` target and C++17 baseline | `implemented` | Root CMake target configures/builds; CTest executes offline core tests |
+| Typed identities and deterministic clock | `implemented` | `include/imtg/core/`; M1a equality/encoding/hash tests |
+| Immediate-Mode UI tree | `planned` | M1b must add deterministic tree tests |
+| Callback actions and typed events | `planned` | M1c contract tests for scope and dispatch |
+| Controllers and application model | `planned` | M1d design review and Telegram-free test app |
 | FSM and sessions | `planned` | M2 persistence/recovery tests |
 | Storage contracts | `contract-only` | [STORAGE.md](contracts/STORAGE.md); no implementation |
 | MDBX backend | `planned` | M2 conformance suite and adapter |
 | Telegram transport / kurlyk | `planned` | M3 adapter tests against fakes and documented API limits |
-| Render intents, reconciliation, and outbox | `planned` | M2 recovery/fencing and M3 uncertain-outcome tests |
+| Render intents, reconciliation, and outbox | `planned` | M1d fake reconciliation; M2/M3 durable uncertain-outcome tests |
 | Localization | `planned` | M4 catalog, fallback, and pluralization tests |
 | Users, chats, history, access control, jobs | `planned` | M4/M5 service and retention tests |
 | Build targets, releases, CI | `deferred` | Introduce only with an implementation milestone |
