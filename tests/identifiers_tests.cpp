@@ -49,10 +49,11 @@ int main()
     CHECK(!imtg::parse_conversation_key("v1|b=7|c=-42|s=user:011"));
     CHECK(!imtg::parse_conversation_key("v1|b=7|c=-42|s=chat|extra"));
 
-    CHECK(imtg::ConversationKey{imtg::BotId{std::numeric_limits<std::uint64_t>::max()},
-                               imtg::ChatId{std::numeric_limits<std::int64_t>::min()},
-                               imtg::Chat{}}
-              .encode()
+    const imtg::ConversationKey boundary_key{
+        imtg::BotId{std::numeric_limits<std::uint64_t>::max()},
+        imtg::ChatId{std::numeric_limits<std::int64_t>::min()},
+        imtg::Chat{}};
+    CHECK(boundary_key.encode()
           == "v1|b=18446744073709551615|c=-9223372036854775808|s=chat");
 
     const auto old_locale = std::locale();
