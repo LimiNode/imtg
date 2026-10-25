@@ -1,7 +1,9 @@
 #include "imtg/core/identifiers.hpp"
 
 #include <charconv>
-#include <sstream>
+#include <iterator>
+#include <limits>
+#include <string>
 
 namespace imtg {
 
@@ -28,14 +30,23 @@ Result<T> parse_integer(std::string_view value, ErrorCode code)
 
 std::string ConversationKey::encode() const
 {
-    std::ostringstream stream;
-    stream << "v1|b=" << bot_id.value << "|c=" << chat_id.value << "|s=";
+    std::string encoded = "v1|b=";
+    const auto append_integer = [&encoded](auto value) {
+        char buffer[std::numeric_limits<decltype(value)>::digits10 + 3];
+        const auto result = std::to_chars(std::begin(buffer), std::end(buffer), value);
+        encoded.append(buffer, static_cast<std::size_t>(result.ptr - buffer));
+    };
+    append_integer(bot_id.value);
+    encoded += "|c=";
+    append_integer(chat_id.value);
+    encoded += "|s=";
     if (std::holds_alternative<Chat>(session_scope)) {
-        stream << "chat";
+        encoded += "chat";
     } else {
-        stream << "user:" << std::get<UserInChat>(session_scope).user_id.value;
+        encoded += "user:";
+        append_integer(std::get<UserInChat>(session_scope).user_id.value);
     }
-    return stream.str();
+    return encoded;
 }
 
 Result<ConversationKey> parse_conversation_key(std::string_view encoded)
@@ -68,7 +79,11 @@ Result<ConversationKey> parse_conversation_key(std::string_view encoded)
 
     const auto scope = encoded.substr(scope_marker + 3);
     if (scope == "chat") {
-        return ConversationKey{BotId{bot_value.value()}, ChatId{chat_value.value()}, Chat{}};
+        ConversationKey key{BotId{bot_value.value()}, ChatId{chat_value.value()}, Chat{}};
+        if (key.encode() != encoded) {
+            return Error{ErrorCode::InvalidEncoding, "conversation key is not canonical"};
+        }
+        return key;
     }
 
     constexpr std::string_view user_prefix = "user:";
@@ -78,10 +93,14 @@ Result<ConversationKey> parse_conversation_key(std::string_view encoded)
         if (!user_value) {
             return user_value.error();
         }
-        return ConversationKey{
+        ConversationKey key{
             BotId{bot_value.value()},
             ChatId{chat_value.value()},
             UserInChat{UserId{user_value.value()}}};
+        if (key.encode() != encoded) {
+            return Error{ErrorCode::InvalidEncoding, "conversation key is not canonical"};
+        }
+        return key;
     }
 
     return Error{ErrorCode::InvalidEncoding, "conversation key scope is unknown"};
