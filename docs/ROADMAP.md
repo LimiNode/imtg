@@ -5,21 +5,26 @@ Milestones are dependency-gated; independent research may proceed in parallel, b
 ## Dependency map
 
 ```text
-D0 -> M1 -> M2 -> M3 -> M4 -> M5 -> M6
-              \-> (M4 localization work may prototype in parallel after M1 contracts)
+                         +--> M4 (localization/services) --+
+D0 --> M1 --> M2 -------+                                  +--> M5 --> M6
+  \       \             +--> M3 (delivery) ---------------+
+   \       +--> locale contract/tests may proceed after M1
+    +--> governance/contracts (gate all implementation)
 ```
+
+The graph shows implementation blockers, not a mandatory serial work queue. M4 contract/test prototyping may proceed after M1, while durable M4 services depend on M2. M3 depends on M2 for outbox/session revisions. M5 depends on storage and delivery contracts but does not block M4 localization work.
 
 ## D0 — Architecture & Engineering Foundation
 
-**Scope:** contracts, invariants, governance, ADR, scenarios, roadmap, and honest status. **Dependencies:** none. **Deliverables:** this documentation layer. **Acceptance:** links and terminology are consistent; examples are marked conceptual; `git diff --check` passes. **Tests:** documentation review and link/status audit. **Exit:** a new agent can identify ownership, limits, and next milestone. **Deferred:** production code, dependencies, CI, and adapters.
+**Scope:** contracts, invariants, governance, ADR, scenarios, roadmap, and honest status. **Dependencies:** none. **Deliverables:** this documentation layer. **Acceptance:** links and terminology are consistent; examples are marked conceptual; `git diff --check` passes. **Tests:** documentation review and link/status audit. **Exit:** a new agent can identify ownership, limits, and next milestone. **D0 restrictions:** do not add production code, CMake targets, dependencies, submodules, or adapters in this milestone; keep the PR documentation-first and do not merge it without explicit approval. **Deferred:** implementation and CI.
 
 ## M1 — Typed UI tree, callbacks, controllers, deterministic core
 
-**Scope:** Telegram-free render tree, stable IDs, `snake_case` UI API, action scope, typed events, controller/model composition, deterministic scheduler and reconciler fakes. **Depends on:** D0. **Deliverables:** public headers, tests, API docs, examples. **Acceptance:** repeated renders are deterministic; malformed/unknown callbacks are rejected; callbacks cannot escape scope; per-key ordering is tested; reconciliation is idempotent. **Tests:** unit, property/fuzz tests for IDs and callback tokens, deterministic integration tests. **Exit:** M2 can persist session contracts without changing UI semantics. **Deferred:** Telegram delivery and database adapters.
+**Scope:** Telegram-free render tree, stable IDs, `snake_case` UI API, versioned action routes, serializable payload validation, action scope, typed events, controller/model composition, deterministic scheduler and reconciler fakes. **Depends on:** D0; M1 must use the accepted `ConversationKey` (`bot_id + chat_id + Chat` or `UserInChat`). **Architectural decisions closed before implementation:** action-token lifecycle, route reconstruction after restart, callback lifetime, key equality/encoding, and per-key ordering. **May remain open:** thread/topic transport mapping, reconciler conflict policy, dispatcher implementation, and RAII grouping syntax. **Deliverables:** public headers, tests, API docs, examples. **Acceptance:** repeated renders are deterministic; malformed/unknown/stale callbacks are rejected; callbacks cannot escape scope; route handlers resolve after restart; per-key ordering is tested; reconciliation is idempotent. **Tests:** unit, property/fuzz tests for IDs/tokens, deterministic integration tests. **Exit:** M2 can persist session contracts without changing UI semantics. **Deferred:** Telegram delivery and database adapters.
 
 ## M2 — FSM, sessions, storage contracts, first MDBX backend
 
-**Scope:** typed states/events, guarded transitions, recovery, `IStorageBackend`, `ITransaction`, `UnitOfWork`, expected revisions, migrations, and MDBX adapter. **Depends on:** M1 and MDBX integration review. **Acceptance:** conformance suite passes for in-memory and MDBX; crash/recovery and conflict behavior are documented and tested; no per-user DBI design. **Exit:** durable runtime state and outbox records can be committed transactionally within one backend. **Deferred:** Telegram calls and cross-database atomicity.
+**Scope:** typed states/events, guarded transitions, recovery, `IStorageBackend`, `ITransaction`, `UnitOfWork`, expected revisions, migrations, an in-memory reference backend, and MDBX adapter. **Depends on:** M1 and MDBX integration review. **Acceptance:** the reference backend semantics are implemented and the conformance suite passes for in-memory and MDBX; crash/recovery and conflict behavior are documented and tested; no per-user DBI design. **Exit:** durable runtime state and outbox records can be committed transactionally within one backend. **Deferred:** Telegram calls and cross-database atomicity.
 
 ## M3 — Telegram delivery and outbox
 

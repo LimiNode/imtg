@@ -10,15 +10,16 @@ Telegram screens are easiest to reason about when the application describes the 
 
 ## Decision
 
-Use an Immediate-Mode UI tree with callback-based actions and typed events. The canonical public spelling is `snake_case` for every imtg function and method, including `ui.button()`; ImGui inspires the rendering model, not the names. Callbacks are scoped to one action invocation. Durable work is represented by serializable events/commands and outbox records. Controllers may compose views and models without mandatory inheritance. UI, application state, and Telegram delivery remain separate boundaries.
+Use an Immediate-Mode UI tree with callback-based actions and typed events. The canonical public spelling is `snake_case` for every imtg function and method, including `ui.button()`; ImGui inspires the rendering model, not the names. A render registers a stable, versioned action route and serializable payload; the executable callback is reconstructed or located by route when a later Telegram update arrives and is valid only for that invocation. Durable work is represented by serializable events/commands and outbox records. Controllers may compose views and models without mandatory inheritance. UI, application state, inbound routing, and Telegram delivery remain separate boundaries.
 
 ## Consequences
 
-The small-bot path stays concise while complex applications can introduce controllers and services. Stable IDs and deterministic renders become testable. Delivery can retry uncertain Telegram calls without replaying C++ closures. The design requires explicit payload types, callback validation, revision tracking, and more contracts than a synchronous toy API.
+The small-bot path stays concise while complex applications can introduce controllers and services. Stable IDs and deterministic renders become testable. Delivery can retry known-message edits while treating lost new-message responses as `UnknownOutcome`, without replaying C++ closures. The design requires explicit payload types, callback validation, revision tracking, route registration after restart, and more contracts than a synchronous toy API.
 
 ## Open questions
 
-1. **Scope of `ConversationKey`:** chat-only, chat-plus-thread, or configurable tuple? Prototype options in M1; this affects locking and storage keys.
-2. **Reconciler conflict policy:** last-writer-wins versus revision rejection when Telegram state changes externally? Decide with transport evidence in M3.
-3. **Event dispatcher choice:** direct `event-hub-cpp` integration or a narrower façade? Benchmark and lifetime-review before M1/M2 integration.
-4. **UI grouping safety:** RAII scopes versus nested callback builders for balanced begin/end calls. Decide before the first public UI implementation.
+1. **Reconciler conflict policy:** last-writer-wins versus revision rejection when Telegram state changes externally? Decide with transport evidence in M3.
+2. **Event dispatcher choice:** direct `event-hub-cpp` integration or a narrower façade? Benchmark and lifetime-review before M1/M2 integration.
+3. **UI grouping safety:** RAII scopes versus nested callback builders for balanced begin/end calls. Decide before the first public UI implementation.
+
+The minimum `ConversationKey` (`bot_id + chat_id + session_scope`, with `Chat` and `UserInChat` required for M1) is accepted in [SESSIONS_AND_FSM.md](../contracts/SESSIONS_AND_FSM.md). It is no longer an M1 blocker; thread/topic mapping remains a M3 transport decision.

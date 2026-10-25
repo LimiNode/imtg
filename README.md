@@ -8,7 +8,7 @@ This repository is at **D0 — Architecture & Engineering Foundation**. It curre
 
 ## Design in one minute
 
-An application redraws a screen from current state for each logical update. Stable component IDs make the resulting UI tree comparable across renders. A user action invokes a short-lived callback in an `ActionContext`; durable effects are represented as typed events and handled by application services. Rendering and delivery remain separate so Telegram failures can be retried through an outbox without replaying arbitrary C++ callbacks.
+An application redraws a screen from current state for each logical update. Stable component IDs make the resulting UI tree comparable across renders. A button registers a stable, versioned action route and serializable payload; the executable handler is located again when a later Telegram update arrives, then runs only in a short-lived `ActionContext`. Durable effects are represented as typed events and handled by application services. Rendering and delivery remain separate so Telegram failures can be retried through an outbox without replaying arbitrary C++ callbacks.
 
 ```cpp
 // Conceptual API; not implemented in D0.

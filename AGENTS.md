@@ -22,8 +22,4 @@ This repository is documentation-first until the roadmap explicitly authorizes i
 - Dear ImGui conventions influence the UI programming model, but do not determine imtg naming conventions.
 - Exceptions require explicit architectural justification.
 
-## Scope guard
-
-D0 permits documentation, README, `AGENTS.md`, and minimal configuration needed to express these rules. Do not add production code, dependencies, submodules, build targets, or unrelated cleanup.
-
-Detailed rules are in [coding-style](docs/guides/coding-style.md), [agent workflow](docs/guides/coding-agent-workflow.md), and [documentation governance](docs/DOCUMENTATION_GOVERNANCE.md).
+Detailed rules are in [coding-style](docs/guides/coding-style.md), [agent workflow](docs/guides/coding-agent-workflow.md), and [documentation governance](docs/DOCUMENTATION_GOVERNANCE.md). Milestone-specific scope belongs in [ROADMAP.md](docs/ROADMAP.md), not in this root router.

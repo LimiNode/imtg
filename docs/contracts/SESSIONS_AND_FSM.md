@@ -2,8 +2,22 @@
 
 **Semantic owner:** session/runtime maintainers. **Status:** contract-only.
 
-`ConversationKey` is an explicit, stable value identifying the logical interaction scope; it is not inferred from translated text or a mutable global. A session contains FSM state, current screen metadata, revision, and pending input metadata. User profile data and message history are separate records.
+## Minimum conversation identity
 
-Transitions are typed and may have guards, timeout policies, and rejection outcomes. Updates for one key are sequential; unrelated keys may run concurrently. A persisted transition uses expected revision and is recoverable after restart. Expired or unknown states fail closed and are recorded for diagnosis.
+Before M1, `ConversationKey` is defined as a value containing:
 
-**Verification:** transition-table tests, guard/timeout tests, per-key ordering tests, migration/recovery tests, and concurrent-key isolation tests. **Dependencies:** storage and event contracts.
+```text
+bot_id + chat_id + session_scope
+```
+
+`chat_id` identifies the Telegram chat. `bot_id` prevents two bot identities from sharing state. `session_scope` is a typed, serialized discriminator with a default of `Chat`; supported planned values are `Chat`, `UserInChat(user_id)`, and `Thread(thread_id)`. Telegram user identity is distinct from chat identity; a private chat defaults to `Chat` because the chat already identifies the user. A group defaults to one chat-wide session. Applications that need independent conversations per participant select `UserInChat`; forum/topic flows select `Thread` and may additionally include a user in application state. The chosen scope is part of the persisted key and cannot be inferred from translated labels.
+
+The minimum M1 scheduler must support `Chat` and `UserInChat`; `Thread` is a reserved, serializable variant whose Telegram mapping is completed before M3. Equality and byte encoding of every variant are tested before scheduler implementation. This closes the identity blocker without preventing later scope variants.
+
+## Session and transitions
+
+A session contains FSM state, current screen metadata, revision, selected scope, pending-input metadata, and timestamps. It does not contain the user profile, mutable global locale, or message-history content. A transition consumes a typed event, evaluates guards against a consistent model snapshot, and returns either a new state/effects or a typed rejection. Timeouts and cancellation are explicit transitions.
+
+Updates for one `ConversationKey` are sequential; unrelated keys may run concurrently. A persisted transition uses expected revision and the storage transaction boundary. On restart the session is loaded by exact key and schema version; unknown/expired states fail closed and are journaled. Processed-update deduplication, FSM transition, and outbox append commit atomically within one backend transaction as described in [STORAGE.md](STORAGE.md).
+
+**Verification:** key encoding/equality tests for private, group, per-user, and thread scopes; transition/guard/timeout tests; per-key ordering and concurrent-key isolation tests; restart/migration tests; and stale callback revision tests. **Dependencies:** UI/actions, storage, events/lifetime, and the M1 scheduler.
