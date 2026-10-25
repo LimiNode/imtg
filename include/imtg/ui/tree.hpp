@@ -2,6 +2,7 @@
 #define IMTG_UI_TREE_HPP
 
 #include "imtg/core/result.hpp"
+#include "imtg/actions/registry.hpp"
 
 #include <cstddef>
 #include <optional>
@@ -50,7 +51,7 @@ struct UiNode {
     }
 };
 
-/// rief Immutable result of one deterministic UI render.
+/// \brief Immutable result of one deterministic UI render.
 class UiTree {
 public:
     UiTree() = default;
@@ -70,7 +71,7 @@ private:
     std::vector<UiNode> m_nodes;
 };
 
-/// rief Builds one render without global state or shared mutable context.
+/// \brief Builds one render without global state or shared mutable context.
 class UiBuilder {
 public:
     class Scope {
@@ -102,13 +103,13 @@ public:
     UiBuilder(const UiBuilder&) = delete;
     UiBuilder& operator=(const UiBuilder&) = delete;
 
-    /// rief Opens the required root scope.
+    /// \brief Opens the required root scope.
     [[nodiscard]] Result<Scope> begin(std::string_view id);
 
-    /// rief Opens a nested section scope that closes at RAII scope end.
+    /// \brief Opens a nested section scope that closes at RAII scope end.
     [[nodiscard]] Result<Scope> section(std::string_view id, std::string_view title = {});
 
-    /// rief Opens a keyboard row/grouping scope.
+    /// \brief Opens a keyboard row/grouping scope.
     [[nodiscard]] Result<Scope> row(std::string_view id);
 
     [[nodiscard]] Result<void> text(std::string_view id, std::string_view value);
@@ -119,7 +120,29 @@ public:
                                       std::string_view action_id,
                                       std::string_view payload = {});
 
-    /// rief Finishes a render after all RAII scopes have closed.
+    template <typename Payload>
+    [[nodiscard]] Result<void> button(std::string_view id,
+                                      std::string_view label,
+                                      const ActionHandle<Payload>& action,
+                                      const Payload& payload)
+    {
+        const auto encoded = action.encode_payload(payload);
+        if (!encoded) {
+            return encoded.error();
+        }
+        return button(id, label, action.action_id().value, encoded.value());
+    }
+
+    template <typename Payload>
+    [[nodiscard]] Result<void> button(std::string_view id,
+                                      std::string_view label,
+                                      const Payload& payload,
+                                      const ActionHandle<Payload>& action)
+    {
+        return button(id, label, action, payload);
+    }
+
+    /// \brief Finishes a render after all RAII scopes have closed.
     [[nodiscard]] Result<UiTree> finish();
 
 private:

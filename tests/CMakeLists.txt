@@ -5,3 +5,7 @@ add_test(NAME imtg_identity_tests COMMAND imtg_identity_tests)
 add_executable(imtg_ui_tree_tests ui_tree_tests.cpp)
 target_link_libraries(imtg_ui_tree_tests PRIVATE imtg::core)
 add_test(NAME imtg_ui_tree_tests COMMAND imtg_ui_tree_tests)
+
+add_executable(imtg_action_registry_tests action_registry_tests.cpp)
+target_link_libraries(imtg_action_registry_tests PRIVATE imtg::core)
+add_test(NAME imtg_action_registry_tests COMMAND imtg_action_registry_tests)

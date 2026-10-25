@@ -14,7 +14,7 @@ M1b chooses exception-safe RAII scopes for nested grouping. `UiBuilder::begin()`
 
 An **ephemeral callback binding** is a render-local helper that is never encoded into a Telegram control and cannot receive a later update. A **persistent registered action** is the only action kind permitted for a Telegram button: it is a named, versioned application route with a serializable payload schema and handler factory/callback registered during application composition before update intake.
 
-During rendering, `ui.button(id, label, payload, action_handle)` computes component identity from the `ConversationKey`, screen identity, and component path, then emits a callback token for the handle's stable action ID/version and validated payload. The token contains an opaque token ID or encoded payload plus integrity/authentication data. It must fit the Telegram callback-data limit; oversized payloads are rejected or replaced by a durable token reference.
+During rendering, `ui.button(id, label, action_handle, payload)` (or the equivalent payload-first overload) computes component identity from the `ConversationKey`, screen identity, and component path, then stores the handle's stable action ID/version and encoded payload in the transport-neutral descriptor. The delivery adapter later asks the registry/token codec for a Telegram callback token. The token must fit the Telegram callback-data limit; oversized payloads are rejected or replaced by a durable token reference.
 
 The application registry holds executable handlers in process memory and stable route metadata; durable storage holds only action ID/version, payload data (or a reference), binding constraints, and expiry. It never serializes C++ callbacks, captured pointers, references, or object addresses. Startup must rebuild and validate the complete route registry before accepting updates. A controller or handler is located by route and constructed or kept alive for the invocation. Registered handler captures are limited to application-lifetime services or immutable owned values; invocation references are synchronous and cannot escape.
 
@@ -40,6 +40,8 @@ const auto delete_action = app.actions().register_action<DeleteItem>(
 // In a later render, possibly after restart:
 ui.button("delete", "Delete", DeleteItem{item_id}, delete_action);
 ```
+
+The safe convenience overload may therefore preserve a compact call site without registering a render-scoped closure. It only binds a typed payload to an already registered `ActionHandle`.
 
 After restart, application composition deterministically registers `delete.v1` again before intake. The old token carries that route/version and `item_id`; `ActionRouter` resolves it to the rebuilt registry entry without reconstructing the previous screen. A render pass is never used to discover executable handlers. If the route/version is no longer registered, the token is stale and fails closed.
 
