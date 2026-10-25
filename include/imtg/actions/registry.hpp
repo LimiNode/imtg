@@ -96,7 +96,7 @@ private:
     std::uint32_t m_payload_version{};
     std::uint64_t m_generation{};
     const ActionRegistry* m_owner = nullptr;
-    std::shared_ptr<const void> m_registry_identity;
+    std::weak_ptr<const void> m_registry_identity;
     std::function<Result<std::string>(const Payload&)> m_encode;
 };
 
@@ -158,7 +158,8 @@ public:
         const Payload& payload,
         std::optional<ClockTime> expires_at = std::nullopt) const
     {
-        if (!handle.is_valid() || handle.m_owner != this || handle.m_registry_identity != m_identity) {
+        if (!handle.is_valid() || handle.m_owner != this
+            || handle.m_registry_identity.lock() != m_identity) {
             return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
         }
         {
@@ -185,7 +186,8 @@ public:
     template <typename Payload>
     [[nodiscard]] Result<void> validate_handle(const ActionHandle<Payload>& handle) const
     {
-        if (!handle.is_valid() || handle.m_owner != this || handle.m_registry_identity != m_identity) {
+        if (!handle.is_valid() || handle.m_owner != this
+            || handle.m_registry_identity.lock() != m_identity) {
             return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
         }
         std::shared_lock<std::shared_mutex> lock(m_mutex);
@@ -220,7 +222,7 @@ private:
 template <typename Payload>
 Result<void> ActionHandle<Payload>::validate() const
 {
-    if (m_owner == nullptr) {
+    if (m_owner == nullptr || m_registry_identity.expired()) {
         return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
     }
     return m_owner->validate_handle(*this);
