@@ -5,6 +5,7 @@
 #include "imtg/actions/registry.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -26,12 +27,14 @@ enum class NodeKind {
 
 struct ButtonDescriptor {
     std::string action_id;
+    std::uint32_t payload_version{};
     std::string payload;
 
     friend bool operator==(const ButtonDescriptor& left,
                            const ButtonDescriptor& right) noexcept
     {
-        return left.action_id == right.action_id && left.payload == right.payload;
+        return left.action_id == right.action_id && left.payload_version == right.payload_version
+            && left.payload == right.payload;
     }
 };
 
@@ -130,7 +133,10 @@ public:
         if (!encoded) {
             return encoded.error();
         }
-        return button(id, label, action.action_id().value, encoded.value());
+        return append_node(NodeKind::Button, id, label,
+                           ButtonDescriptor{action.action_id().value,
+                                            action.payload_version(),
+                                            encoded.value()});
     }
 
     template <typename Payload>

@@ -19,6 +19,8 @@ struct ActionCommand {
     std::string payload;
 };
 
+class ActionRegistry;
+
 /// \brief Invocation-scoped command capability; it cannot be used after invoke returns.
 class ActionContext {
 public:
@@ -90,6 +92,7 @@ private:
     friend class ActionRegistry;
     ActionId m_action_id;
     std::uint32_t m_payload_version{};
+    const ActionRegistry* m_owner = nullptr;
     std::function<Result<std::string>(const Payload&)> m_encode;
 };
 
@@ -136,6 +139,7 @@ public:
         ActionHandle<Payload> handle;
         handle.m_action_id = std::move(action_id);
         handle.m_payload_version = payload_version;
+        handle.m_owner = this;
         handle.m_encode = std::move(encode);
         return handle;
     }
@@ -146,8 +150,15 @@ public:
         const Payload& payload,
         std::optional<ClockTime> expires_at = std::nullopt) const
     {
-        if (!handle.is_valid()) {
+        if (!handle.is_valid() || handle.m_owner != this) {
             return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
+        }
+        {
+            std::shared_lock<std::shared_mutex> lock(m_mutex);
+            const auto found = m_entries.find(handle.action_id().value);
+            if (found == m_entries.end() || found->second->payload_version != handle.payload_version()) {
+                return Error{ErrorCode::UnknownAction, "action route is not registered"};
+            }
         }
         const auto encoded = handle.m_encode(payload);
         if (!encoded) {

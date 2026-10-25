@@ -1,13 +1,20 @@
 #include "imtg/actions/actions.hpp"
 #include "imtg/ui/ui.hpp"
 
-#include <cassert>
 #include <chrono>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <stdexcept>
+
+#define CHECK(condition) \
+    do { \
+        if (!(condition)) throw std::runtime_error("check failed: " #condition); \
+    } while (false)
+#define assert(condition) CHECK(condition)
 
 namespace {
 
@@ -73,6 +80,7 @@ int main()
     assert(tree);
     assert(tree.value().nodes().at(1).button->action_id == "delete.v1");
     assert(tree.value().nodes().at(1).button->payload == "99");
+    assert(tree.value().nodes().at(1).button->payload_version == 1);
 
     const auto expired_token = registry.make_token(
         handle, DeleteItem{7}, initial + std::chrono::seconds{1});
@@ -87,6 +95,7 @@ int main()
         imtg::ActionId{"delete.v1"}, delete_codec(1),
         [](imtg::ActionContext&, const DeleteItem&) { return imtg::Result<void>(); });
     assert(restarted_handle);
+    assert(!restarted_registry.make_token(handle, DeleteItem{1}));
     assert(restarted_registry.invoke(token_result.value(), [](const imtg::ActionCommand&) {
         return imtg::Result<void>();
     }));
@@ -106,6 +115,7 @@ int main()
     assert(!incompatible_registry.invoke(token_result.value(), [](const imtg::ActionCommand&) {
         return imtg::Result<void>();
     }));
+
 
     assert(restarted_registry.unregister_action(imtg::ActionId{"delete.v1"}));
     assert(!restarted_registry.invoke(token_result.value(), [](const imtg::ActionCommand&) {
