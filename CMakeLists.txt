@@ -5,11 +5,12 @@ project(imtg VERSION 0.1.0 LANGUAGES CXX)
 include(GNUInstallDirs)
 include(CTest)
 
-add_library(imtg_core INTERFACE)
+add_library(imtg_core STATIC
+    src/core/identifiers.cpp)
 add_library(imtg::core ALIAS imtg_core)
 
-target_compile_features(imtg_core INTERFACE cxx_std_17)
-target_include_directories(imtg_core INTERFACE
+target_compile_features(imtg_core PUBLIC cxx_std_17)
+target_include_directories(imtg_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 

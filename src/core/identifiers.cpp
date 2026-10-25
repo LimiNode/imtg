@@ -1,7 +1,6 @@
 #include "imtg/core/identifiers.hpp"
 
 #include <charconv>
-#include <limits>
 #include <sstream>
 
 namespace imtg {
