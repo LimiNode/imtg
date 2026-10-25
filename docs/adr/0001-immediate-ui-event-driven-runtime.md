@@ -23,3 +23,5 @@ The small-bot path stays concise while complex applications can introduce contro
 3. **UI grouping safety:** RAII scopes versus nested callback builders for balanced begin/end calls. Decide before the first public UI implementation.
 
 The minimum `ConversationKey` (`bot_id + chat_id + session_scope`, with `Chat` and `UserInChat` required for M1) is accepted in [SESSIONS_AND_FSM.md](../contracts/SESSIONS_AND_FSM.md). It is no longer an M1 blocker; thread/topic mapping remains a M3 transport decision.
+
+M1b resolves the UI grouping question in favor of move-only RAII scope guards. Callback builders remain a possible ergonomic layer above the safe builder, but cannot weaken scope balancing or ownership rules.

@@ -15,6 +15,9 @@ enum class ErrorCode {
     InvalidEncoding,
     TruncatedEncoding,
     UnsupportedVersion,
+    DuplicateId,
+    InvalidState,
+    ScopeMismatch,
 };
 
 /// rief Describes a failed core operation without requiring exceptions.
