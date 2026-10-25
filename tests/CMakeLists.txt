@@ -9,3 +9,7 @@ add_test(NAME imtg_ui_tree_tests COMMAND imtg_ui_tree_tests)
 add_executable(imtg_action_registry_tests action_registry_tests.cpp)
 target_link_libraries(imtg_action_registry_tests PRIVATE imtg::core)
 add_test(NAME imtg_action_registry_tests COMMAND imtg_action_registry_tests)
+
+add_executable(imtg_reference_runtime_tests reference_runtime_tests.cpp)
+target_link_libraries(imtg_reference_runtime_tests PRIVATE imtg::core)
+add_test(NAME imtg_reference_runtime_tests COMMAND imtg_reference_runtime_tests)

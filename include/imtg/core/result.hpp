@@ -24,6 +24,7 @@ enum class ErrorCode {
     ExpiredAction,
     HandlerUnavailable,
     DispatchRejected,
+    QueueFull,
 };
 
 /// \brief Describes a failed core operation without requiring exceptions.
