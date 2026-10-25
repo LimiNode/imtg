@@ -7,12 +7,13 @@
 The pipeline has explicit boundaries:
 
 1. **UpdateGateway** parses an inbound update, authenticates the bot boundary, validates size/shape, and normalizes Telegram identifiers.
-2. **ActionRouter** validates callback token integrity, expiry, conversation/message/user binding, session revision policy, and authorization before action resolution.
-3. **Controller/runtime** applies the action and commits application state.
-4. **Renderer/Reconciler** compares desired UI with the last applied revision and plans transport-neutral effects; it does not validate users or execute handlers.
-5. **Outbox** durably records effects after the state transaction commits.
-6. **DeliveryWorker** executes Telegram HTTP requests, applies rate limits/backoff, and records outcomes.
-7. **Acknowledgement/recovery** updates effect state and schedules review for uncertain results.
+2. **Conversation scheduler** serializes the derived `ConversationKey`; only stateless token syntax/integrity checks occur before it.
+3. **ActionRouter/controller** loads current state inside the serialized boundary, validates expiry, conversation/message/user binding, revision policy and authorization, then transactionally applies the command.
+4. **Render-intent store** commits the processed update, state transition, and durable need-to-render marker atomically.
+5. **Renderer/Reconciler** consumes the committed intent, loads committed state, compares desired UI with the last applied revision, and plans transport-neutral effects; it does not execute handlers.
+6. **Outbox** durably records planned effects in a second transaction and atomically marks or supersedes the render intent. A crash before this transaction leaves the intent eligible for reconciliation again.
+7. **DeliveryWorker** executes Telegram HTTP requests, applies rate limits/backoff, and records outcomes with the current lease/fencing token.
+8. **Acknowledgement/recovery** updates effect state and schedules review for uncertain results.
 
 `kurlyk` is a recommended future HTTP adapter, not a core dependency. Telegram's external API cannot provide exactly-once delivery without corresponding guarantees, and arbitrary client idempotency keys must not be assumed.
 
@@ -24,6 +25,6 @@ Retrying `sendMessage` after a lost response can create a duplicate because Tele
 
 ## Failure example
 
-After committing a session transition and `sendMessage` outbox record, the worker sends the request and loses the HTTP response. The effect becomes `UnknownOutcome`, not immediately `Pending` again. A bounded recovery job queries available Telegram state or renders a reconciliation decision; if it cannot distinguish acceptance, it records the uncertainty and avoids unbounded duplicate sends. A later UI revision may supersede the pending desired state, but the technical journal retains the original outcome.
+After transaction 1 commits a session transition and render intent, the process may crash before reconciliation; startup finds the unconsumed intent and safely plans the effect. After the outbox transaction commits, the worker may send `sendMessage` and lose the HTTP response. The effect becomes `UnknownOutcome`, not immediately `Pending` again. Telegram Bot API has no universal operation that reads an arbitrary message by `(chat_id, message_id)`, and a lost send response may not provide a message ID at all. Recovery may use only capabilities confirmed for that method/update, application-visible follow-up evidence, or manual policy; it must not assume generic message lookup. If acceptance cannot be distinguished, the runtime records the uncertainty and avoids unbounded duplicate sends. A later UI revision may supersede desired state, but the technical journal retains the original outcome.
 
 **Verification:** fake transport tests for inbound validation, authorization, send/edit/retry, 429/backoff, uncertain outcomes, revision races, duplicate prevention policy, malformed callbacks, and shutdown with pending outbox records. **Dependencies:** UI/actions, sessions, storage/outbox, and verified official Telegram API limits.

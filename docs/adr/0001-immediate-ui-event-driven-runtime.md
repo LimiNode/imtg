@@ -10,11 +10,11 @@ Telegram screens are easiest to reason about when the application describes the 
 
 ## Decision
 
-Use an Immediate-Mode UI tree with callback-based actions and typed events. The canonical public spelling is `snake_case` for every imtg function and method, including `ui.button()`; ImGui inspires the rendering model, not the names. A render registers a stable, versioned action route and serializable payload; the executable callback is reconstructed or located by route when a later Telegram update arrives and is valid only for that invocation. Durable work is represented by serializable events/commands and outbox records. Controllers may compose views and models without mandatory inheritance. UI, application state, inbound routing, and Telegram delivery remain separate boundaries.
+Use an Immediate-Mode UI tree with callback-based actions and typed events. The canonical public spelling is `snake_case` for every imtg function and method, including `ui.button()`; ImGui inspires the rendering model, not the names. Application composition registers stable, versioned callbacks before update intake. A render references an `ActionHandle` and serializable payload; after restart the registry is rebuilt before an incoming token is resolved. A render pass is not used to discover handlers. Durable work is represented by synchronous transactional commands, durable render intents, and outbox records; asynchronous EventBus notifications cannot carry required state changes alone. Controllers may compose views and models without mandatory inheritance. UI, application state, inbound routing, and Telegram delivery remain separate boundaries.
 
 ## Consequences
 
-The small-bot path stays concise while complex applications can introduce controllers and services. Stable IDs and deterministic renders become testable. Delivery can retry known-message edits while treating lost new-message responses as `UnknownOutcome`, without replaying C++ closures. The design requires explicit payload types, callback validation, revision tracking, route registration after restart, and more contracts than a synchronous toy API.
+The small-bot path stays concise while complex applications can introduce controllers and services. Stable IDs and deterministic renders become testable. The render-intent boundary prevents committed state from losing required UI work. Delivery can retry known-message edits while treating lost new-message responses as `UnknownOutcome`, without replaying C++ closures. The design requires explicit payload types, callback validation, revision tracking, deterministic route registration after restart, and more contracts than a synchronous toy API.
 
 ## Open questions
 

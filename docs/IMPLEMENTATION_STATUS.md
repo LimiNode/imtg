@@ -12,7 +12,7 @@
 | Storage contracts | `contract-only` | [STORAGE.md](contracts/STORAGE.md); no implementation |
 | MDBX backend | `planned` | M2 conformance suite and adapter |
 | Telegram transport / kurlyk | `planned` | M3 adapter tests against fakes and documented API limits |
-| Reconciliation and outbox | `planned` | M3 uncertain-outcome and retry tests |
+| Render intents, reconciliation, and outbox | `planned` | M2 recovery/fencing and M3 uncertain-outcome tests |
 | Localization | `planned` | M4 catalog, fallback, and pluralization tests |
 | Users, chats, history, access control, jobs | `planned` | M4/M5 service and retention tests |
 | Build targets, releases, CI | `deferred` | Introduce only with an implementation milestone |

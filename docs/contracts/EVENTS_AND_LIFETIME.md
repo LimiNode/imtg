@@ -6,6 +6,8 @@
 
 Typed events carry value-owned DTOs or explicitly immutable shared payloads. Synchronous delivery is bounded to the current dispatch scope; deferred delivery transfers ownership into a bounded queue. A subscription handle removes a handler from future selection, but removal is not a join: an already-running callback may still be executing.
 
+`ActionContext::dispatch()` denotes the synchronous transactional command path defined by the storage contract. EventBus publication denotes notification/fan-out and may be asynchronous or non-persistent. A required state transition, processed-update decision, render intent, or delivery request must not depend solely on EventBus delivery.
+
 The event endpoint therefore has three distinct states:
 
 1. **Closed for admission:** no new callbacks are selected.
@@ -22,6 +24,6 @@ Shutdown stops intake, closes queues, and rejects new deferred work. A shutdown 
 
 Queues have fixed capacity and a documented backpressure policy: reject low-priority events, coalesce eligible UI refreshes, or apply bounded retry. Event cycles are detected by dispatch depth, event budget, or both. Exceeding the budget stops the chain and records an error rather than spinning indefinitely.
 
-Exceptions are caught at the dispatcher boundary, associated with the event/subscription, and sent to the technical journal. One handler failure does not invoke unrelated handlers unless the event policy says the transaction must abort. Transactional state and outbox effects follow the storage contract.
+Exceptions are caught at the dispatcher boundary, associated with the event/subscription, and sent to the technical journal. One handler failure does not invoke unrelated handlers unless the event policy says the transaction must abort. Transactional state, render intents, and later outbox effects follow the storage contract.
 
 **Verification:** tests for removal versus in-flight completion, lifetime guards, cancellation points, self-requested shutdown, worker drain/destruction ordering, bounded queues/backpressure, cycle limits, exception isolation, and restart with deferred work. **Dependencies:** event-hub integration review, scheduler, storage/outbox, and technical journal.

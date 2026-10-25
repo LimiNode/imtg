@@ -8,17 +8,20 @@ This repository is at **D0 — Architecture & Engineering Foundation**. It curre
 
 ## Design in one minute
 
-An application redraws a screen from current state for each logical update. Stable component IDs make the resulting UI tree comparable across renders. A button registers a stable, versioned action route and serializable payload; the executable handler is located again when a later Telegram update arrives, then runs only in a short-lived `ActionContext`. Durable effects are represented as typed events and handled by application services. Rendering and delivery remain separate so Telegram failures can be retried through an outbox without replaying arbitrary C++ callbacks.
+An application redraws a screen from current state for each logical update. Stable component IDs make the resulting UI tree comparable across renders. Application composition registers a stable, versioned action route; a button binds its serializable payload to that route. A later Telegram update resolves the pre-registered handler, which runs only in a short-lived `ActionContext`. Required changes use transactional commands and durable render intents; typed events may notify other services. Rendering and delivery remain separate so Telegram failures can be retried through an outbox without replaying arbitrary C++ callbacks.
 
 ```cpp
-// Conceptual API; not implemented in D0.
-void settings_screen(imtg::ViewContext& view) {
+// Conceptual API; not implemented in D0. Registered before update intake.
+const auto save_action = app.actions().register_action<SaveRequested>(
+    "settings.save.v1",
+    [](imtg::ActionContext& ctx, const SaveRequested& command) {
+        ctx.dispatch(command);
+    });
+
+void settings_screen(imtg::ViewContext& view, imtg::ActionHandle save_action) {
     view.ui().begin("settings");
     view.ui().text("Settings");
-    view.ui().button("save", "Save",
-        [](imtg::ActionContext& ctx) {
-            ctx.dispatch(SaveRequested{});
-        });
+    view.ui().button("save", "Save", SaveRequested{}, save_action);
     view.ui().end();
 }
 ```
@@ -28,15 +31,16 @@ All imtg functions and methods, including the public Immediate-Mode UI surface, 
 ## Architecture at a glance
 
 ```text
-Telegram update -> session scheduler -> controller/view
-                                      |         |
-                                      v         v
-                               typed events   UI tree
-                                      |         |
-                                      v         v
-                              application model -> reconciler -> delivery adapter
-                                      |                            |
-                                      +-> storage/outbox <---------+
+Telegram update -> stateless gateway -> conversation scheduler
+                                             |
+                                             v
+                                  action router + command
+                                             |
+                                             v
+                                 state + durable render intent
+                                             |
+                                             v
+                                  renderer/reconciler -> outbox -> delivery
 ```
 
 The core owns contracts and deterministic orchestration. `kurlyk` is a planned transport integration, and MDBX through `mdbx-containers` is the first planned storage backend; neither is a core dependency.
