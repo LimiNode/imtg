@@ -140,6 +140,7 @@ private:
     std::vector<UiNode> m_nodes;
     std::vector<Frame> m_stack;
     bool m_finished = false;
+    bool m_scope_error = false;
 };
 
 } // namespace imtg

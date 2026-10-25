@@ -84,7 +84,7 @@ Result<void> UiBuilder::button(std::string_view id,
 
 Result<UiTree> UiBuilder::finish()
 {
-    if (m_finished || m_nodes.empty()) {
+    if (m_finished || m_nodes.empty() || m_scope_error) {
         return invalid_state("render has no open root");
     }
     if (!m_stack.empty()) {
@@ -98,7 +98,7 @@ Result<UiBuilder::Scope> UiBuilder::open_scope(NodeKind kind,
                                                 std::string_view id,
                                                 std::string_view text)
 {
-    if (m_finished || (kind != NodeKind::Root && m_stack.empty())) {
+    if (m_finished || m_scope_error || (kind != NodeKind::Root && m_stack.empty())) {
         return invalid_state("scope is outside an active render");
     }
     const auto result = append_node(kind, id, text, std::nullopt);
@@ -116,11 +116,14 @@ Result<void> UiBuilder::append_node(NodeKind kind,
                                     std::string_view text,
                                     std::optional<ButtonDescriptor> button)
 {
-    if (m_finished || (m_stack.empty() && kind != NodeKind::Root)) {
+    if (m_finished || m_scope_error || (m_stack.empty() && kind != NodeKind::Root)) {
         return invalid_state("node is outside an active render scope");
     }
     if (id.empty()) {
         return Error{ErrorCode::InvalidArgument, "component id cannot be empty"};
+    }
+    if (id.find('/') != std::string_view::npos) {
+        return Error{ErrorCode::InvalidArgument, "component id cannot contain '/'"};
     }
 
     if (kind == NodeKind::Root) {
@@ -152,6 +155,7 @@ Result<void> UiBuilder::append_node(NodeKind kind,
 void UiBuilder::close_scope(std::size_t node_index) noexcept
 {
     if (m_stack.empty() || m_stack.back().node_index != node_index) {
+        m_scope_error = true;
         return;
     }
     m_stack.pop_back();
