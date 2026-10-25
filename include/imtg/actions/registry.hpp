@@ -103,6 +103,8 @@ private:
 /// \brief Application-level registry for restart-safe, typed action routes.
 class ActionRegistry {
 public:
+    // The registry must outlive concurrent handle validation and UI binding.
+    // Destruction is an external-owner operation; callers provide quiescence.
     ActionRegistry(const ITokenCodec& token_codec, const IClock& clock)
         : m_token_codec(token_codec), m_clock(clock), m_identity(std::make_shared<int>(0))
     {

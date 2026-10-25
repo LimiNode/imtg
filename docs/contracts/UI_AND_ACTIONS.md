@@ -4,7 +4,7 @@
 
 ## Responsibilities
 
-The UI layer builds a transport-neutral tree from current state. It owns stable component identity, references to pre-registered actions, payload validation, and the boundary between view code and the runtime. It does not own Telegram HTTP, durable session state, or delivery retries.
+The UI layer builds a transport-neutral tree from current state. It owns stable component identity, references to pre-registered actions, payload validation, and the boundary between view code and the runtime. Typed bindings validate the exact action registration generation against the supplied registry before producing a descriptor; raw string descriptors are explicitly unvalidated and must not be published as external callback tokens. The registry is an externally owned service and must remain alive until all concurrent validation/binding operations quiesce. It does not own Telegram HTTP, durable session state, or delivery retries.
 
 The conceptual public surface uses `snake_case` (`ui.begin()`, `ui.text()`, `ui.button()`, `ui.input_text()`, `ui.end()`). Types use `CamelCase`. These snippets are not implemented API.
 

@@ -90,6 +90,14 @@ int main()
         return imtg::Result<void>();
     }));
 
+    assert(registry.unregister_action(imtg::ActionId{"delete.v1"}));
+    const auto replacement_same_registry = registry.register_action<DeleteItem>(
+        imtg::ActionId{"delete.v1"}, delete_codec(1),
+        [](imtg::ActionContext&, const DeleteItem&) { return imtg::Result<void>(); });
+    assert(replacement_same_registry);
+    assert(!registry.make_token(handle, DeleteItem{8}));
+    assert(registry.make_token(replacement_same_registry.value(), DeleteItem{8}));
+
     imtg::ActionRegistry restarted_registry(token_codec, clock);
     const auto restarted_handle = restarted_registry.register_action<DeleteItem>(
         imtg::ActionId{"delete.v1"}, delete_codec(1),
