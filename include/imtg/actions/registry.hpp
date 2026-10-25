@@ -96,6 +96,7 @@ private:
     std::uint32_t m_payload_version{};
     std::uint64_t m_generation{};
     const ActionRegistry* m_owner = nullptr;
+    std::shared_ptr<const void> m_registry_identity;
     std::function<Result<std::string>(const Payload&)> m_encode;
 };
 
@@ -103,7 +104,7 @@ private:
 class ActionRegistry {
 public:
     ActionRegistry(const ITokenCodec& token_codec, const IClock& clock)
-        : m_token_codec(token_codec), m_clock(clock)
+        : m_token_codec(token_codec), m_clock(clock), m_identity(std::make_shared<int>(0))
     {
     }
 
@@ -146,6 +147,7 @@ public:
         handle.m_payload_version = payload_version;
         handle.m_generation = generation;
         handle.m_owner = this;
+        handle.m_registry_identity = m_identity;
         handle.m_encode = std::move(encode);
         return handle;
     }
@@ -156,7 +158,7 @@ public:
         const Payload& payload,
         std::optional<ClockTime> expires_at = std::nullopt) const
     {
-        if (!handle.is_valid() || handle.m_owner != this) {
+        if (!handle.is_valid() || handle.m_owner != this || handle.m_registry_identity != m_identity) {
             return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
         }
         {
@@ -183,7 +185,7 @@ public:
     template <typename Payload>
     [[nodiscard]] Result<void> validate_handle(const ActionHandle<Payload>& handle) const
     {
-        if (!handle.is_valid() || handle.m_owner != this) {
+        if (!handle.is_valid() || handle.m_owner != this || handle.m_registry_identity != m_identity) {
             return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
         }
         std::shared_lock<std::shared_mutex> lock(m_mutex);
@@ -212,6 +214,7 @@ private:
     mutable std::shared_mutex m_mutex;
     std::unordered_map<std::string, std::shared_ptr<Entry>> m_entries;
     std::uint64_t m_next_generation = 1;
+    std::shared_ptr<const void> m_identity;
 };
 
 template <typename Payload>
