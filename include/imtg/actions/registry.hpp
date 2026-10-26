@@ -121,7 +121,11 @@ public:
         PayloadCodec<Payload> codec,
         Handler<Payload> handler)
     {
-        if (!is_canonical_route(action_id.value) || !codec.encode || !codec.decode || !handler) {
+        if (!is_canonical_route(action_id.value)) {
+            return Error{ErrorCode::InvalidArgument,
+                         "action id must use canonical name.vN syntax"};
+        }
+        if (!codec.encode || !codec.decode || !handler) {
             return Error{ErrorCode::InvalidArgument, "action registration is incomplete"};
         }
 

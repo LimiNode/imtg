@@ -12,7 +12,7 @@ M1b chooses exception-safe RAII scopes for nested grouping. `UiBuilder::begin()`
 
 ## Two kinds of actions
 
-An **ephemeral callback binding** is a render-local helper that is never encoded into a Telegram control and cannot receive a later update. A **persistent registered action** is the only action kind permitted for a Telegram button: it is a named, versioned application route with a serializable payload schema and handler factory/callback registered during application composition before update intake.
+An **ephemeral callback binding** is a render-local helper that is never encoded into a Telegram control and cannot receive a later update. A **persistent registered action** is the only action kind permitted for a Telegram button: it is a named, versioned application route with a serializable payload schema and handler factory/callback registered during application composition before update intake. M1 routes use canonical `name.vN` syntax: the prefix is non-empty, `N` is a decimal `uint32_t` in the range `1..4294967295`, and leading zeroes are rejected.
 
 During rendering, `ui.button(id, label, action_handle, payload)` (or the equivalent payload-first overload) computes component identity from the `ConversationKey`, screen identity, and component path, then stores the handle's stable action ID/version and encoded payload in the transport-neutral descriptor. The delivery adapter later asks the registry/token codec for a Telegram callback token. The token must fit the Telegram callback-data limit; oversized payloads are rejected or replaced by a durable token reference.
 

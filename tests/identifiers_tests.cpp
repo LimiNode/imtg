@@ -29,6 +29,10 @@ int main()
     CHECK(chat_key == same_chat_key);
     CHECK(chat_key != user_key);
     CHECK(chat_key != other_bot_key);
+    const std::hash<imtg::ConversationKey> key_hash;
+    CHECK(key_hash(chat_key) == key_hash(same_chat_key));
+    CHECK(key_hash(chat_key) != key_hash(user_key));
+    CHECK(key_hash(chat_key) != key_hash(other_bot_key));
     CHECK(chat_key.encode() == "v1|b=7|c=-42|s=chat");
     CHECK(user_key.encode() == "v1|b=7|c=-42|s=user:11");
 
@@ -55,6 +59,7 @@ int main()
         imtg::Chat{}};
     CHECK(boundary_key.encode()
           == "v1|b=18446744073709551615|c=-9223372036854775808|s=chat");
+    CHECK(key_hash(boundary_key) == key_hash(boundary_key));
 
     const auto old_locale = std::locale();
     std::locale::global(std::locale::classic());

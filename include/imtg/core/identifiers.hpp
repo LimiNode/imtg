@@ -106,9 +106,24 @@ struct hash<imtg::UserId> {
 
 template <>
 struct hash<imtg::ConversationKey> {
-    size_t operator()(const imtg::ConversationKey& value) const
+    size_t operator()(const imtg::ConversationKey& value) const noexcept
     {
-        return hash<std::string>{}(value.encode());
+        // Hash the typed identity directly.  In particular, do not call
+        // ConversationKey::encode(): mailbox lookups run from a noexcept
+        // worker loop and must not allocate.
+        size_t seed = hash<imtg::BotId>{}(value.bot_id);
+        const auto combine = [&seed](size_t component) noexcept {
+            seed ^= component + static_cast<size_t>(0x9e3779b97f4a7c15ULL)
+                + (seed << 6) + (seed >> 2);
+        };
+        combine(hash<imtg::ChatId>{}(value.chat_id));
+        if (std::holds_alternative<imtg::Chat>(value.session_scope)) {
+            combine(static_cast<size_t>(0));
+        } else {
+            combine(static_cast<size_t>(1));
+            combine(hash<imtg::UserId>{}(std::get<imtg::UserInChat>(value.session_scope).user_id));
+        }
+        return seed;
     }
 };
 
