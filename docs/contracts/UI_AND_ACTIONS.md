@@ -8,6 +8,8 @@ The UI layer builds a transport-neutral tree from current state. It owns stable 
 
 The conceptual public surface uses `snake_case` (`ui.begin()`, `ui.text()`, `ui.button()`, `ui.input_text()`, `ui.end()`). Types use `CamelCase`. These snippets are not implemented API.
 
+M1b chooses exception-safe RAII scopes for nested grouping. `UiBuilder::begin()`, `section()`, and `row()` return move-only scope guards; destruction closes the matching scope. A builder has no global context, may be used independently on parallel threads, and is invalidated after `finish()`. The builder must outlive all guards. Duplicate explicit child IDs are rejected, and `finish()` rejects active scopes rather than silently producing an unbalanced tree.
+
 ## Two kinds of actions
 
 An **ephemeral callback binding** is a render-local helper that is never encoded into a Telegram control and cannot receive a later update. A **persistent registered action** is the only action kind permitted for a Telegram button: it is a named, versioned application route with a serializable payload schema and handler factory/callback registered during application composition before update intake.

@@ -7,7 +7,7 @@
 | Architecture and contracts | `contract-only` | Markdown documents in `docs/`; review links and invariants |
 | CMake `imtg_core` target and C++17 baseline | `implemented` | Root CMake target configures/builds; CTest executes offline core tests |
 | Typed identities and deterministic clock | `implemented` | `include/imtg/core/`; M1a equality/encoding/hash tests |
-| Immediate-Mode UI tree | `planned` | M1b must add deterministic tree tests |
+| Immediate-Mode UI tree | `partial` | M1b implements immutable tree nodes, stable paths, RAII scopes, duplicate detection, and offline tests; components remain intentionally small |
 | Callback actions and typed events | `planned` | M1c contract tests for scope and dispatch |
 | Controllers and application model | `planned` | M1d design review and Telegram-free test app |
 | FSM and sessions | `planned` | M2 persistence/recovery tests |

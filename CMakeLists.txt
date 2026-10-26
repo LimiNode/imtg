@@ -7,7 +7,8 @@ include(CTest)
 include(CMakePackageConfigHelpers)
 
 add_library(imtg_core STATIC
-    src/core/identifiers.cpp)
+    src/core/identifiers.cpp
+    src/ui/tree.cpp)
 add_library(imtg::core ALIAS imtg_core)
 set_target_properties(imtg_core PROPERTIES EXPORT_NAME core)
 
