@@ -166,6 +166,7 @@ void NotificationDispatcher::publish(const Notification& notification)
             try { m_state->error_sink(selection_error); } catch (...) { }
             --g_error_sink_depth;
         }
+        selected.clear();
         finish_publication();
         return;
     }
@@ -224,6 +225,7 @@ void NotificationDispatcher::publish(const Notification& notification)
             --g_error_sink_depth;
         }
     }
+    selected.clear();
     finish_publication();
 }
 
