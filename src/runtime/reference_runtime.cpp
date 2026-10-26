@@ -111,6 +111,7 @@ void NotificationDispatcher::publish(const Notification& notification)
     std::vector<std::shared_ptr<NotificationEntry>> selected;
     std::exception_ptr selection_error;
     bool depth_exceeded = false;
+    bool publication_registered = false;
     {
         std::lock_guard<std::mutex> lock(m_state->mutex);
         if (m_state->closed) {
@@ -123,6 +124,8 @@ void NotificationDispatcher::publish(const Notification& notification)
             depth_exceeded = true;
         } else {
             ++m_state->publication_depth[thread_id];
+            ++m_state->active_publications;
+            publication_registered = true;
             try {
                 selected.reserve(m_state->entries.size());
             } catch (...) {
@@ -144,19 +147,26 @@ void NotificationDispatcher::publish(const Notification& notification)
         selection_error = std::make_exception_ptr(
             std::runtime_error("notification callback depth exceeded"));
     }
+    const auto finish_publication = [&]() {
+        if (!publication_registered) {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(m_state->mutex);
+        auto found = m_state->publication_depth.find(std::this_thread::get_id());
+        if (found != m_state->publication_depth.end() && --found->second == 0) {
+            m_state->publication_depth.erase(found);
+        }
+        --m_state->active_publications;
+        publication_registered = false;
+        m_state->condition.notify_all();
+    };
     if (selection_error) {
         if (m_state->error_sink && g_error_sink_depth < m_state->max_callback_depth) {
             ++g_error_sink_depth;
             try { m_state->error_sink(selection_error); } catch (...) { }
             --g_error_sink_depth;
         }
-        {
-            std::lock_guard<std::mutex> lock(m_state->mutex);
-            auto found = m_state->publication_depth.find(std::this_thread::get_id());
-            if (found != m_state->publication_depth.end() && --found->second == 0) {
-                m_state->publication_depth.erase(found);
-            }
-        }
+        finish_publication();
         return;
     }
 
@@ -214,13 +224,7 @@ void NotificationDispatcher::publish(const Notification& notification)
             --g_error_sink_depth;
         }
     }
-    {
-        std::lock_guard<std::mutex> lock(m_state->mutex);
-        auto found = m_state->publication_depth.find(std::this_thread::get_id());
-        if (found != m_state->publication_depth.end() && --found->second == 0) {
-            m_state->publication_depth.erase(found);
-        }
-    }
+    finish_publication();
 }
 
 Result<void> NotificationDispatcher::close_and_wait()
@@ -231,7 +235,9 @@ Result<void> NotificationDispatcher::close_and_wait()
         || m_state->publication_depth.count(std::this_thread::get_id()) != 0) {
         return Error{ErrorCode::InvalidState, "cannot wait for dispatcher from callback"};
     }
-    m_state->condition.wait(lock, [this] { return m_state->in_flight == 0; });
+    m_state->condition.wait(lock, [this] {
+        return m_state->in_flight == 0 && m_state->active_publications == 0;
+    });
     m_state->entries.clear();
     return Result<void>();
 }
@@ -281,7 +287,10 @@ ReferenceRuntime::ReferenceRuntime(ActionRegistry& actions,
                                      RuntimeConfig::default_max_active_mailboxes,
                                      RuntimeConfig::default_max_queued_tasks_total,
                                      queue_capacity,
-                                     RuntimeConfig::default_max_token_size})
+                                     RuntimeConfig::default_max_token_size,
+                                     static_cast<std::size_t>(-1),
+                                     static_cast<std::size_t>(-1),
+                                     false})
 {
 }
 
@@ -301,8 +310,9 @@ Result<void> ReferenceRuntime::submit(ConversationKey key, std::string action_to
     }
     auto mailbox_it = m_mailboxes.end();
     bool inserted = false;
-    bool queued = false;
+    bool enqueued = false;
     bool was_scheduled = false;
+    const auto submit_index = m_submit_attempts++;
     try {
         auto insertion = m_mailboxes.try_emplace(key);
         mailbox_it = insertion.first;
@@ -317,25 +327,35 @@ Result<void> ReferenceRuntime::submit(ConversationKey key, std::string action_to
             m_mailboxes.erase(mailbox_it);
             return Error{ErrorCode::QueueFull, "active mailbox limit is full"};
         }
+        was_scheduled = mailbox.scheduled;
+        if (submit_index == m_config.fail_queue_insertion_on_submit) {
+            throw std::bad_alloc();
+        }
         mailbox.queue.push_back(Task{key, std::move(action_token)});
         ++m_queued_tasks;
-        was_scheduled = mailbox.scheduled;
+        enqueued = true;
         if (!mailbox.scheduled) {
             mailbox.scheduled = true;
             m_ready.push_back(key);
             m_condition.notify_one();
         }
-        queued = true;
     } catch (...) {
         if (mailbox_it != m_mailboxes.end()) {
             auto& mailbox = mailbox_it->second;
-            if (queued || (!was_scheduled && !mailbox.queue.empty())) {
+            if (enqueued) {
                 if (!mailbox.queue.empty()) {
                     mailbox.queue.pop_back();
                     --m_queued_tasks;
                 }
             }
-            if (!was_scheduled) mailbox.scheduled = false;
+            // A failed insertion never changes scheduling. If a later mutation
+            // fails, only undo the scheduling mutation performed by this call.
+            if (enqueued && !was_scheduled && mailbox.queue.empty()) {
+                mailbox.scheduled = false;
+                if (!m_ready.empty() && m_ready.back() == key) {
+                    m_ready.pop_back();
+                }
+            }
             if (inserted && mailbox.queue.empty() && !mailbox.scheduled) {
                 m_mailboxes.erase(mailbox_it);
             }
@@ -375,7 +395,9 @@ Result<void> ReferenceRuntime::shutdown()
 Result<void> ReferenceRuntime::failure_status() const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_terminal_error ? Result<void>(*m_terminal_error) : Result<void>();
+    return m_failed
+        ? Result<void>(Error{m_failure_code, "runtime stopped after an internal failure"})
+        : Result<void>();
 }
 
 std::size_t ReferenceRuntime::discarded_task_count() const noexcept
@@ -417,8 +439,8 @@ void ReferenceRuntime::worker_loop() noexcept
                     m_discarded_tasks += found->second.queue.size();
                     m_queued_tasks -= found->second.queue.size();
                     m_mailboxes.erase(found);
-                    m_terminal_error = Error{ErrorCode::RuntimeFailure,
-                                             "runtime stopped after ready-queue failure"};
+                    m_failed = true;
+                    m_failure_code = ErrorCode::RuntimeFailure;
                     m_accepting = false;
                     m_shutdown_requested = true;
                     m_condition.notify_all();
@@ -462,9 +484,16 @@ void ReferenceRuntime::execute(Task task) noexcept
             }
         }
     } catch (const std::exception& exception) {
-        report(task.key, Error{ErrorCode::HandlerUnavailable, exception.what()});
+        try {
+            report(task.key, Error{ErrorCode::HandlerUnavailable, exception.what()});
+        } catch (...) {
+        }
     } catch (...) {
-        report(task.key, Error{ErrorCode::HandlerUnavailable, "handler threw an unknown exception"});
+        try {
+            report(task.key, Error{ErrorCode::HandlerUnavailable,
+                                   "handler threw an unknown exception"});
+        } catch (...) {
+        }
     }
 }
 

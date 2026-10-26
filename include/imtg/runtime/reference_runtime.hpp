@@ -11,7 +11,6 @@
 #include <exception>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <string>
 #include <thread>
 #include <deque>
@@ -40,6 +39,7 @@ struct RuntimeConfig {
     std::size_t max_token_size = default_max_token_size;
     // Test-only deterministic fault injection; defaults disable injection.
     std::size_t fail_worker_start_after = static_cast<std::size_t>(-1);
+    std::size_t fail_queue_insertion_on_submit = static_cast<std::size_t>(-1);
     bool fail_ready_requeue = false;
 };
 
@@ -80,6 +80,7 @@ struct NotificationState {
     bool closed = false;
     std::unordered_map<std::thread::id, std::size_t> callback_depth;
     std::unordered_map<std::thread::id, std::size_t> publication_depth;
+    std::size_t active_publications{};
     std::function<void(std::exception_ptr)> error_sink;
     std::size_t max_callback_depth = 64;
 };
@@ -187,7 +188,9 @@ private:
     bool m_accepting = true;
     bool m_shutdown_requested = false;
     std::size_t m_queued_tasks = 0;
-    std::optional<Error> m_terminal_error;
+    std::size_t m_submit_attempts = 0;
+    bool m_failed = false;
+    ErrorCode m_failure_code = ErrorCode::InvalidState;
     std::size_t m_discarded_tasks = 0;
     FakeReconciler m_reconciler;
 };

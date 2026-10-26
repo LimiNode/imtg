@@ -203,11 +203,49 @@ int main()
     CHECK(second_callback_count.load() == 1);
     CHECK(multi_dispatcher.close_and_wait());
 
+    // External quiescence includes an error sink that outlives the last
+    // selected callback.
+    imtg::NotificationDispatcher* blocked_ptr = nullptr;
+    std::mutex sink_mutex;
+    std::condition_variable sink_condition;
+    bool sink_started = false;
+    bool release_sink = false;
+    imtg::NotificationDispatcher blocked_dispatcher([&](std::exception_ptr) {
+        std::unique_lock<std::mutex> lock(sink_mutex);
+        sink_started = true;
+        sink_condition.notify_all();
+        sink_condition.wait_for(lock, std::chrono::seconds(2), [&] { return release_sink; });
+    });
+    blocked_ptr = &blocked_dispatcher;
+    auto blocked_subscription = blocked_dispatcher.subscribe(
+        [](const imtg::Notification&) { throw std::runtime_error("blocked sink failure"); });
+    CHECK(blocked_subscription);
+    std::thread blocked_publisher([&] {
+        blocked_ptr->publish(imtg::Notification{"blocked", "1"});
+    });
+    {
+        std::unique_lock<std::mutex> lock(sink_mutex);
+        CHECK(sink_condition.wait_for(lock, std::chrono::seconds(2), [&] { return sink_started; }));
+    }
+    auto blocked_close = std::async(std::launch::async, [&] {
+        return blocked_dispatcher.close_and_wait();
+    });
+    CHECK(blocked_close.wait_for(std::chrono::milliseconds(100)) == std::future_status::timeout);
+    {
+        std::lock_guard<std::mutex> lock(sink_mutex);
+        release_sink = true;
+    }
+    sink_condition.notify_all();
+    blocked_publisher.join();
+    CHECK(blocked_close.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+    CHECK(blocked_close.get());
+
     // Recursive error reporting is bounded by the publication-depth guard.
     std::atomic<int> recursive_callbacks{0};
+    std::atomic<bool> recurse_errors{true};
     imtg::NotificationDispatcher* recursive_ptr = nullptr;
     imtg::NotificationDispatcher recursive_dispatcher([&](std::exception_ptr) {
-        if (recursive_callbacks.load() < 200) {
+        if (recurse_errors.load()) {
             recursive_ptr->publish(imtg::Notification{"recursive", "1"});
         }
     });
@@ -220,7 +258,10 @@ int main()
     CHECK(recursive_subscription);
     recursive_dispatcher.publish(imtg::Notification{"recursive", "0"});
     CHECK(recursive_callbacks.load() > 0);
-    CHECK(recursive_callbacks.load() <= 64);
+    CHECK(recursive_callbacks.load() == 64);
+    recurse_errors = false;
+    recursive_dispatcher.publish(imtg::Notification{"recursive", "restored"});
+    CHECK(recursive_callbacks.load() == 65);
     CHECK(recursive_dispatcher.close_and_wait());
 
     // Deterministic startup and requeue failure policies are observable.
@@ -271,6 +312,50 @@ int main()
         CHECK(failure_runtime.discarded_task_count() == 1);
         CHECK(!failure_runtime.failure_status());
         CHECK(!failure_runtime.submit(key(99), token_three.value()));
+    }
+
+    // A failed insertion into an existing mailbox must preserve its pending
+    // work and its scheduling entry.
+    {
+        imtg::RuntimeConfig admission_config;
+        admission_config.worker_count = 1;
+        admission_config.fail_queue_insertion_on_submit = 2;
+        std::mutex admission_mutex;
+        std::condition_variable admission_condition;
+        bool first_started = false;
+        bool release_first = false;
+        std::vector<int> admission_processed;
+        imtg::ReferenceRuntime admission_runtime(
+            actions, {},
+            [&](const imtg::ConversationKey&, const imtg::ActionCommand& command) {
+                const auto value = std::stoi(command.payload);
+                std::unique_lock<std::mutex> lock(admission_mutex);
+                admission_processed.push_back(value);
+                if (value == 1) {
+                    first_started = true;
+                    admission_condition.notify_all();
+                    admission_condition.wait_for(lock, std::chrono::seconds(2),
+                                                 [&] { return release_first; });
+                }
+                return imtg::Result<void>();
+            },
+            {}, admission_config);
+        CHECK(admission_runtime.submit(key(401), token_one.value()));
+        {
+            std::unique_lock<std::mutex> lock(admission_mutex);
+            CHECK(admission_condition.wait_for(lock, std::chrono::seconds(2),
+                                               [&] { return first_started; }));
+        }
+        CHECK(admission_runtime.submit(key(401), token_two.value()));
+        CHECK(!admission_runtime.submit(key(401), token_three.value()));
+        {
+            std::lock_guard<std::mutex> lock(admission_mutex);
+            release_first = true;
+        }
+        admission_condition.notify_all();
+        CHECK(admission_runtime.shutdown());
+        CHECK(admission_processed.size() == 2);
+        CHECK(admission_processed[0] == 1 && admission_processed[1] == 2);
     }
 
     for (const auto worker_count : {std::size_t{1}, std::size_t{2}, std::size_t{4}}) {

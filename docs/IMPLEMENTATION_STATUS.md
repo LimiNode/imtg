@@ -10,7 +10,7 @@
 | Immediate-Mode UI tree | `partial` | M1b implements immutable tree nodes, stable paths, RAII scopes, duplicate detection, and offline tests; components remain intentionally small |
 | Callback actions and typed events | `partial` | M1c implements typed versioned action registry, plain injectable codec boundary, scoped context, restart reconstruction, and offline tests; Telegram authentication remains M3 |
 | Controllers and application model | `partial` | M1d reference runtime provides render/command callbacks; richer controller composition remains planned |
-| Conversation scheduler and reference runtime | `partial` | M1d bounded worker pool with per-key serial mailboxes, bounded queues, synchronous commands, fake reconciler, observable fail-stop status, bounded shutdown and notification tests |
+| Conversation scheduler and reference runtime | `partial` | M1d bounded worker pool with per-key serial mailboxes, transactional admission rollback, bounded queues, synchronous commands, fake reconciler, allocation-safe observable fail-stop status, bounded publication/shutdown and notification tests |
 | FSM and sessions | `planned` | M2 persistence/recovery tests |
 | Storage contracts | `contract-only` | [STORAGE.md](contracts/STORAGE.md); no implementation |
 | MDBX backend | `planned` | M2 conformance suite and adapter |
