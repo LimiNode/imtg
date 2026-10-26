@@ -6,6 +6,10 @@
 
 namespace imtg {
 
+namespace {
+thread_local std::size_t g_error_sink_depth = 0;
+}
+
 Result<UiRevisions> FakeReconciler::reconcile(const ConversationKey& key,
                                               const UiTree& desired)
 {
@@ -112,11 +116,13 @@ void NotificationDispatcher::publish(const Notification& notification)
         if (m_state->closed) {
             return;
         }
-        const auto depth_entry = m_state->callback_depth.find(std::this_thread::get_id());
-        const auto depth = depth_entry == m_state->callback_depth.end() ? 0 : depth_entry->second;
+        const auto thread_id = std::this_thread::get_id();
+        const auto depth_entry = m_state->publication_depth.find(thread_id);
+        const auto depth = depth_entry == m_state->publication_depth.end() ? 0 : depth_entry->second;
         if (depth >= m_state->max_callback_depth) {
             depth_exceeded = true;
         } else {
+            ++m_state->publication_depth[thread_id];
             try {
                 selected.reserve(m_state->entries.size());
             } catch (...) {
@@ -139,8 +145,17 @@ void NotificationDispatcher::publish(const Notification& notification)
             std::runtime_error("notification callback depth exceeded"));
     }
     if (selection_error) {
-        if (m_state->error_sink) {
+        if (m_state->error_sink && g_error_sink_depth < m_state->max_callback_depth) {
+            ++g_error_sink_depth;
             try { m_state->error_sink(selection_error); } catch (...) { }
+            --g_error_sink_depth;
+        }
+        {
+            std::lock_guard<std::mutex> lock(m_state->mutex);
+            auto found = m_state->publication_depth.find(std::this_thread::get_id());
+            if (found != m_state->publication_depth.end() && --found->second == 0) {
+                m_state->publication_depth.erase(found);
+            }
         }
         return;
     }
@@ -149,7 +164,9 @@ void NotificationDispatcher::publish(const Notification& notification)
         std::exception_ptr bookkeeping_error;
         {
             std::lock_guard<std::mutex> lock(m_state->mutex);
-            if (!entry->active || m_state->closed) {
+            // Closing prevents new publications, but callbacks selected by this
+            // publication are still completed before its quiescence boundary.
+            if (!entry->active) {
                 --m_state->in_flight;
                 m_state->condition.notify_all();
                 continue;
@@ -163,8 +180,10 @@ void NotificationDispatcher::publish(const Notification& notification)
             }
         }
         if (bookkeeping_error) {
-            if (m_state->error_sink) {
+            if (m_state->error_sink && g_error_sink_depth < m_state->max_callback_depth) {
+                ++g_error_sink_depth;
                 try { m_state->error_sink(bookkeeping_error); } catch (...) { }
+                --g_error_sink_depth;
             }
             continue;
         }
@@ -188,8 +207,18 @@ void NotificationDispatcher::publish(const Notification& notification)
             }
             m_state->condition.notify_all();
         }
-        if (callback_error && m_state->error_sink) {
+        if (callback_error && m_state->error_sink
+            && g_error_sink_depth < m_state->max_callback_depth) {
+            ++g_error_sink_depth;
             try { m_state->error_sink(callback_error); } catch (...) { }
+            --g_error_sink_depth;
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_state->mutex);
+        auto found = m_state->publication_depth.find(std::this_thread::get_id());
+        if (found != m_state->publication_depth.end() && --found->second == 0) {
+            m_state->publication_depth.erase(found);
         }
     }
 }
@@ -198,7 +227,8 @@ Result<void> NotificationDispatcher::close_and_wait()
 {
     std::unique_lock<std::mutex> lock(m_state->mutex);
     m_state->closed = true;
-    if (m_state->callback_depth.count(std::this_thread::get_id()) != 0) {
+    if (m_state->callback_depth.count(std::this_thread::get_id()) != 0
+        || m_state->publication_depth.count(std::this_thread::get_id()) != 0) {
         return Error{ErrorCode::InvalidState, "cannot wait for dispatcher from callback"};
     }
     m_state->condition.wait(lock, [this] { return m_state->in_flight == 0; });
@@ -222,6 +252,9 @@ ReferenceRuntime::ReferenceRuntime(ActionRegistry& actions,
     m_workers.reserve(m_config.worker_count);
     try {
         for (std::size_t index = 0; index < m_config.worker_count; ++index) {
+            if (index == m_config.fail_worker_start_after) {
+                throw std::runtime_error("injected worker startup failure");
+            }
             m_workers.emplace_back([this] { worker_loop(); });
         }
     } catch (...) {
@@ -260,46 +293,55 @@ ReferenceRuntime::~ReferenceRuntime()
 Result<void> ReferenceRuntime::submit(ConversationKey key, std::string action_token)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-        if (!m_accepting) {
-            return Error{ErrorCode::InvalidState, "runtime is shutting down"};
-        }
+    if (!m_accepting) {
+        return Error{ErrorCode::InvalidState, "runtime is shutting down"};
+    }
     if (action_token.size() > m_config.max_token_size) {
         return Error{ErrorCode::InvalidArgument, "action token exceeds configured limit"};
     }
-    auto& mailbox = m_mailboxes[key];
-    if (mailbox.queue.size() >= m_config.max_queued_tasks_per_conversation
-        || m_queued_tasks >= m_config.max_queued_tasks_total) {
-        if (mailbox.queue.empty() && !mailbox.scheduled) {
-            m_mailboxes.erase(key);
-        }
-        return Error{ErrorCode::QueueFull, "session queue is full"};
-    }
-    if (mailbox.queue.empty() && !mailbox.scheduled
-        && m_mailboxes.size() > m_config.max_active_mailboxes) {
-        m_mailboxes.erase(key);
-        return Error{ErrorCode::QueueFull, "active mailbox limit is full"};
-    }
+    auto mailbox_it = m_mailboxes.end();
+    bool inserted = false;
+    bool queued = false;
+    bool was_scheduled = false;
     try {
+        auto insertion = m_mailboxes.try_emplace(key);
+        mailbox_it = insertion.first;
+        inserted = insertion.second;
+        auto& mailbox = mailbox_it->second;
+        if (mailbox.queue.size() >= m_config.max_queued_tasks_per_conversation
+            || m_queued_tasks >= m_config.max_queued_tasks_total) {
+            if (inserted && mailbox.queue.empty() && !mailbox.scheduled) m_mailboxes.erase(mailbox_it);
+            return Error{ErrorCode::QueueFull, "session queue is full"};
+        }
+        if (inserted && m_mailboxes.size() > m_config.max_active_mailboxes) {
+            m_mailboxes.erase(mailbox_it);
+            return Error{ErrorCode::QueueFull, "active mailbox limit is full"};
+        }
         mailbox.queue.push_back(Task{key, std::move(action_token)});
         ++m_queued_tasks;
+        was_scheduled = mailbox.scheduled;
+        if (!mailbox.scheduled) {
+            mailbox.scheduled = true;
+            m_ready.push_back(key);
+            m_condition.notify_one();
+        }
+        queued = true;
     } catch (...) {
-        if (mailbox.queue.empty() && !mailbox.scheduled) {
-            m_mailboxes.erase(key);
+        if (mailbox_it != m_mailboxes.end()) {
+            auto& mailbox = mailbox_it->second;
+            if (queued || (!was_scheduled && !mailbox.queue.empty())) {
+                if (!mailbox.queue.empty()) {
+                    mailbox.queue.pop_back();
+                    --m_queued_tasks;
+                }
+            }
+            if (!was_scheduled) mailbox.scheduled = false;
+            if (inserted && mailbox.queue.empty() && !mailbox.scheduled) {
+                m_mailboxes.erase(mailbox_it);
+            }
         }
         return Error{ErrorCode::QueueFull, "runtime admission allocation failed"};
     }
-    if (!mailbox.scheduled) {
-        mailbox.scheduled = true;
-        try {
-            m_ready.push_back(key);
-        } catch (...) {
-            mailbox.scheduled = false;
-            m_queued_tasks -= mailbox.queue.size();
-            m_mailboxes.erase(key);
-            return Error{ErrorCode::QueueFull, "runtime ready-queue allocation failed"};
-        }
-        m_condition.notify_one();
-        }
     return Result<void>();
 }
 
@@ -319,7 +361,7 @@ Result<void> ReferenceRuntime::shutdown()
     }
     std::lock_guard<std::mutex> join_lock(m_join_mutex);
     if (m_joined) {
-        return Result<void>();
+        return failure_status();
     }
     for (auto& worker : m_workers) {
         if (worker.joinable()) {
@@ -327,7 +369,19 @@ Result<void> ReferenceRuntime::shutdown()
         }
     }
     m_joined = true;
-    return Result<void>();
+    return failure_status();
+}
+
+Result<void> ReferenceRuntime::failure_status() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_terminal_error ? Result<void>(*m_terminal_error) : Result<void>();
+}
+
+std::size_t ReferenceRuntime::discarded_task_count() const noexcept
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_discarded_tasks;
 }
 
 void ReferenceRuntime::worker_loop() noexcept
@@ -356,11 +410,15 @@ void ReferenceRuntime::worker_loop() noexcept
             auto found = m_mailboxes.find(completed_key);
             if (found != m_mailboxes.end() && !found->second.queue.empty()) {
                 try {
+                    if (m_config.fail_ready_requeue) throw std::bad_alloc();
                     m_ready.push_back(completed_key);
                     m_condition.notify_one();
                 } catch (...) {
+                    m_discarded_tasks += found->second.queue.size();
                     m_queued_tasks -= found->second.queue.size();
                     m_mailboxes.erase(found);
+                    m_terminal_error = Error{ErrorCode::RuntimeFailure,
+                                             "runtime stopped after ready-queue failure"};
                     m_accepting = false;
                     m_shutdown_requested = true;
                     m_condition.notify_all();

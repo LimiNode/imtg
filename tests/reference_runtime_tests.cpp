@@ -1,18 +1,14 @@
 #include "imtg/runtime/runtime.hpp"
+#include "test_support.hpp"
 
 #include <atomic>
 #include <stdexcept>
 #include <chrono>
 #include <condition_variable>
+#include <future>
 #include <mutex>
 #include <thread>
 #include <vector>
-
-#define CHECK(condition) \
-    do { \
-        if (!(condition)) throw std::runtime_error("check failed: " #condition); \
-    } while (false)
-#define assert(condition) CHECK(condition)
 
 namespace {
 
@@ -62,11 +58,11 @@ int main()
             }
             return context.dispatch(imtg::ActionCommand{"Increment", std::to_string(payload.value)});
         });
-    assert(action);
+    CHECK(action);
     const auto token_one = actions.make_token(action.value(), CommandPayload{1});
     const auto token_two = actions.make_token(action.value(), CommandPayload{2});
     const auto token_three = actions.make_token(action.value(), CommandPayload{3});
-    assert(token_one && token_two && token_three);
+    CHECK(token_one && token_two && token_three);
 
     std::mutex error_mutex;
     std::vector<imtg::ErrorCode> errors;
@@ -93,12 +89,12 @@ int main()
         [&state_mutex, &processed, &runtime_ptr, &gate_mutex, &gate_condition,
          &first_started, &release_first](const imtg::ConversationKey&,
                                          const imtg::ActionCommand& command) {
-            assert(command.type == "Increment");
+            CHECK(command.type == "Increment");
             if (command.payload == "1") {
                 std::unique_lock<std::mutex> lock(gate_mutex);
                 first_started = true;
                 gate_condition.notify_all();
-                gate_condition.wait(lock, [&] { return release_first; });
+                gate_condition.wait_for(lock, std::chrono::seconds(2), [&] { return release_first; });
             }
             if (runtime_ptr != nullptr && command.payload == "2") {
                 runtime_ptr->request_shutdown();
@@ -111,27 +107,27 @@ int main()
         },
         1);
     runtime_ptr = &runtime;
-    assert(runtime.submit(key(10), token_one.value()));
+    CHECK(runtime.submit(key(10), token_one.value()));
     {
         std::unique_lock<std::mutex> lock(gate_mutex);
-        gate_condition.wait(lock, [&] { return first_started; });
+        CHECK(gate_condition.wait_for(lock, std::chrono::seconds(2), [&] { return first_started; }));
     }
-    assert(runtime.submit(key(20), token_three.value()));
+    CHECK(runtime.submit(key(20), token_three.value()));
     {
         std::unique_lock<std::mutex> lock(state_mutex);
-        processed_condition.wait(lock, [&] { return processed.size() >= 2; });
+        CHECK(processed_condition.wait_for(lock, std::chrono::seconds(2), [&] { return processed.size() >= 2; }));
     }
-    assert(runtime.submit(key(10), token_two.value()));
-    assert(!runtime.submit(key(10), token_one.value()));
+    CHECK(runtime.submit(key(10), token_two.value()));
+    CHECK(!runtime.submit(key(10), token_one.value()));
     {
         std::lock_guard<std::mutex> lock(gate_mutex);
         release_first = true;
     }
     gate_condition.notify_all();
-    assert(runtime.shutdown());
-    assert(runtime.shutdown());
-    assert(processed.size() == 3);
-    assert(runtime.reconciler().revisions(key(10)).desired == 1);
+    CHECK(runtime.shutdown());
+    CHECK(runtime.shutdown());
+    CHECK(processed.size() == 3);
+    CHECK(runtime.reconciler().revisions(key(10)).desired == 1);
 
     imtg::NotificationDispatcher dispatcher;
     std::mutex callback_mutex;
@@ -144,14 +140,14 @@ int main()
         std::unique_lock<std::mutex> lock(callback_mutex);
         callback_started = true;
         callback_condition.notify_all();
-        callback_condition.wait(lock, [&] { return release_callback; });
+        callback_condition.wait_for(lock, std::chrono::seconds(2), [&] { return release_callback; });
     });
-    assert(subscription_result);
+    CHECK(subscription_result);
     auto subscription = std::move(subscription_result).value();
     std::thread publisher([&] { dispatcher.publish(imtg::Notification{"tick", "1"}); });
     {
         std::unique_lock<std::mutex> lock(callback_mutex);
-        callback_condition.wait(lock, [&] { return callback_started; });
+        CHECK(callback_condition.wait_for(lock, std::chrono::seconds(2), [&] { return callback_started; }));
     }
     subscription.reset();
     {
@@ -161,7 +157,7 @@ int main()
     callback_condition.notify_all();
     publisher.join();
     dispatcher.publish(imtg::Notification{"tick", "2"});
-    assert(callback_count.load() == 1);
+    CHECK(callback_count.load() == 1);
     CHECK(dispatcher.close_and_wait());
 
     std::atomic<int> reported_errors{0};
@@ -174,12 +170,162 @@ int main()
             nested_close = nested_dispatcher.close_and_wait();
             throw std::runtime_error("callback failure");
         });
-    assert(nested_subscription);
+    CHECK(nested_subscription);
     auto nested_handle = std::move(nested_subscription).value();
     nested_dispatcher.publish(imtg::Notification{"outer", "1"});
-    assert(!nested_close);
-    assert(reported_errors.load() >= 1);
-    assert(nested_dispatcher.close_and_wait());
+    CHECK(!nested_close);
+    CHECK(reported_errors.load() >= 1);
+    CHECK(nested_dispatcher.close_and_wait());
+
+    // A failing callback must not let an error sink self-wait on a publication
+    // that still has another selected callback to run.
+    imtg::NotificationDispatcher* multi_ptr = nullptr;
+    imtg::Result<void> sink_close;
+    std::atomic<int> second_callback_count{0};
+    imtg::NotificationDispatcher multi_dispatcher([&](std::exception_ptr) {
+        sink_close = multi_ptr->close_and_wait();
+    });
+    multi_ptr = &multi_dispatcher;
+    auto first = multi_dispatcher.subscribe([](const imtg::Notification&) {
+        throw std::runtime_error("first callback failure");
+    });
+    auto second = multi_dispatcher.subscribe([&](const imtg::Notification&) {
+        second_callback_count.fetch_add(1);
+    });
+    CHECK(first && second);
+    auto publish_future = std::async(std::launch::async, [&] {
+        multi_dispatcher.publish(imtg::Notification{"multi", "1"});
+    });
+    CHECK(publish_future.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+    publish_future.get();
+    CHECK(!sink_close);
+    CHECK(sink_close.error().code == imtg::ErrorCode::InvalidState);
+    CHECK(second_callback_count.load() == 1);
+    CHECK(multi_dispatcher.close_and_wait());
+
+    // Recursive error reporting is bounded by the publication-depth guard.
+    std::atomic<int> recursive_callbacks{0};
+    imtg::NotificationDispatcher* recursive_ptr = nullptr;
+    imtg::NotificationDispatcher recursive_dispatcher([&](std::exception_ptr) {
+        if (recursive_callbacks.load() < 200) {
+            recursive_ptr->publish(imtg::Notification{"recursive", "1"});
+        }
+    });
+    recursive_ptr = &recursive_dispatcher;
+    auto recursive_subscription = recursive_dispatcher.subscribe(
+        [&](const imtg::Notification&) {
+            recursive_callbacks.fetch_add(1);
+            throw std::runtime_error("recursive callback failure");
+        });
+    CHECK(recursive_subscription);
+    recursive_dispatcher.publish(imtg::Notification{"recursive", "0"});
+    CHECK(recursive_callbacks.load() > 0);
+    CHECK(recursive_callbacks.load() <= 64);
+    CHECK(recursive_dispatcher.close_and_wait());
+
+    // Deterministic startup and requeue failure policies are observable.
+    {
+        imtg::RuntimeConfig startup_config;
+        startup_config.worker_count = 3;
+        startup_config.fail_worker_start_after = 1;
+        bool startup_failed = false;
+        try {
+            imtg::ReferenceRuntime startup_failure(actions, {}, {}, {}, startup_config);
+        } catch (const std::runtime_error&) {
+            startup_failed = true;
+        }
+        CHECK(startup_failed);
+    }
+    {
+        imtg::RuntimeConfig failure_config;
+        failure_config.worker_count = 1;
+        failure_config.fail_ready_requeue = true;
+        std::mutex failure_mutex;
+        std::condition_variable failure_condition;
+        bool started = false;
+        bool release = false;
+        imtg::ReferenceRuntime failure_runtime(
+            actions, {},
+            [&](const imtg::ConversationKey&, const imtg::ActionCommand&) {
+                std::unique_lock<std::mutex> lock(failure_mutex);
+                started = true;
+                failure_condition.notify_all();
+                failure_condition.wait_for(lock, std::chrono::seconds(2), [&] { return release; });
+                return imtg::Result<void>();
+            },
+            {}, failure_config);
+        CHECK(failure_runtime.submit(key(99), token_one.value()));
+        {
+            std::unique_lock<std::mutex> lock(failure_mutex);
+            CHECK(failure_condition.wait_for(lock, std::chrono::seconds(2), [&] { return started; }));
+        }
+        CHECK(failure_runtime.submit(key(99), token_two.value()));
+        {
+            std::lock_guard<std::mutex> lock(failure_mutex);
+            release = true;
+        }
+        failure_condition.notify_all();
+        const auto failure_result = failure_runtime.shutdown();
+        CHECK(!failure_result);
+        CHECK(failure_result.error().code == imtg::ErrorCode::RuntimeFailure);
+        CHECK(failure_runtime.discarded_task_count() == 1);
+        CHECK(!failure_runtime.failure_status());
+        CHECK(!failure_runtime.submit(key(99), token_three.value()));
+    }
+
+    for (const auto worker_count : {std::size_t{1}, std::size_t{2}, std::size_t{4}}) {
+        imtg::RuntimeConfig count_config;
+        count_config.worker_count = worker_count;
+        imtg::ReferenceRuntime count_runtime(actions, {}, {}, {}, count_config);
+        CHECK(count_runtime.submit(key(static_cast<std::int64_t>(worker_count + 200)),
+                                   token_three.value()));
+        CHECK(count_runtime.shutdown());
+    }
+
+    {
+        imtg::RuntimeConfig limit_config;
+        limit_config.worker_count = 1;
+        limit_config.max_active_mailboxes = 1;
+        limit_config.max_queued_tasks_total = 1;
+        std::mutex limit_mutex;
+        std::condition_variable limit_condition;
+        bool limit_started = false;
+        bool limit_release = false;
+        imtg::ReferenceRuntime limit_runtime(
+            actions, {},
+            [&](const imtg::ConversationKey&, const imtg::ActionCommand&) {
+                std::unique_lock<std::mutex> lock(limit_mutex);
+                limit_started = true;
+                limit_condition.notify_all();
+                limit_condition.wait_for(lock, std::chrono::seconds(2), [&] { return limit_release; });
+                return imtg::Result<void>();
+            },
+            {}, limit_config);
+        CHECK(limit_runtime.submit(key(301), token_one.value()));
+        {
+            std::unique_lock<std::mutex> lock(limit_mutex);
+            CHECK(limit_condition.wait_for(lock, std::chrono::seconds(2), [&] { return limit_started; }));
+        }
+        CHECK(!limit_runtime.submit(key(302), token_two.value()));
+        {
+            std::lock_guard<std::mutex> lock(limit_mutex);
+            limit_release = true;
+        }
+        limit_condition.notify_all();
+        CHECK(limit_runtime.shutdown());
+    }
+
+    {
+        imtg::ReferenceRuntime concurrent_shutdown(actions, {}, {}, {});
+        imtg::Result<void> shutdown_one;
+        imtg::Result<void> shutdown_two;
+        std::thread first_shutdown([&] { shutdown_one = concurrent_shutdown.shutdown(); });
+        std::thread second_shutdown([&] { shutdown_two = concurrent_shutdown.shutdown(); });
+        first_shutdown.join();
+        second_shutdown.join();
+        CHECK(shutdown_one);
+        CHECK(shutdown_two);
+    }
 
     bool invalid_config_rejected = false;
     try {
@@ -189,7 +335,7 @@ int main()
     } catch (const std::invalid_argument&) {
         invalid_config_rejected = true;
     }
-    assert(invalid_config_rejected);
+    CHECK(invalid_config_rejected);
 
     return 0;
 }

@@ -11,6 +11,7 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <deque>
@@ -37,6 +38,9 @@ struct RuntimeConfig {
     std::size_t max_queued_tasks_total = default_max_queued_tasks_total;
     std::size_t max_queued_tasks_per_conversation = default_max_queued_tasks_per_conversation;
     std::size_t max_token_size = default_max_token_size;
+    // Test-only deterministic fault injection; defaults disable injection.
+    std::size_t fail_worker_start_after = static_cast<std::size_t>(-1);
+    bool fail_ready_requeue = false;
 };
 
 /// \brief Telegram-free deterministic fake reconciler for reference-runtime tests.
@@ -75,6 +79,7 @@ struct NotificationState {
     std::size_t next_id{};
     bool closed = false;
     std::unordered_map<std::thread::id, std::size_t> callback_depth;
+    std::unordered_map<std::thread::id, std::size_t> publication_depth;
     std::function<void(std::exception_ptr)> error_sink;
     std::size_t max_callback_depth = 64;
 };
@@ -148,6 +153,8 @@ public:
     [[nodiscard]] Result<void> submit(ConversationKey key, std::string action_token);
     void request_shutdown() noexcept;
     [[nodiscard]] Result<void> shutdown();
+    [[nodiscard]] Result<void> failure_status() const;
+    [[nodiscard]] std::size_t discarded_task_count() const noexcept;
     [[nodiscard]] FakeReconciler& reconciler() noexcept;
 
 private:
@@ -180,6 +187,8 @@ private:
     bool m_accepting = true;
     bool m_shutdown_requested = false;
     std::size_t m_queued_tasks = 0;
+    std::optional<Error> m_terminal_error;
+    std::size_t m_discarded_tasks = 0;
     FakeReconciler m_reconciler;
 };
 

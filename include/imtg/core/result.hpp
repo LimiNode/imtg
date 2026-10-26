@@ -25,6 +25,7 @@ enum class ErrorCode {
     HandlerUnavailable,
     DispatchRejected,
     QueueFull,
+    RuntimeFailure,
 };
 
 /// \brief Describes a failed core operation without requiring exceptions.
