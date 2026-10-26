@@ -4,14 +4,14 @@ imtg is a C++17 framework design for Telegram bots whose views are described wit
 
 ## Project status
 
-This repository is at **D0 — Architecture & Engineering Foundation**. It currently contains design documentation only. There is no production runtime, Telegram transport, UI implementation, storage adapter, build target, or release artifact yet. Code fragments in the documentation are conceptual contracts, not compilable API.
+This repository is at **M1a — Core Foundation & Typed Identities**. The C++17 `imtg_core` target and offline identity/clock tests are implemented. UI rendering, action routing, scheduler, storage adapters, Telegram transport, and release artifacts are not implemented yet. Code fragments in the documentation remain conceptual unless identified as implemented in [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
 ## Design in one minute
 
 An application redraws a screen from current state for each logical update. Stable component IDs make the resulting UI tree comparable across renders. Application composition registers a stable, versioned action route; a button binds its serializable payload to that route. A later Telegram update resolves the pre-registered handler, which runs only in a short-lived `ActionContext`. Required changes use transactional commands and durable render intents; typed events may notify other services. Rendering and delivery remain separate so Telegram failures can be retried through an outbox without replaying arbitrary C++ callbacks.
 
 ```cpp
-// Conceptual API; not implemented in D0. Registered before update intake.
+// Conceptual API; not implemented in M1a. Registered before update intake.
 const auto save_action = app.actions().register_action<SaveRequested>(
     "settings.save.v1",
     [](imtg::ActionContext& ctx, const SaveRequested& command) {
@@ -59,4 +59,4 @@ Normative contracts live in [`docs/contracts/`](docs/contracts/). Significant de
 
 ## Next step
 
-The next implementation PR should establish a deterministic, Telegram-free UI tree and callback runtime (M1), with tests for stable IDs, callback lifetime, event ordering, and reconciliation. See the roadmap for the full dependency chain.
+The next stacked PR is M1b: a deterministic, Telegram-free UI tree with stable IDs and immutable render data. See the roadmap for the full dependency chain.

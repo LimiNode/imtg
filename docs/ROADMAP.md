@@ -20,6 +20,8 @@ The graph shows implementation blockers, not a mandatory serial work queue. M4 c
 
 ## M1 — Typed UI tree, callbacks, controllers, deterministic core
 
+M1 is delivered as independently reviewable stacked PRs: **M1a** foundation and typed identities, **M1b** deterministic UI tree, **M1c** action registry/callback semantics, and **M1d** scheduler/reference runtime. Each PR must build and test against its declared base; the M1 milestone remains `partial` until all four acceptance gates pass.
+
 **Scope:** Telegram-free render tree, stable IDs, `snake_case` UI API, versioned action routes, serializable payload validation, action scope, typed events, controller/model composition, deterministic scheduler and reconciler fakes. **Depends on:** D0; M1 must use the accepted `ConversationKey` (`bot_id + chat_id + Chat` or `UserInChat`). **Architectural decisions closed before implementation:** action-token lifecycle, route reconstruction after restart, callback lifetime, key equality/encoding, and per-key ordering. **May remain open:** thread/topic transport mapping, reconciler conflict policy, dispatcher implementation, and RAII grouping syntax. **Deliverables:** public headers, tests, API docs, examples. **Acceptance:** repeated renders are deterministic; malformed/unknown/stale callbacks are rejected; callbacks cannot escape scope; route handlers resolve after restart; per-key ordering is tested; reconciliation is idempotent. **Tests:** unit, property/fuzz tests for IDs/tokens, deterministic integration tests. **Exit:** M2 can persist session contracts without changing UI semantics. **Deferred:** Telegram delivery and database adapters.
 
 ## M2 — FSM, sessions, storage contracts, first MDBX backend
