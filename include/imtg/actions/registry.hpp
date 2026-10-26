@@ -5,6 +5,8 @@
 #include "imtg/core/clock.hpp"
 
 #include <functional>
+#include <charconv>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
@@ -119,7 +121,7 @@ public:
         PayloadCodec<Payload> codec,
         Handler<Payload> handler)
     {
-        if (action_id.value.empty() || !codec.encode || !codec.decode || !handler) {
+        if (!is_canonical_route(action_id.value) || !codec.encode || !codec.decode || !handler) {
             return Error{ErrorCode::InvalidArgument, "action registration is incomplete"};
         }
 
@@ -207,6 +209,22 @@ public:
     }
 
 private:
+    static bool is_canonical_route(std::string_view route) noexcept
+    {
+        const auto marker = route.rfind(".v");
+        if (marker == std::string_view::npos || marker == 0 || marker + 2 >= route.size()) {
+            return false;
+        }
+        const auto digits = route.substr(marker + 2);
+        if (digits.size() > 1 && digits.front() == '0') {
+            return false;
+        }
+        std::uint32_t version = 0;
+        const auto parsed = std::from_chars(digits.data(), digits.data() + digits.size(), version);
+        return parsed.ec == std::errc{} && parsed.ptr == digits.data() + digits.size()
+            && version != 0;
+    }
+
     struct Entry {
         std::uint32_t payload_version{};
         std::uint64_t generation{};

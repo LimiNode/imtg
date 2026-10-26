@@ -50,6 +50,14 @@ int main()
     std::mutex mutex;
     std::vector<std::uint64_t> dispatched;
 
+    for (const auto& invalid_route : {"delete", "delete.v", "delete.v0", "delete.v01",
+                                      "delete.vx", ".v1", "delete.v4294967296"}) {
+        const auto rejected = registry.register_action<DeleteItem>(
+            imtg::ActionId{invalid_route}, delete_codec(1),
+            [](imtg::ActionContext&, const DeleteItem&) { return imtg::Result<void>(); });
+        assert(!rejected);
+    }
+
     const auto handle_result = registry.register_action<DeleteItem>(
         imtg::ActionId{"delete.v1"},
         delete_codec(1),
