@@ -1,6 +1,8 @@
 # Implementation status
 
-**As of M1d:** the repository contains the Telegram-free M1 foundation, including deterministic UI/action primitives and a bounded reference runtime. Production persistence, delivery, and transport remain planned.
+**As of merged M1:** the repository contains the complete Telegram-free M1 foundation, including deterministic UI/action primitives and a bounded reference runtime. The five stacked M1 PRs are merged into `main`; production persistence, delivery, and transport remain planned for later milestones.
+
+M1 acceptance gates are complete: deterministic rendering, typed/versioned actions, stale-handle rejection, per-conversation ordering, bounded admission and shutdown, observable worker failure, and dispatcher quiescence are covered by the offline test suite and the Debug/Release plus sanitizer CI matrix. M2 remains design-only until its storage protocol and recovery contracts are accepted.
 
 | Area | Status | Evidence / next proof |
 |---|---|---|
