@@ -79,7 +79,7 @@ Result<void> UiBuilder::button(std::string_view id,
         return Error{ErrorCode::InvalidArgument, "button action id cannot be empty"};
     }
     return append_node(NodeKind::Button, id, label,
-                       ButtonDescriptor{std::string(action_id), std::string(payload)});
+                       ButtonDescriptor{std::string(action_id), 0u, std::string(payload), false});
 }
 
 Result<UiTree> UiBuilder::finish()

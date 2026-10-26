@@ -8,14 +8,14 @@ namespace imtg {
 
 using ClockTime = std::chrono::system_clock::time_point;
 
-/// rief Clock boundary used by deterministic core components.
+/// \brief Clock boundary used by deterministic core components.
 class IClock {
 public:
     virtual ~IClock() = default;
     [[nodiscard]] virtual ClockTime now() const = 0;
 };
 
-/// rief Production clock implementation backed by system_clock.
+/// \brief Production clock implementation backed by system_clock.
 class SystemClock final : public IClock {
 public:
     [[nodiscard]] ClockTime now() const override
@@ -24,7 +24,7 @@ public:
     }
 };
 
-/// rief Manually controlled clock for offline deterministic tests.
+/// \brief Manually controlled clock for offline deterministic tests.
 class ManualClock final : public IClock {
 public:
     explicit ManualClock(ClockTime initial) : m_now(initial) {}

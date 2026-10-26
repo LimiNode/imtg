@@ -57,7 +57,7 @@ struct UserInChat {
 
 using SessionScope = std::variant<Chat, UserInChat>;
 
-/// rief Stable identity for one serialized logical interaction.
+/// \brief Stable identity for one serialized logical interaction.
 struct ConversationKey {
     BotId bot_id;
     ChatId chat_id;

@@ -2,8 +2,10 @@
 #define IMTG_UI_TREE_HPP
 
 #include "imtg/core/result.hpp"
+#include "imtg/actions/registry.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -25,12 +27,15 @@ enum class NodeKind {
 
 struct ButtonDescriptor {
     std::string action_id;
+    std::uint32_t payload_version{};
     std::string payload;
+    bool validated = false;
 
     friend bool operator==(const ButtonDescriptor& left,
                            const ButtonDescriptor& right) noexcept
     {
-        return left.action_id == right.action_id && left.payload == right.payload;
+        return left.action_id == right.action_id && left.payload_version == right.payload_version
+            && left.payload == right.payload && left.validated == right.validated;
     }
 };
 
@@ -50,7 +55,7 @@ struct UiNode {
     }
 };
 
-/// rief Immutable result of one deterministic UI render.
+/// \brief Immutable result of one deterministic UI render.
 class UiTree {
 public:
     UiTree() = default;
@@ -70,7 +75,7 @@ private:
     std::vector<UiNode> m_nodes;
 };
 
-/// rief Builds one render without global state or shared mutable context.
+/// \brief Builds one render without global state or shared mutable context.
 class UiBuilder {
 public:
     class Scope {
@@ -98,17 +103,17 @@ public:
         std::size_t m_node_index = 0;
     };
 
-    UiBuilder() = default;
+    explicit UiBuilder(ActionRegistry* registry = nullptr) : m_registry(registry) {}
     UiBuilder(const UiBuilder&) = delete;
     UiBuilder& operator=(const UiBuilder&) = delete;
 
-    /// rief Opens the required root scope.
+    /// \brief Opens the required root scope.
     [[nodiscard]] Result<Scope> begin(std::string_view id);
 
-    /// rief Opens a nested section scope that closes at RAII scope end.
+    /// \brief Opens a nested section scope that closes at RAII scope end.
     [[nodiscard]] Result<Scope> section(std::string_view id, std::string_view title = {});
 
-    /// rief Opens a keyboard row/grouping scope.
+    /// \brief Opens a keyboard row/grouping scope.
     [[nodiscard]] Result<Scope> row(std::string_view id);
 
     [[nodiscard]] Result<void> text(std::string_view id, std::string_view value);
@@ -119,7 +124,38 @@ public:
                                       std::string_view action_id,
                                       std::string_view payload = {});
 
-    /// rief Finishes a render after all RAII scopes have closed.
+    template <typename Payload>
+    [[nodiscard]] Result<void> button(std::string_view id,
+                                      std::string_view label,
+                                      const ActionHandle<Payload>& action,
+                                      const Payload& payload)
+    {
+        const auto validation = m_registry != nullptr ? m_registry->validate_handle(action)
+                                                       : action.validate();
+        if (!validation) {
+            return validation.error();
+        }
+        const auto encoded = action.encode_payload(payload);
+        if (!encoded) {
+            return encoded.error();
+        }
+        return append_node(NodeKind::Button, id, label,
+                           ButtonDescriptor{action.action_id().value,
+                                            action.payload_version(),
+                                            encoded.value(),
+                                            true});
+    }
+
+    template <typename Payload>
+    [[nodiscard]] Result<void> button(std::string_view id,
+                                      std::string_view label,
+                                      const Payload& payload,
+                                      const ActionHandle<Payload>& action)
+    {
+        return button(id, label, action, payload);
+    }
+
+    /// \brief Finishes a render after all RAII scopes have closed.
     [[nodiscard]] Result<UiTree> finish();
 
 private:
@@ -141,6 +177,7 @@ private:
     std::vector<Frame> m_stack;
     bool m_finished = false;
     bool m_scope_error = false;
+    ActionRegistry* m_registry = nullptr;
 };
 
 } // namespace imtg

@@ -9,7 +9,7 @@
 
 namespace imtg {
 
-/// rief Stable error categories shared by core value-type APIs.
+/// \brief Stable error categories shared by core value-type APIs.
 enum class ErrorCode {
     InvalidArgument,
     InvalidEncoding,
@@ -18,9 +18,15 @@ enum class ErrorCode {
     DuplicateId,
     InvalidState,
     ScopeMismatch,
+    UnknownAction,
+    MalformedAction,
+    PayloadVersionMismatch,
+    ExpiredAction,
+    HandlerUnavailable,
+    DispatchRejected,
 };
 
-/// rief Describes a failed core operation without requiring exceptions.
+/// \brief Describes a failed core operation without requiring exceptions.
 struct Error {
     ErrorCode code;
     std::string message;
