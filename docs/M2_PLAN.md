@@ -1,12 +1,12 @@
 # M2 implementation plan
 
-M2 starts only after D0 and the corrected M1 stack are independently approved and merged in order. This document is design and test preparation only; it introduces no persistence implementation.
+M2 starts only after D0 and the corrected M1 stack are independently approved and merged in order. M2a introduces the backend-neutral protocol and deterministic in-memory semantic baseline; durable repositories, delivery claims, and MDBX remain deferred to later M2 slices.
 
 ## M2a — backend-neutral storage protocol
 
 Define `IStorageBackend`, `ITransaction`, `UnitOfWork`, typed storage errors, and `CommitOutcome` (`Committed`, `RejectedConflict`, `Failed`, `Unknown`). Transactions are thread-bound, own rollback state, expose read-your-writes, and validate expected revisions/CAS at commit. Schema metadata and migration records are part of the protocol. The in-memory backend is the reference implementation and supplies a reusable conformance suite.
 
-Required tests cover read-your-writes, rollback, conflict, duplicate update, unknown commit resolution, and atomic multi-record transitions.
+Implemented in `imtg::core`: `IStorageBackend`, `ITransaction`, move-only `UnitOfWork`, typed storage errors, schema metadata, expected-revision CAS, stable snapshots, read-your-writes, and atomic in-memory publication. The reusable conformance executable covers read-your-writes, rollback, conflicts, duplicate create, repeated writes, unknown commit recovery, transaction ownership, read-only rejection, schema validation, and atomic multi-record transitions. The in-memory backend is a semantic baseline, not a durability guarantee.
 
 ## M2b — durable sessions and FSM
 

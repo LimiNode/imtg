@@ -1,8 +1,8 @@
 # Implementation status
 
-**As of merged M1:** the repository contains the complete Telegram-free M1 foundation, including deterministic UI/action primitives and a bounded reference runtime. The five stacked M1 PRs are merged into `main`; production persistence, delivery, and transport remain planned for later milestones.
+**As of M2a:** the repository contains the complete Telegram-free M1 foundation plus the backend-neutral storage protocol and deterministic in-memory reference backend. The five stacked M1 PRs are merged into `main`; durable persistence, delivery, and transport remain planned for later milestones.
 
-M1 acceptance gates are complete: deterministic rendering, typed/versioned actions, stale-handle rejection, per-conversation ordering, bounded admission and shutdown, observable worker failure, and dispatcher quiescence are covered by the offline test suite and the Debug/Release plus sanitizer CI matrix. M2 remains design-only until its storage protocol and recovery contracts are accepted.
+M1 acceptance gates are complete: deterministic rendering, typed/versioned actions, stale-handle rejection, per-conversation ordering, bounded admission and shutdown, observable worker failure, and dispatcher quiescence are covered by the offline test suite and the Debug/Release plus sanitizer CI matrix. M2a adds snapshot/optimistic transaction semantics, schema metadata, commit outcomes, and reusable conformance tests; M2b–M2e remain planned.
 
 | Area | Status | Evidence / next proof |
 |---|---|---|
@@ -14,8 +14,8 @@ M1 acceptance gates are complete: deterministic rendering, typed/versioned actio
 | Controllers and application model | `partial` | M1d reference runtime provides render/command callbacks; richer controller composition remains planned |
 | Conversation scheduler and reference runtime | `partial` | M1d bounded worker pool with per-key serial mailboxes, transactional admission rollback, bounded queues, synchronous commands, fake reconciler, allocation-safe observable fail-stop status, bounded publication/shutdown and notification tests |
 | FSM and sessions | `planned` | M2 persistence/recovery tests |
-| Storage contracts | `contract-only` | [STORAGE.md](contracts/STORAGE.md); no implementation |
-| MDBX backend | `planned` | M2 conformance suite and adapter |
+| Storage protocol and in-memory backend | `implemented` | [STORAGE.md](contracts/STORAGE.md); `include/imtg/storage/storage.hpp`; reusable `imtg_storage_tests` conformance suite |
+| Durable repositories and MDBX backend | `planned` | M2b–M2e conformance/recovery work and optional adapter |
 | Telegram transport / kurlyk | `planned` | M3 adapter tests against fakes and documented API limits |
 | Render intents, reconciliation, and outbox | `planned` | M1d fake reconciliation; M2/M3 durable uncertain-outcome tests |
 | Localization | `planned` | M4 catalog, fallback, and pluralization tests |

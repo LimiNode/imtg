@@ -1,11 +1,11 @@
 # Storage contract
 
-**Semantic owner:** persistence maintainers. **Status:** contract-only; signatures below are conceptual and not implemented.
+**Semantic owner:** persistence maintainers. **Status:** M2a protocol and deterministic in-memory reference backend are implemented in `include/imtg/storage/storage.hpp`; durable repositories, claims, render intents, outbox, and MDBX remain planned.
 
 ## Core interfaces
 
 ```cpp
-// Conceptual API; illustrative only.
+// M2a API excerpt; the durable repository interfaces below remain planned.
 enum class CommitOutcome { Committed, RejectedConflict, Failed, Unknown };
 struct CommitResult {
     CommitOutcome outcome;
@@ -30,7 +30,7 @@ public:
 
 class UnitOfWork {
 public:
-    explicit UnitOfWork(IStorageBackend& backend);
+    static Result<UnitOfWork> begin(IStorageBackend&, TransactionMode);
     CommitResult commit();
 };
 
@@ -72,6 +72,16 @@ public:
         UpdateIdentity, ITransaction&) = 0;
 };
 ```
+
+`UnitOfWork::begin()` returns a move-only owner of one transaction. The transaction borrows its
+backend, so the backend must outlive the `UnitOfWork` and every repository call using it. A
+transaction is owned by the thread that created it; cross-thread access is rejected. Its snapshot
+is stable, reads include pending writes, and all writes in one commit are published atomically.
+`create_if_absent`, `write`, and `erase` use expected revisions; repeated writes preserve the
+original compare-and-swap revision while exposing the next visible revision to the transaction.
+The destructor rolls back only a definitely active transaction. After `Unknown`, the transaction
+is terminal: callers must recover by reading authoritative state in a new transaction and must not
+retry or roll back the original operation.
 
 Names and value layouts may change during implementation, but these semantics are normative. `CommitResult` always carries one outcome and may carry diagnostic error data: `Committed` is visible, `RejectedConflict` and `Failed` are known not committed, and `Unknown` may be committed. A transaction belongs to one worker/thread. Repository calls borrow it and never commit independently. `UnitOfWork` rolls back on destruction only while the transaction is definitely uncommitted. After `CommitOutcome::Unknown`, it enters an indeterminate terminal state: it must not call rollback, replay writes, or report failure as if no commit occurred. Recovery identifies the operation using durable update/intent IDs and reads authoritative storage state in a new transaction.
 
@@ -120,4 +130,9 @@ MDBX uses a calculated DBI budget. The minimal runtime profile requires **6 logi
 
 Logical keys use composite encodings such as `(bot_id, conversation_scope, chat_id, thread_id, user_id)` where applicable. Byte ordering is fixed before implementation so range scans are deterministic. Pagination uses bounded ranges and continuation keys. Transactions are short-lived, single-owner, and never hold network calls or user callbacks. MDBX reader/writer limits, map-size errors, and retryable conflicts become typed errors.
 
-**Verification:** the conformance suite covers virtual-interface ownership, rollback and every commit outcome, uncertain-commit recovery, expected revisions, duplicate updates, the two-transaction render-intent chain, migrations, bounded queries, DBI-budget calculation, lease expiry/fencing, and rejection of a late acknowledgment from an old worker. **Dependencies:** none in core; MDBX adapter is M2 work.
+**Verification:** the M2a reusable conformance suite currently covers schema compatibility, stable
+snapshots/read-your-writes, expected revisions and repeated CAS writes, rollback, read-only
+rejection, duplicate creates, optimistic conflicts, atomic multi-record publication, ownership,
+and deterministic known/unknown failure injection. The two-transaction render-intent chain,
+migrations beyond schema metadata, bounded queries, DBI-budget calculation, lease expiry/fencing,
+and late-ack rejection remain M2b–M2e work. **Dependencies:** none in core; MDBX adapter is M2d.
