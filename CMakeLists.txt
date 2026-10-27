@@ -7,21 +7,25 @@ include(CTest)
 include(CMakePackageConfigHelpers)
 
 add_library(imtg_core STATIC
-    src/core/identifiers.cpp
-    src/ui/tree.cpp
-    src/actions/token.cpp
-    src/actions/registry.cpp
-    src/runtime/reference_runtime.cpp)
+    src/imtg/core/identifiers.cpp
+    src/imtg/ui/tree.cpp
+    src/imtg/actions/token.cpp
+    src/imtg/actions/registry.cpp
+    src/imtg/runtime/reference_runtime.cpp)
 add_library(imtg::core ALIAS imtg_core)
 set_target_properties(imtg_core PROPERTIES EXPORT_NAME core)
 
 target_compile_features(imtg_core PUBLIC cxx_std_17)
 target_include_directories(imtg_core PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 install(TARGETS imtg_core EXPORT imtgTargets)
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY src/imtg/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg
+    FILES_MATCHING
+    PATTERN "*.hpp"
+    PATTERN "*.tpp"
+    PATTERN "*.ipp")
 install(EXPORT imtgTargets
     FILE imtgTargets.cmake
     NAMESPACE imtg::

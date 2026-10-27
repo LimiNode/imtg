@@ -15,11 +15,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_TESTING=ON
+        run: cmake -S . -B build/ci-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_TESTING=ON
       - name: Build
-        run: cmake --build build --config ${{ matrix.build_type }} --parallel
+        run: cmake --build build/ci-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
       - name: Test
-        run: ctest --test-dir build --build-config ${{ matrix.build_type }} --output-on-failure
+        run: ctest --test-dir build/ci-${{ matrix.os }}-${{ matrix.build_type }} --build-config ${{ matrix.build_type }} --output-on-failure
+      - name: Install
+        run: cmake --install build/ci-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --prefix build/install-${{ matrix.os }}-${{ matrix.build_type }}
+      - name: Configure public-header checks
+        run: cmake -S tests/public_headers -B build/headers-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
+      - name: Build public-header checks
+        run: cmake --build build/headers-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
+      - name: Configure installed consumer
+        run: cmake -S tests/install_consumer -B build/consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
+      - name: Build installed consumer
+        run: cmake --build build/consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
 
   sanitizers:
     runs-on: ubuntu-latest
@@ -27,11 +37,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Configure ASan/UBSan
         run: >-
-          cmake -S . -B build-sanitizers -DBUILD_TESTING=ON
+          cmake -S . -B build/asan-ubsan -DBUILD_TESTING=ON
           -DCMAKE_BUILD_TYPE=Debug
           -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
       - name: Build
-        run: cmake --build build-sanitizers --parallel
+        run: cmake --build build/asan-ubsan --parallel
       - name: Test
-        run: ctest --test-dir build-sanitizers --output-on-failure
+        run: ctest --test-dir build/asan-ubsan --output-on-failure
