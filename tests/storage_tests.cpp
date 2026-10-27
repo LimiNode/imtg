@@ -378,6 +378,67 @@ void run_conformance(const BackendFixture& fixture)
 
 void run_in_memory_failure_tests()
 {
+    {
+        imtg::InMemoryStorageBackend backend(stable_schema());
+        CHECK(create_record(backend, "no-op-failed", "original") == 1);
+        imtg::InMemoryFailureInjection injection;
+        injection.fail_before_publish = true;
+        backend.set_failure_injection(injection);
+
+        auto no_op = begin(backend, imtg::TransactionMode::ReadOnly);
+        const auto original = no_op.transaction()->read("sessions", "no-op-failed");
+        CHECK(original && original.value()->value == "original"
+              && original.value()->revision == 1);
+        CHECK(no_op.commit().outcome == imtg::CommitOutcome::Committed);
+        CHECK(no_op.transaction()->state() == imtg::TransactionState::Committed);
+        CHECK(backend.record_count() == 1);
+
+        auto failed = begin(backend);
+        CHECK(failed.transaction()->write("sessions", "no-op-failed", "changed", 1));
+        CHECK(failed.commit().outcome == imtg::CommitOutcome::Failed);
+        auto verify = begin(backend, imtg::TransactionMode::ReadOnly);
+        const auto unchanged = verify.transaction()->read("sessions", "no-op-failed");
+        CHECK(unchanged && unchanged.value()->value == "original"
+              && unchanged.value()->revision == 1);
+    }
+    {
+        imtg::InMemoryStorageBackend backend(stable_schema());
+        CHECK(create_record(backend, "no-op-unknown-before", "original") == 1);
+        imtg::InMemoryFailureInjection injection;
+        injection.unknown_before_publish = true;
+        backend.set_failure_injection(injection);
+
+        auto no_op = begin(backend);
+        CHECK(no_op.commit().outcome == imtg::CommitOutcome::Committed);
+        auto unknown = begin(backend);
+        CHECK(unknown.transaction()->write(
+            "sessions", "no-op-unknown-before", "changed", 1));
+        CHECK(unknown.commit().outcome == imtg::CommitOutcome::Unknown);
+        auto verify = begin(backend, imtg::TransactionMode::ReadOnly);
+        const auto unchanged = verify.transaction()->read(
+            "sessions", "no-op-unknown-before");
+        CHECK(unchanged && unchanged.value()->value == "original"
+              && unchanged.value()->revision == 1);
+    }
+    {
+        imtg::InMemoryStorageBackend backend(stable_schema());
+        CHECK(create_record(backend, "no-op-unknown-after", "original") == 1);
+        imtg::InMemoryFailureInjection injection;
+        injection.unknown_after_publish = true;
+        backend.set_failure_injection(injection);
+
+        auto no_op = begin(backend);
+        CHECK(no_op.commit().outcome == imtg::CommitOutcome::Committed);
+        auto unknown = begin(backend);
+        CHECK(unknown.transaction()->write(
+            "sessions", "no-op-unknown-after", "changed", 1));
+        CHECK(unknown.commit().outcome == imtg::CommitOutcome::Unknown);
+        auto verify = begin(backend, imtg::TransactionMode::ReadOnly);
+        const auto published = verify.transaction()->read(
+            "sessions", "no-op-unknown-after");
+        CHECK(published && published.value()->value == "changed"
+              && published.value()->revision == 2);
+    }
     imtg::InMemoryStorageBackend backend(stable_schema());
     {
         imtg::InMemoryFailureInjection injection;

@@ -205,6 +205,12 @@ public:
             return failed(storage_error(ErrorCode::StorageReadOnly,
                                          "read-only transaction cannot write"));
         }
+        if (m_writes.empty()) {
+            // Publication failure injection applies only when there is a write set to publish.
+            // Leaving it armed makes the next publishing commit deterministic.
+            m_state = TransactionState::Committed;
+            return CommitResult{CommitOutcome::Committed, std::nullopt};
+        }
 
         std::lock_guard<std::mutex> lock(m_backend.m_mutex);
         if (m_backend.m_failure_injection.unknown_before_publish) {

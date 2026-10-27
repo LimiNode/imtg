@@ -9,7 +9,7 @@
 enum class CommitOutcome { Committed, RejectedConflict, Failed, Unknown };
 struct CommitResult {
     CommitOutcome outcome;
-    std::optional<StorageError> error;
+    std::optional<Error> error;
 };
 
 class ITransaction;
@@ -147,7 +147,8 @@ Logical keys use composite encodings such as `(bot_id, conversation_scope, chat_
 intake gates, stable snapshots/read-your-writes, one-increment repeated CAS writes, revision
 boundaries, delete/recreate ABA rejection, rollback-on-destruction and move-assignment, read-only
 rejection, duplicate creates, optimistic conflicts, atomic multi-record publication, ownership,
-and deterministic known/unknown failure injection. Parallel-writer cases are capability-gated for
+allocation-free no-op commits, and deterministic known/unknown failure injection. Parallel-writer
+cases are capability-gated for
 future single-writer backends. The two-transaction render-intent chain,
 migrations beyond schema metadata, bounded queries, DBI-budget calculation, lease expiry/fencing,
 and late-ack rejection remain M2b–M2e work. **Dependencies:** none in core; MDBX adapter is M2d.
