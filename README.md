@@ -4,7 +4,7 @@ imtg is a C++17 framework design for Telegram bots whose views are described wit
 
 ## Project status
 
-This repository is at **M1c — Action Registry & Callback Semantics**. The C++17 `imtg_core` target, typed identities, deterministic clocks, immutable UI tree, RAII grouping scopes, stable paths, typed versioned action registry, injectable token codec boundary, and offline tests are implemented. Conversation scheduler, storage adapters, Telegram authentication/transport, and release artifacts are not implemented yet. Code fragments in the documentation remain conceptual unless identified as implemented in [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+This repository has completed **M1 — Telegram-free deterministic foundation**. The C++17 `imtg_core` target, typed identities, deterministic clocks, immutable UI tree, RAII grouping scopes, stable paths, typed versioned action registry, bounded reference runtime, injectable token codec boundary, and offline tests are implemented. Backend-neutral storage protocol, durable storage adapters, Telegram authentication/transport, and release artifacts remain planned. Code fragments in the documentation remain conceptual unless identified as implemented in [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
 ## Design in one minute
 
@@ -59,4 +59,4 @@ Normative contracts live in [`docs/contracts/`](docs/contracts/). Significant de
 
 ## Next step
 
-The next stacked PR is M1d: a deterministic per-conversation scheduler and reference runtime. See the roadmap for the full dependency chain.
+The next stacked PR is M2a: a backend-neutral storage protocol with an in-memory reference backend and reusable conformance suite. See the roadmap for the full dependency chain.
