@@ -16,7 +16,12 @@
 namespace imtg {
 
 using StorageBytes = std::string;
+/// Zero means that a logical key has no generation; visible records always use non-zero values.
 using StorageRevision = std::uint64_t;
+
+/// \brief Returns the next non-zero record generation or a typed exhaustion error.
+/// \thread_safety Safe to call concurrently.
+[[nodiscard]] Result<StorageRevision> next_storage_revision(StorageRevision current);
 
 enum class TransactionMode {
     ReadOnly,
@@ -75,8 +80,11 @@ public:
     /// Reads from the transaction snapshot, including this transaction's pending writes.
     [[nodiscard]] virtual Result<std::optional<StorageRecord>> read(
         std::string_view name_space, std::string_view key) = 0;
+    /// Creates a new key generation and returns its candidate committed revision.
     [[nodiscard]] virtual Result<StorageRevision> create_if_absent(
         std::string_view name_space, std::string_view key, std::string_view value) = 0;
+    /// Updates a visible record using its transaction-visible revision.
+    /// Repeated writes in one transaction return the same candidate committed revision.
     [[nodiscard]] virtual Result<StorageRevision> write(
         std::string_view name_space,
         std::string_view key,
@@ -97,6 +105,7 @@ public:
     virtual ~IStorageBackend() = default;
 
     /// The returned transaction borrows the backend; the backend must outlive it.
+    /// Implementations fail closed when schema metadata does not permit transaction intake.
     [[nodiscard]] virtual Result<std::unique_ptr<ITransaction>> begin_transaction(
         TransactionMode mode) = 0;
     [[nodiscard]] virtual Result<StorageSchema> schema() const = 0;
@@ -114,7 +123,8 @@ public:
     UnitOfWork(const UnitOfWork&) = delete;
     UnitOfWork& operator=(const UnitOfWork&) = delete;
     UnitOfWork(UnitOfWork&&) noexcept = default;
-    UnitOfWork& operator=(UnitOfWork&&) noexcept = default;
+    /// Replaces ownership after rolling back the currently owned active transaction.
+    UnitOfWork& operator=(UnitOfWork&& other) noexcept;
     ~UnitOfWork();
 
     [[nodiscard]] static Result<UnitOfWork> begin(IStorageBackend& backend,
@@ -142,6 +152,9 @@ struct InMemoryFailureInjection {
 };
 
 /// \brief Deterministic snapshot/optimistic backend used as the M2 semantic baseline.
+/// \details Supports multiple active optimistic writers. Deleted keys retain a generation
+/// tombstone for the backend lifetime so stale pre-delete transactions cannot overwrite a
+/// recreated record. This backend is not durable.
 class InMemoryStorageBackend final : public IStorageBackend {
 public:
     explicit InMemoryStorageBackend(StorageSchema schema = StorageSchema{1, {}});
@@ -152,7 +165,7 @@ public:
     [[nodiscard]] Result<StorageSchema> schema() const override;
     [[nodiscard]] Result<void> validate_schema(const StorageSchema& expected) const override;
 
-    /// rief Installs one-shot failures for deterministic tests.
+    /// \brief Installs one-shot failures for deterministic tests.
     void set_failure_injection(InMemoryFailureInjection injection);
     [[nodiscard]] std::size_t record_count() const noexcept;
 
@@ -161,7 +174,7 @@ private:
     friend class Transaction;
 
     struct StoredRecord {
-        StorageBytes value;
+        std::optional<StorageBytes> value;
         StorageRevision revision{};
     };
     struct RecordKey {

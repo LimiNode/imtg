@@ -34,6 +34,7 @@ enum class ErrorCode {
     StorageSchemaFailure,
     StoragePermissionDenied,
     StorageUnknownCommit,
+    StorageRevisionExhausted,
 };
 
 /// \brief Describes a failed core operation without requiring exceptions.

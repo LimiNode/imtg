@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <limits>
 #include <utility>
 
 namespace imtg {
@@ -15,11 +16,30 @@ Error storage_error(ErrorCode code, const char* message)
 
 } // namespace
 
+Result<StorageRevision> next_storage_revision(StorageRevision current)
+{
+    if (current == std::numeric_limits<StorageRevision>::max()) {
+        return storage_error(ErrorCode::StorageRevisionExhausted,
+                             "storage revision space is exhausted");
+    }
+    return current + 1;
+}
+
 UnitOfWork::~UnitOfWork()
 {
     if (m_transaction != nullptr && m_transaction->state() == TransactionState::Active) {
         m_transaction->rollback();
     }
+}
+
+UnitOfWork& UnitOfWork::operator=(UnitOfWork&& other) noexcept
+{
+    if (this == &other) return *this;
+    if (m_transaction != nullptr && m_transaction->state() == TransactionState::Active) {
+        m_transaction->rollback();
+    }
+    m_transaction = std::move(other.m_transaction);
+    return *this;
 }
 
 Result<UnitOfWork> UnitOfWork::begin(IStorageBackend& backend, TransactionMode mode)
@@ -42,7 +62,7 @@ CommitResult UnitOfWork::commit()
 
 void UnitOfWork::rollback() noexcept
 {
-    if (m_transaction != nullptr) {
+    if (m_transaction != nullptr && m_transaction->state() == TransactionState::Active) {
         m_transaction->rollback();
     }
 }
@@ -71,11 +91,14 @@ public:
         if (pending != m_writes.end()) {
             if (!pending->second.value.has_value()) return std::optional<StorageRecord>{};
             return std::optional<StorageRecord>{StorageRecord{
-                *pending->second.value, pending->second.visible_revision}};
+                *pending->second.value, pending->second.resulting_revision}};
         }
         const auto found = m_snapshot.find(identity.value());
-        if (found == m_snapshot.end()) return std::optional<StorageRecord>{};
-        return std::optional<StorageRecord>{StorageRecord{found->second.value, found->second.revision}};
+        if (found == m_snapshot.end() || !found->second.value.has_value()) {
+            return std::optional<StorageRecord>{};
+        }
+        return std::optional<StorageRecord>{StorageRecord{
+            *found->second.value, found->second.revision}};
     }
 
     Result<StorageRevision> create_if_absent(std::string_view name_space,
@@ -86,23 +109,22 @@ public:
         if (!precondition) return precondition.error();
         const auto identity = make_key(name_space, key);
         if (!identity) return identity.error();
-        const auto visible = visible_record(identity.value());
-        if (visible.has_value()) {
+        const auto visible = visible_state(identity.value());
+        if (visible.value.has_value()) {
             return storage_error(ErrorCode::StorageConflict, "record already exists");
         }
+        const auto revision = next_storage_revision(base_revision(identity.value()));
+        if (!revision) return revision.error();
         const auto prepared = prepare_write();
         if (!prepared) return prepared.error();
         const auto pending = m_writes.find(identity.value());
         if (pending != m_writes.end()) {
-            // Recreating a record erased earlier in this transaction is one
-            // update against its original backend revision.
             pending->second.value = std::string(value);
-            pending->second.create = false;
-            pending->second.visible_revision = pending->second.expected_revision + 1;
-            return pending->second.visible_revision;
+            return pending->second.resulting_revision;
         }
-        m_writes.emplace(identity.value(), Pending{std::string(value), 0, 1, true});
-        return StorageRevision{1};
+        m_writes.emplace(identity.value(), Pending{
+            std::string(value), visible.revision, revision.value()});
+        return revision.value();
     }
 
     Result<StorageRevision> write(std::string_view name_space,
@@ -114,29 +136,25 @@ public:
         if (!precondition) return precondition.error();
         const auto identity = make_key(name_space, key);
         if (!identity) return identity.error();
-        const auto visible = visible_record(identity.value());
-        if (!visible.has_value()) {
+        const auto visible = visible_state(identity.value());
+        if (!visible.value.has_value()) {
             return storage_error(ErrorCode::StorageNotFound, "record does not exist");
         }
-        if (visible->revision != expected_revision) {
+        if (visible.revision != expected_revision || expected_revision == 0) {
             return storage_error(ErrorCode::StorageConflict, "record revision is stale");
         }
+        const auto revision = next_storage_revision(base_revision(identity.value()));
+        if (!revision) return revision.error();
         const auto prepared = prepare_write();
         if (!prepared) return prepared.error();
         const auto pending = m_writes.find(identity.value());
-        if (pending != m_writes.end() && pending->second.create) {
-            pending->second.value = std::string(value);
-            pending->second.visible_revision = 1;
-            return StorageRevision{1};
-        }
         if (pending != m_writes.end()) {
             pending->second.value = std::string(value);
-            pending->second.visible_revision = expected_revision + 1;
         } else {
             m_writes[identity.value()] = Pending{
-                std::string(value), expected_revision, expected_revision + 1, false};
+                std::string(value), visible.revision, revision.value()};
         }
-        return expected_revision + 1;
+        return revision.value();
     }
 
     Result<void> erase(std::string_view name_space,
@@ -147,27 +165,28 @@ public:
         if (!precondition) return precondition.error();
         const auto identity = make_key(name_space, key);
         if (!identity) return identity.error();
-        const auto visible = visible_record(identity.value());
-        if (!visible.has_value()) {
+        const auto visible = visible_state(identity.value());
+        if (!visible.value.has_value()) {
             return storage_error(ErrorCode::StorageNotFound, "record does not exist");
         }
-        if (visible->revision != expected_revision) {
+        if (visible.revision != expected_revision || expected_revision == 0) {
             return storage_error(ErrorCode::StorageConflict, "record revision is stale");
         }
+        const auto revision = next_storage_revision(base_revision(identity.value()));
+        if (!revision) return revision.error();
         const auto prepared = prepare_write();
         if (!prepared) return prepared.error();
         const auto pending = m_writes.find(identity.value());
-        if (pending != m_writes.end() && pending->second.create) {
-            m_writes.erase(pending);
-            return Result<void>();
-        }
         if (pending != m_writes.end()) {
-            pending->second.value = std::nullopt;
-            pending->second.visible_revision = expected_revision;
+            if (!snapshot_has_value(identity.value())) {
+                m_writes.erase(pending);
+            } else {
+                pending->second.value = std::nullopt;
+            }
             return Result<void>();
         }
         m_writes[identity.value()] = Pending{
-            std::nullopt, expected_revision, expected_revision, false};
+            std::nullopt, visible.revision, revision.value()};
         return Result<void>();
     }
 
@@ -203,26 +222,17 @@ public:
         }
         for (const auto& entry : m_writes) {
             const auto found = m_backend.m_records.find(entry.first);
-            if (entry.second.create) {
-                if (found != m_backend.m_records.end()) {
-                    return conflict();
-                }
-            } else if (found == m_backend.m_records.end()
-                       || found->second.revision != entry.second.expected_revision) {
+            const auto current_revision = found == m_backend.m_records.end()
+                ? StorageRevision{0} : found->second.revision;
+            if (current_revision != entry.second.expected_revision) {
                 return conflict();
             }
         }
         try {
             RecordMap next(m_backend.m_records);
             for (const auto& entry : m_writes) {
-                if (!entry.second.value.has_value()) {
-                    next.erase(entry.first);
-                } else {
-                    const auto found = next.find(entry.first);
-                    const auto revision = entry.second.create ? StorageRevision{1}
-                        : found->second.revision + 1;
-                    next[entry.first] = StoredRecord{*entry.second.value, revision};
-                }
+                next[entry.first] = StoredRecord{
+                    entry.second.value, entry.second.resulting_revision};
             }
             m_backend.m_records.swap(next);
         } catch (const std::exception& exception) {
@@ -254,8 +264,12 @@ private:
     struct Pending {
         std::optional<StorageBytes> value;
         StorageRevision expected_revision{};
-        StorageRevision visible_revision{};
-        bool create = false;
+        StorageRevision resulting_revision{};
+    };
+
+    struct VisibleState {
+        std::optional<StorageBytes> value;
+        StorageRevision revision{};
     };
 
     Result<void> check_active() const
@@ -300,16 +314,30 @@ private:
         return RecordKey{std::string(name_space), std::string(key)};
     }
 
-    std::optional<StoredRecord> visible_record(const RecordKey& key) const
+    VisibleState visible_state(const RecordKey& key) const
     {
         const auto pending = m_writes.find(key);
         if (pending != m_writes.end()) {
-            if (!pending->second.value.has_value()) return std::nullopt;
-            return StoredRecord{*pending->second.value, pending->second.visible_revision};
+            return VisibleState{
+                pending->second.value, pending->second.resulting_revision};
         }
         const auto found = m_snapshot.find(key);
-        if (found == m_snapshot.end()) return std::nullopt;
-        return found->second;
+        if (found == m_snapshot.end()) return VisibleState{};
+        return VisibleState{found->second.value, found->second.revision};
+    }
+
+    StorageRevision base_revision(const RecordKey& key) const noexcept
+    {
+        const auto pending = m_writes.find(key);
+        if (pending != m_writes.end()) return pending->second.expected_revision;
+        const auto found = m_snapshot.find(key);
+        return found == m_snapshot.end() ? StorageRevision{0} : found->second.revision;
+    }
+
+    bool snapshot_has_value(const RecordKey& key) const noexcept
+    {
+        const auto found = m_snapshot.find(key);
+        return found != m_snapshot.end() && found->second.value.has_value();
     }
 
     CommitResult failed(Error error)
@@ -354,6 +382,10 @@ Result<std::unique_ptr<ITransaction>> InMemoryStorageBackend::begin_transaction(
 {
     try {
         std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_schema.migration_state != MigrationState::Stable) {
+            return storage_error(ErrorCode::StorageSchemaFailure,
+                                 "storage schema is not ready for transactions");
+        }
         auto snapshot = std::unordered_map<RecordKey, StoredRecord, RecordKeyHash>(m_records);
         return std::unique_ptr<ITransaction>(
             new Transaction(*this, mode, std::move(snapshot), std::this_thread::get_id()));
@@ -373,7 +405,9 @@ Result<StorageSchema> InMemoryStorageBackend::schema() const
 Result<void> InMemoryStorageBackend::validate_schema(const StorageSchema& expected) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_schema == expected) return Result<void>();
+    if (m_schema == expected && m_schema.migration_state == MigrationState::Stable) {
+        return Result<void>();
+    }
     return storage_error(ErrorCode::StorageSchemaFailure, "storage schema is incompatible");
 }
 
@@ -386,7 +420,10 @@ void InMemoryStorageBackend::set_failure_injection(InMemoryFailureInjection inje
 std::size_t InMemoryStorageBackend::record_count() const noexcept
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_records.size();
+    return static_cast<std::size_t>(std::count_if(
+        m_records.begin(), m_records.end(), [](const auto& entry) {
+            return entry.second.value.has_value();
+        }));
 }
 
 } // namespace imtg

@@ -13,6 +13,7 @@ set(IMTG_PUBLIC_HEADERS
     imtg/core/result.hpp
     imtg/runtime/reference_runtime.hpp
     imtg/runtime/runtime.hpp
+    imtg/storage/storage.hpp
     imtg/ui/tree.hpp
     imtg/ui/ui.hpp)
 
