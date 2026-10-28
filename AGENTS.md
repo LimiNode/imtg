@@ -23,3 +23,12 @@ This repository is documentation-first until the roadmap explicitly authorizes i
 - Exceptions require explicit architectural justification.
 
 Detailed rules are in [coding-style](docs/guides/coding-style.md), [agent workflow](docs/guides/coding-agent-workflow.md), and [documentation governance](docs/DOCUMENTATION_GOVERNANCE.md). Milestone-specific scope belongs in [ROADMAP.md](docs/ROADMAP.md), not in this root router.
+
+## Repository structure
+
+- Non-template `.cpp` implementations live beside their owning `.hpp` under `src/imtg/<domain>/`.
+  Public include paths remain `imtg/...`; only public headers are installed.
+- All CMake build trees, tests, generated files, temporary install stages, and local probes live
+  under `build/<profile>/`. Do not create in-source or root-level ad-hoc build directories.
+- Git-based third-party dependencies are pinned direct submodules under `external/<name>` by
+  default. Prefer flat reuse and non-recursive initialization; document any exception explicitly.

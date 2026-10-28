@@ -10,6 +10,8 @@
 - Do not use lambda default captures `[&]` or `[=]`; enumerate captures explicitly.
 - Prefer RAII, value semantics, const-correctness, explicit ownership, and bounded allocation. Document lifetime and thread safety.
 - Use `.hpp` for public declarations, `.cpp` for non-template implementation, `.tpp` for template implementation, and `.ipp` for header-visible helpers. One primary type per `CamelCase.hpp`; utility/umbrella headers use `snake_case.hpp`.
+- Co-locate public headers and non-template implementations under `src/imtg/<domain>/`. Consumers
+  continue to include `<imtg/...>`; the physical source layout must not leak into public includes.
 - Public headers use an `IMTG_..._HPP` include guard (or an equivalent project-approved mechanism) and include only what they require. The header that defines a public type owns its declaration; umbrella headers re-export owned headers but do not create duplicate declarations. Dependency direction follows architecture: core contracts do not include adapter headers.
 - Do not rename third-party APIs. Naming exceptions require an ADR.
 

@@ -2,4 +2,7 @@
 /.cache/
 /install-test/
 /build-*/
+/cmake-build-*/
 /install-*/
+/test-output/
+/coverage/

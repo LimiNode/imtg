@@ -57,6 +57,20 @@ The core owns contracts and deterministic orchestration. `kurlyk` is a planned t
 
 Normative contracts live in [`docs/contracts/`](docs/contracts/). Significant decisions are recorded in [`docs/adr/`](docs/adr/).
 
+## Building
+
+Keep all generated output under the ignored root `build/` directory:
+
+```text
+cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
+cmake --build build/debug
+ctest --test-dir build/debug --output-on-failure
+```
+
+Public headers and their implementations are co-located under `src/imtg/<domain>/`, while consumer
+include paths remain `<imtg/...>`. Git-based dependencies, when required, are pinned direct
+submodules under `external/<name>` and initialized non-recursively by default.
+
 ## Next step
 
 The next stacked PR is M2a: a backend-neutral storage protocol with an in-memory reference backend and reusable conformance suite. See the roadmap for the full dependency chain.
