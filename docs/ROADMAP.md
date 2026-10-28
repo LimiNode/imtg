@@ -32,7 +32,9 @@ M1d specifically provides a bounded worker pool with per-key sequential mailboxe
 
 ## M2 — FSM, sessions, storage contracts, first MDBX backend
 
-**Scope:** typed states/events, guarded transitions, recovery, `IStorageBackend`, `ITransaction`, `UnitOfWork`, expected revisions, durable render intents, fenced outbox claims, migrations, an in-memory reference backend, and MDBX adapter. **Depends on:** M1 and MDBX integration review. **Acceptance:** the reference backend semantics are implemented and the conformance suite passes for in-memory and MDBX; crash recovery between command commit and outbox planning is tested; uncertain commit, revision conflict, and stale acknowledgment behavior are tested; no per-user DBI design. **Exit:** durable state and render intent can be committed atomically, then converted recoverably to an outbox effect. **Deferred:** Telegram calls and cross-database atomicity.
+**M2a status:** implemented. `IStorageBackend`, `ITransaction`, `UnitOfWork`, fail-closed schema metadata, monotonic expected revisions with delete/recreate ABA protection, deterministic commit outcomes, and the in-memory snapshot/optimistic backend are available in `imtg::core`; the fixture-based reusable conformance suite passes for that backend. The implementation is not durable and does not provide sessions, render intents, outbox claims, or MDBX.
+
+**Remaining M2 scope:** typed states/events, guarded transitions, recovery, durable render intents, fenced outbox claims, migrations, and the MDBX adapter. **Depends on:** M1 and MDBX integration review. **Acceptance:** the reference backend semantics are retained while the conformance suite passes for in-memory and MDBX; crash recovery between command commit and outbox planning is tested; uncertain commit, revision conflict, and stale acknowledgment behavior are tested; no per-user DBI design. **Exit:** durable state and render intent can be committed atomically, then converted recoverably to an outbox effect. **Deferred:** Telegram calls and cross-database atomicity.
 
 ## M3 — Telegram delivery and outbox
 
