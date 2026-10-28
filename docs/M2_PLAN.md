@@ -8,11 +8,17 @@ Define `IStorageBackend`, `ITransaction`, `UnitOfWork`, typed storage errors, an
 
 Implemented in `imtg::core`: `IStorageBackend`, `ITransaction`, move-only `UnitOfWork`, typed storage errors, schema gates, expected-revision CAS, stable snapshots, read-your-writes, monotonic tombstone generations, and atomic in-memory publication. The fixture-based conformance executable covers read-your-writes, rollback/ownership, stable snapshots, duplicate create, repeated writes with one committed increment, delete/recreate ABA rejection, unknown commit recovery, thread ownership, read-only rejection, schema intake, and atomic multi-record transitions. Fixtures declare whether multiple active writers are supported so a future single-writer MDBX backend can reuse the portable cases. The in-memory backend is a semantic baseline, not a durability guarantee.
 
-## M2b — durable sessions and FSM
+## M2b — typed sessions, FSM, and update deduplication
 
-Persist typed session records with schema/version tags, guarded transitions, pending input, timeout/cancellation transitions, processed-update deduplication, optimistic revisions, restart recovery, and an explicit migration policy. Runtime command execution receives one `UnitOfWork`; session transition, deduplication, and render-intent creation commit atomically.
+Implemented on the in-memory semantic baseline: typed, schema-versioned session records with bounded
+binary-safe encoding; guarded deterministic FSM transitions; pending-input/deadline fields; cancellation,
+timeout, and terminal-state handling; optimistic session revisions; processed-update deduplication; and
+minimal stable render intents. `AtomicUpdateProcessor` receives one `UnitOfWork` and commits the
+processed marker, session transition, and optional render intent atomically. Repository reconstruction
+against the same backend proves backend-lifetime recovery only; physical process-crash durability and
+explicit migration execution remain deferred to the durable adapter.
 
-## M2c — render intents and durable outbox
+## M2c — render-intent processing and durable outbox
 
 Use the two-transaction protocol:
 
