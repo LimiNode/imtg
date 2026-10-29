@@ -50,6 +50,8 @@ struct FsmEvent {
     static FsmEvent timeout();
 };
 
+enum class RenderPolicy { Never, OnChange, Always };
+
 struct FsmStepResult {
     FsmStateId state;
     bool changed = false;
@@ -62,6 +64,12 @@ public:
 
     [[nodiscard]] Result<void> add_transition(
         FsmStateId from, FsmEventId event, FsmStateId to, Guard guard = {});
+    [[nodiscard]] Result<void> add_transition(
+        FsmStateId from, FsmEventId event, FsmEventKind kind,
+        FsmStateId to, Guard guard = {});
+    [[nodiscard]] Result<void> add_transition(
+        FsmStateId from, FsmEventId event, FsmStateId to,
+        FsmEventKind kind, Guard guard = {});
     [[nodiscard]] Result<void> mark_terminal(FsmStateId state);
     [[nodiscard]] Result<void> validate_state(const FsmStateId& state) const;
     [[nodiscard]] Result<FsmStepResult> step(
@@ -71,10 +79,12 @@ private:
     struct EventKey {
         FsmStateId state;
         FsmEventId event;
+        FsmEventKind kind{FsmEventKind::Normal};
 
         friend bool operator==(const EventKey& left, const EventKey& right) noexcept
         {
-            return left.state == right.state && left.event == right.event;
+            return left.state == right.state && left.event == right.event
+                && left.kind == right.kind;
         }
     };
     struct EventKeyHash {

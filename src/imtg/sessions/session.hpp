@@ -121,6 +121,7 @@ struct RenderIntent {
     ConversationKey conversation;
     StorageRevision session_revision{};
     std::string metadata;
+    std::optional<UpdateIdentity> origin;
 };
 
 class IRenderIntentStore {
@@ -141,6 +142,8 @@ public:
 
     [[nodiscard]] static RenderIntentId make_id(
         const ConversationKey&, StorageRevision session_revision);
+    [[nodiscard]] static RenderIntentId make_id(
+        const ConversationKey&, StorageRevision session_revision, const UpdateIdentity& origin);
 };
 
 enum class UpdateProcessOutcome {
@@ -160,6 +163,12 @@ struct UpdateProcessResult {
 
 struct UpdateProcessOptions {
     bool create_render_intent = true;
+    RenderPolicy render_policy = RenderPolicy::OnChange;
+    std::optional<StorageRevision> expected_revision;
+    bool require_expected_revision = false;
+    std::optional<PendingInput> next_pending_input;
+    std::optional<ClockTime> next_deadline;
+    std::optional<ScreenIdentity> next_screen;
 };
 
 /// Atomically records an update, evaluates a transition, saves the session and

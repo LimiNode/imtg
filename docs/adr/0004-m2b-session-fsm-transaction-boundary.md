@@ -14,7 +14,14 @@ repositories borrow a caller-owned transaction and never commit independently.
 `Fsm` is a pure deterministic transition graph. State and event identities are versioned; guards are
 process-local functions and are never serialized. Cancellation and timeout are typed events, terminal
 states reject further transitions, and an explicit deadline causes the processor to synthesize a timeout
-event before evaluating a normal event.
+event before evaluating a normal event. The `cancel/1` and `timeout/1` identities are reserved for
+their corresponding event kinds: normal events cannot use either identity, and system kinds cannot use
+ordinary identities. On a successful state change the bounded default session delta clears pending input
+and the old deadline and sets the screen to the new state; processor options may replace these fields.
+Render policy is explicit (`Never`, `OnChange`, or `Always`), with `Always` intent IDs incorporating the
+originating update. Update identity must match the conversation bot before deduplication. Applications
+may require an expected session revision at the processor boundary; authorization and action binding
+remain outside M2b.
 
 `AtomicUpdateProcessor` stages `record_if_new(update_identity)`, the session create/transition, and an
 optional stable `RenderIntent` in one optimistic transaction. A duplicate marker commits as a no-op and

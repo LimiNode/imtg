@@ -1,5 +1,6 @@
 #include "imtg/sessions/session.hpp"
 
+#include <limits>
 #include <utility>
 
 namespace imtg {
@@ -142,11 +143,24 @@ UpdateProcessResult commit_result(CommitResult result, std::optional<SessionReco
 
 Result<StorageBytes> encode_session_record(const SessionRecord& record)
 {
+    const auto identity = validate_identity(record.conversation);
+    if (!identity) return identity.error();
     if (record.schema_version == 0 || record.state.name.empty() || record.state.version == 0
         || record.screen.name.empty() || record.screen.version == 0) {
         return encoding_error(ErrorCode::InvalidArgument, "session record contains an invalid identity");
     }
+    const auto field_ok = [](std::string_view field) {
+        return field.size() <= max_encoded_field && field.size() <=
+            static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max());
+    };
     const auto key = record.conversation.encode();
+    if (!field_ok(key) || !field_ok(record.state.name) || !field_ok(record.screen.name) ||
+        (record.pending_input && !field_ok(record.pending_input->name))) {
+        return encoding_error(ErrorCode::StorageRecordTooLarge, "session record field is too large");
+    }
+    if (record.pending_input && record.pending_input->version == 0) {
+        return encoding_error(ErrorCode::InvalidArgument, "pending input identity is invalid");
+    }
     std::string output(session_magic);
     append_u32(output, session_format_version);
     append_u32(output, record.schema_version);
@@ -238,6 +252,8 @@ Result<SessionRecord> decode_session_record(std::string_view encoded)
     if (reader.remaining() != 0) {
         return encoding_error(ErrorCode::InvalidEncoding, "session record has trailing bytes");
     }
+    const auto shape = validate_record_shape(record, record.schema_version);
+    if (!shape) return shape.error();
     return record;
 }
 
@@ -366,11 +382,21 @@ RenderIntentId RenderIntentRepository::make_id(const ConversationKey& conversati
     return RenderIntentId{conversation.encode() + "|r=" + std::to_string(session_revision)};
 }
 
+RenderIntentId RenderIntentRepository::make_id(const ConversationKey& conversation,
+                                               StorageRevision session_revision,
+                                               const UpdateIdentity& origin)
+{
+    return RenderIntentId{conversation.encode() + "|r=" + std::to_string(session_revision) +
+                          "|u=" + origin.encode()};
+}
+
 Result<RenderIntentId> RenderIntentRepository::append(const RenderIntent& intent,
                                                       ITransaction& transaction) const
 {
     if (intent.session_revision == 0 || intent.conversation.encode().empty()
-        || intent.id.value != make_id(intent.conversation, intent.session_revision).value) {
+        || (intent.origin
+            ? intent.id.value != make_id(intent.conversation, intent.session_revision, *intent.origin).value
+            : intent.id.value != make_id(intent.conversation, intent.session_revision).value)) {
         return encoding_error(ErrorCode::InvalidArgument, "render intent identity is invalid");
     }
     if (intent.metadata.size() > max_encoded_field) {
@@ -380,6 +406,8 @@ Result<RenderIntentId> RenderIntentRepository::append(const RenderIntent& intent
     value.push_back('\0');
     append_u64(value, intent.session_revision);
     append_string(value, intent.metadata);
+    value.push_back(intent.origin ? '\x01' : '\x00');
+    if (intent.origin) append_string(value, intent.origin->encode());
     const auto created = transaction.create_if_absent(render_namespace, intent.id.value, value);
     if (!created) return created.error();
     return intent.id;
@@ -402,11 +430,35 @@ Result<std::optional<RenderIntent>> RenderIntentRepository::load(
     const auto revision = reader.u64();
     if (!revision) return revision.error();
     const auto metadata = reader.string();
-    if (!metadata || reader.remaining() != 0) {
+    if (!metadata) {
         return encoding_error(ErrorCode::StorageSerializationFailure, "render intent payload is malformed");
     }
-    RenderIntent intent{ id, key.value(), revision.value(), metadata.value() };
-    if (id.value != make_id(intent.conversation, intent.session_revision).value) {
+    const auto origin_marker = reader.byte();
+    if (!origin_marker || origin_marker.value() > 1) {
+        return encoding_error(ErrorCode::StorageSerializationFailure, "render intent origin marker is malformed");
+    }
+    std::optional<UpdateIdentity> origin;
+    if (origin_marker.value() != 0) {
+        const auto encoded_origin = reader.string();
+        if (!encoded_origin) return encoded_origin.error();
+        const auto marker = encoded_origin.value().find("v1|b=");
+        const auto separator = encoded_origin.value().find("|u=");
+        if (marker != 0 || separator == std::string::npos) {
+            return encoding_error(ErrorCode::StorageSerializationFailure, "render intent origin is malformed");
+        }
+        try {
+            origin = UpdateIdentity{BotId{std::stoull(encoded_origin.value().substr(5, separator - 5))},
+                                    std::stoull(encoded_origin.value().substr(separator + 3))};
+        } catch (...) {
+            return encoding_error(ErrorCode::StorageSerializationFailure, "render intent origin is malformed");
+        }
+    }
+    if (reader.remaining() != 0) {
+        return encoding_error(ErrorCode::StorageSerializationFailure, "render intent payload is malformed");
+    }
+    RenderIntent intent{ id, key.value(), revision.value(), metadata.value(), origin };
+    if ((origin ? make_id(intent.conversation, intent.session_revision, *origin)
+                : make_id(intent.conversation, intent.session_revision)).value != id.value) {
         return encoding_error(ErrorCode::StorageSerializationFailure, "render intent identity does not match payload");
     }
     return std::optional<RenderIntent>{std::move(intent)};
@@ -424,6 +476,10 @@ UpdateProcessResult AtomicUpdateProcessor::process(
     const FsmEvent& event, ClockTime now, std::optional<SessionRecord> initial_session,
     UpdateProcessOptions options) const
 {
+    if (update.bot_id != conversation.bot_id) {
+        return UpdateProcessResult{UpdateProcessOutcome::Failed,
+            encoding_error(ErrorCode::InvalidArgument, "update bot identity does not match conversation"), {}, {}};
+    }
     auto work = UnitOfWork::begin(m_backend, TransactionMode::ReadWrite);
     if (!work) return UpdateProcessResult{UpdateProcessOutcome::Failed, work.error(), {}, {}};
     auto& transaction = *work.value().transaction();
@@ -450,6 +506,15 @@ UpdateProcessResult AtomicUpdateProcessor::process(
         if (session.created_at == ClockTime{}) session.created_at = now;
         session.last_transition_at = now;
     }
+    if (options.require_expected_revision) {
+        if (!options.expected_revision || session.revision != *options.expected_revision) {
+            return UpdateProcessResult{UpdateProcessOutcome::RejectedConflict,
+                encoding_error(ErrorCode::StorageConflict, "session revision expectation is stale"), {}, {}};
+        }
+    } else if (options.expected_revision && session.revision != *options.expected_revision) {
+        return UpdateProcessResult{UpdateProcessOutcome::RejectedConflict,
+            encoding_error(ErrorCode::StorageConflict, "session revision expectation is stale"), {}, {}};
+    }
     FsmEvent effective_event = event;
     if (session.deadline && now >= *session.deadline && event.kind == FsmEventKind::Normal) {
         effective_event = FsmEvent::timeout();
@@ -460,6 +525,15 @@ UpdateProcessResult AtomicUpdateProcessor::process(
     if (step.value().changed) {
         session.state = step.value().state;
         session.last_transition_at = now;
+        // Default transition policy: metadata belonging to the previous state is
+        // cleared, and the new state becomes the screen identity. Applications
+        // can explicitly repopulate these fields in a subsequent transaction.
+        session.pending_input.reset();
+        session.deadline.reset();
+        session.screen = ScreenIdentity{session.state.name, session.state.version};
+        if (options.next_pending_input) session.pending_input = options.next_pending_input;
+        if (options.next_deadline) session.deadline = options.next_deadline;
+        if (options.next_screen) session.screen = *options.next_screen;
         if (session.revision == 0) {
             auto created = m_sessions.create(session, transaction);
             if (!created) return UpdateProcessResult{UpdateProcessOutcome::Failed, created.error(), {}, {}};
@@ -476,9 +550,16 @@ UpdateProcessResult AtomicUpdateProcessor::process(
     }
 
     std::optional<RenderIntentId> intent_id;
-    if (options.create_render_intent && session_changed) {
-        RenderIntent intent{RenderIntentRepository::make_id(conversation, session.revision),
-                            conversation, session.revision, {}};
+    const bool wants_render = options.create_render_intent &&
+        (options.render_policy == RenderPolicy::Always ||
+         (options.render_policy == RenderPolicy::OnChange && session_changed));
+    if (wants_render) {
+        const auto id = options.render_policy == RenderPolicy::Always
+            ? RenderIntentRepository::make_id(conversation, session.revision, update)
+            : RenderIntentRepository::make_id(conversation, session.revision);
+        RenderIntent intent{id, conversation, session.revision, {},
+                            options.render_policy == RenderPolicy::Always
+                                ? std::optional<UpdateIdentity>{update} : std::nullopt};
         const auto appended = m_render_intents.append(intent, transaction);
         if (!appended) return UpdateProcessResult{UpdateProcessOutcome::Failed, appended.error(), {}, {}};
         intent_id = appended.value();

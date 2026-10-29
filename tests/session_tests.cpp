@@ -103,6 +103,15 @@ void test_fsm_and_encoding()
     const auto terminal = fsm.step({"completed", 1}, {imtg::FsmEventId{"anything", 1},
                                                            imtg::FsmEventKind::Normal, {}});
     CHECK(!terminal && terminal.error().code == imtg::ErrorCode::InvalidState);
+    const auto spoof_timeout = fsm.step({"awaiting_email", 1},
+        {imtg::FsmEventId{"timeout", 1}, imtg::FsmEventKind::Normal, {}});
+    CHECK(!spoof_timeout);
+    const auto spoof_cancel = fsm.step({"awaiting_email", 1},
+        {imtg::FsmEventId{"email", 1}, imtg::FsmEventKind::Cancellation, {}});
+    CHECK(!spoof_cancel);
+    const auto malformed_timeout = fsm.step({"awaiting_email", 1},
+        {imtg::FsmEventId{"email", 1}, imtg::FsmEventKind::Timeout, {}});
+    CHECK(!malformed_timeout);
 }
 
 void test_repositories()
@@ -267,6 +276,13 @@ void test_atomic_processor()
                                                imtg::FsmEventKind::Normal, {}}, now);
     CHECK(duplicate.outcome == imtg::UpdateProcessOutcome::Duplicate);
 
+    const auto mismatch = processor.process({imtg::BotId{99}, 50}, key, fsm,
+        {imtg::FsmEventId{"refresh", 1}, imtg::FsmEventKind::Normal, {}}, now + 1s);
+    CHECK(mismatch.outcome == imtg::UpdateProcessOutcome::Failed
+          && mismatch.error && mismatch.error->code == imtg::ErrorCode::InvalidArgument);
+    auto mismatch_check = begin(backend);
+    CHECK(processed.record_if_new({imtg::BotId{99}, 50}, *mismatch_check.transaction()).value());
+
     const auto invalid = processor.process({imtg::BotId{3}, 2}, key, fsm,
                                             {imtg::FsmEventId{"email", 1},
                                              imtg::FsmEventKind::Normal, {}}, now + 1s);
@@ -284,6 +300,16 @@ void test_atomic_processor()
                                           std::nullopt, imtg::UpdateProcessOptions{true});
     CHECK(no_op.outcome == imtg::UpdateProcessOutcome::Committed && no_op.session
           && no_op.session->revision == 2 && !no_op.render_intent);
+
+    const auto forced_render = processor.process({imtg::BotId{3}, 5}, key, fsm,
+        {imtg::FsmEventId{"refresh", 1}, imtg::FsmEventKind::Normal, {}}, now + 3s,
+        std::nullopt, imtg::UpdateProcessOptions{true, imtg::RenderPolicy::Always});
+    CHECK(forced_render.outcome == imtg::UpdateProcessOutcome::Committed
+          && forced_render.render_intent);
+    auto forced_read = begin(backend);
+    const auto forced_loaded = intents.load(*forced_render.render_intent, *forced_read.transaction());
+    CHECK(forced_loaded && forced_loaded.value() && forced_loaded.value()->origin
+          && forced_loaded.value()->origin->update_id == 5);
 
     auto verify = begin(backend);
     const auto session = sessions.load(key, *verify.transaction());

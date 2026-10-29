@@ -27,8 +27,13 @@ minimal stable `RenderIntent` record. `AtomicUpdateProcessor` stages processed-u
 session creation/transition, and optional render-intent creation in one transaction. An in-memory
 repository reconstruction proves backend-lifetime recovery only; it is not a process-crash durability
 claim. Timeout events are synthesized from an explicit session deadline, while cancellation and terminal
-states are ordinary typed transitions. Invalid, unsupported, truncated, oversized, or stale records fail
-closed. Processed-update identities are retained according to the backend's configured namespace
+states are ordinary typed transitions. The canonical `cancel/1` and `timeout/1` identities are reserved
+for their matching event kinds; ordinary events cannot impersonate system events. A successful state
+transition clears pending input and its prior deadline and assigns the new state as the screen identity.
+Render requests support `Never`, `OnChange`, and `Always`; `Always` identities include the originating
+update so repeated renders at one revision do not collide. The processor rejects update/conversation bot
+mismatches before writing a marker and supports an optional strict expected-session-revision check.
+Invalid, unsupported, truncated, oversized, or stale records fail closed. Processed-update identities are retained according to the backend's configured namespace
 retention policy; M2b does not claim indefinite exactly-once processing beyond that policy.
 
 **Verification:** key encoding/equality tests for private, group, and per-user scopes; transition/guard/
