@@ -616,8 +616,8 @@ UpdateProcessResult AtomicUpdateProcessor::process(
     apply_deadline(options.deadline_patch);
     const auto screen_patch = apply_screen(options.screen_patch);
     if (!screen_patch) return UpdateProcessResult{UpdateProcessOutcome::Failed, screen_patch.error(), {}, {}};
-    const bool metadata_changed = original_pending != session.pending_input ||
-        original_deadline != session.deadline || original_screen != session.screen;
+    const bool metadata_changed = !(original_pending == session.pending_input) ||
+        !(original_deadline == session.deadline) || !(original_screen == session.screen);
     const bool session_changed = !loaded.value() || step.value().changed || metadata_changed;
     if (session_changed && (step.value().changed || metadata_changed)) {
         if (session.revision == 0) {
