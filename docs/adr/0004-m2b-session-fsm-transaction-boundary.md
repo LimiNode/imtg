@@ -23,6 +23,13 @@ originating update. Update identity must match the conversation bot before dedup
 may require an expected session revision at the processor boundary; authorization and action binding
 remain outside M2b.
 
+Strict expected-revision actions call the storage compare-only `watch` primitive. The in-memory backend
+checks watched revisions while holding the publication lock, preventing a concurrent writer from allowing
+a stale self-transition to publish only its marker or render intent. Canonical timeout events are accepted
+only at or after an existing deadline; cancellation remains an explicit application event and is allowed
+after expiry. Session metadata uses Keep/Clear/Set patches, and metadata-only changes use the same expected
+revision CAS as state transitions. Wire timestamps are signed milliseconds with checked range conversion.
+
 `AtomicUpdateProcessor` stages `record_if_new(update_identity)`, the session create/transition, and an
 optional stable `RenderIntent` in one optimistic transaction. A duplicate marker commits as a no-op and
 does not execute a second transition. A failed or conflicted transaction publishes none of the staged

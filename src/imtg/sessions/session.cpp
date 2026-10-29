@@ -45,9 +45,30 @@ std::int64_t time_millis(ClockTime value)
         value.time_since_epoch()).count();
 }
 
-ClockTime from_millis(std::int64_t value)
+Result<ClockTime> decode_time_millis(std::uint64_t raw)
 {
-    return ClockTime{std::chrono::milliseconds(value)};
+    // Decode the existing two's-complement wire representation without an
+    // implementation-defined uint64_t -> int64_t conversion.
+    std::int64_t millis = 0;
+    if (raw <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        millis = static_cast<std::int64_t>(raw);
+    } else if (raw == (std::uint64_t{1} << 63)) {
+        millis = std::numeric_limits<std::int64_t>::min();
+    } else {
+        const auto magnitude = static_cast<std::int64_t>(~raw);
+        millis = -1 - magnitude;
+    }
+    using Duration = ClockTime::duration;
+    using Rep = Duration::rep;
+    const long double ticks = static_cast<long double>(millis) *
+        (1000.0L * static_cast<long double>(Duration::period::den)) /
+        static_cast<long double>(Duration::period::num);
+    const long double min_rep = static_cast<long double>(std::numeric_limits<Rep>::lowest());
+    const long double max_rep = static_cast<long double>(std::numeric_limits<Rep>::max());
+    if (ticks < min_rep || ticks > max_rep) {
+        return encoding_error(ErrorCode::InvalidEncoding, "timestamp is outside the platform clock range");
+    }
+    return ClockTime{std::chrono::duration_cast<Duration>(std::chrono::milliseconds(millis))};
 }
 
 class Reader final {
@@ -202,6 +223,9 @@ Result<SessionRecord> decode_session_record(std::string_view encoded)
     SessionRecord record;
     const auto schema = reader.u32();
     if (!schema) return schema.error();
+    if (schema.value() == 0) {
+        return encoding_error(ErrorCode::UnsupportedVersion, "session schema version is zero");
+    }
     record.schema_version = schema.value();
     const auto key = reader.string();
     if (!key) return key.error();
@@ -241,14 +265,20 @@ Result<SessionRecord> decode_session_record(std::string_view encoded)
     if (deadline_marker.value() != 0) {
         const auto deadline = reader.u64();
         if (!deadline) return deadline.error();
-        record.deadline = from_millis(static_cast<std::int64_t>(deadline.value()));
+        const auto decoded_deadline = decode_time_millis(deadline.value());
+        if (!decoded_deadline) return decoded_deadline.error();
+        record.deadline = decoded_deadline.value();
     }
     const auto created = reader.u64();
     if (!created) return created.error();
     const auto transitioned = reader.u64();
     if (!transitioned) return transitioned.error();
-    record.created_at = from_millis(static_cast<std::int64_t>(created.value()));
-    record.last_transition_at = from_millis(static_cast<std::int64_t>(transitioned.value()));
+    const auto decoded_created = decode_time_millis(created.value());
+    if (!decoded_created) return decoded_created.error();
+    const auto decoded_transitioned = decode_time_millis(transitioned.value());
+    if (!decoded_transitioned) return decoded_transitioned.error();
+    record.created_at = decoded_created.value();
+    record.last_transition_at = decoded_transitioned.value();
     if (reader.remaining() != 0) {
         return encoding_error(ErrorCode::InvalidEncoding, "session record has trailing bytes");
     }
@@ -446,9 +476,19 @@ Result<std::optional<RenderIntent>> RenderIntentRepository::load(
         if (marker != 0 || separator == std::string::npos) {
             return encoding_error(ErrorCode::StorageSerializationFailure, "render intent origin is malformed");
         }
+        const auto bot_text = encoded_origin.value().substr(5, separator - 5);
+        const auto update_text = encoded_origin.value().substr(separator + 3);
+        const auto digits = [](std::string_view text) {
+            if (text.empty()) return false;
+            for (const auto ch : text) if (ch < '0' || ch > '9') return false;
+            return true;
+        };
+        if (!digits(bot_text) || !digits(update_text)) {
+            return encoding_error(ErrorCode::StorageSerializationFailure, "render intent origin is malformed");
+        }
         try {
-            origin = UpdateIdentity{BotId{std::stoull(encoded_origin.value().substr(5, separator - 5))},
-                                    std::stoull(encoded_origin.value().substr(separator + 3))};
+            origin = UpdateIdentity{BotId{std::stoull(std::string(bot_text))},
+                                    std::stoull(std::string(update_text))};
         } catch (...) {
             return encoding_error(ErrorCode::StorageSerializationFailure, "render intent origin is malformed");
         }
@@ -457,6 +497,10 @@ Result<std::optional<RenderIntent>> RenderIntentRepository::load(
         return encoding_error(ErrorCode::StorageSerializationFailure, "render intent payload is malformed");
     }
     RenderIntent intent{ id, key.value(), revision.value(), metadata.value(), origin };
+    if (origin && !(origin->bot_id == intent.conversation.bot_id)) {
+        return encoding_error(ErrorCode::StorageSerializationFailure,
+                              "render intent origin bot does not match conversation");
+    }
     if ((origin ? make_id(intent.conversation, intent.session_revision, *origin)
                 : make_id(intent.conversation, intent.session_revision)).value != id.value) {
         return encoding_error(ErrorCode::StorageSerializationFailure, "render intent identity does not match payload");
@@ -515,13 +559,25 @@ UpdateProcessResult AtomicUpdateProcessor::process(
         return UpdateProcessResult{UpdateProcessOutcome::RejectedConflict,
             encoding_error(ErrorCode::StorageConflict, "session revision expectation is stale"), {}, {}};
     }
+    if (options.require_expected_revision) {
+        const auto watched = transaction.watch(session_namespace, conversation.encode(), session.revision);
+        if (!watched) return UpdateProcessResult{UpdateProcessOutcome::RejectedConflict,
+            watched.error(), {}, {}};
+    }
     FsmEvent effective_event = event;
+    if (event.kind == FsmEventKind::Timeout &&
+        (!session.deadline || now < *session.deadline)) {
+        return UpdateProcessResult{UpdateProcessOutcome::Failed,
+            encoding_error(ErrorCode::ExpiredAction, "timeout is not currently eligible"), {}, {}};
+    }
     if (session.deadline && now >= *session.deadline && event.kind == FsmEventKind::Normal) {
         effective_event = FsmEvent::timeout();
     }
     const auto step = fsm.step(session.state, effective_event);
     if (!step) return UpdateProcessResult{UpdateProcessOutcome::Failed, step.error(), {}, {}};
-    const bool session_changed = !loaded.value() || step.value().changed;
+    const auto original_pending = session.pending_input;
+    const auto original_deadline = session.deadline;
+    const auto original_screen = session.screen;
     if (step.value().changed) {
         session.state = step.value().state;
         session.last_transition_at = now;
@@ -534,6 +590,36 @@ UpdateProcessResult AtomicUpdateProcessor::process(
         if (options.next_pending_input) session.pending_input = options.next_pending_input;
         if (options.next_deadline) session.deadline = options.next_deadline;
         if (options.next_screen) session.screen = *options.next_screen;
+    } else {
+        // Metadata patches are also valid for a self-transition. The legacy
+        // next_* fields remain shorthand for Set(value).
+        if (options.next_pending_input) session.pending_input = options.next_pending_input;
+        if (options.next_deadline) session.deadline = options.next_deadline;
+        if (options.next_screen) session.screen = *options.next_screen;
+    }
+    const auto apply_pending = [&session](const MetadataPatch<PendingInput>& patch) {
+        if (patch.mode == MetadataPatchMode::Clear) session.pending_input.reset();
+        else if (patch.mode == MetadataPatchMode::Set && patch.value) session.pending_input = patch.value;
+    };
+    const auto apply_deadline = [&session](const MetadataPatch<ClockTime>& patch) {
+        if (patch.mode == MetadataPatchMode::Clear) session.deadline.reset();
+        else if (patch.mode == MetadataPatchMode::Set && patch.value) session.deadline = patch.value;
+    };
+    const auto apply_screen = [&session](const MetadataPatch<ScreenIdentity>& patch) -> Result<void> {
+        if (patch.mode == MetadataPatchMode::Clear) {
+            return encoding_error(ErrorCode::InvalidArgument, "screen identity cannot be cleared");
+        }
+        if (patch.mode == MetadataPatchMode::Set && patch.value) session.screen = *patch.value;
+        return Result<void>();
+    };
+    apply_pending(options.pending_input_patch);
+    apply_deadline(options.deadline_patch);
+    const auto screen_patch = apply_screen(options.screen_patch);
+    if (!screen_patch) return UpdateProcessResult{UpdateProcessOutcome::Failed, screen_patch.error(), {}, {}};
+    const bool metadata_changed = original_pending != session.pending_input ||
+        original_deadline != session.deadline || original_screen != session.screen;
+    const bool session_changed = !loaded.value() || step.value().changed || metadata_changed;
+    if (session_changed && (step.value().changed || metadata_changed)) {
         if (session.revision == 0) {
             auto created = m_sessions.create(session, transaction);
             if (!created) return UpdateProcessResult{UpdateProcessOutcome::Failed, created.error(), {}, {}};

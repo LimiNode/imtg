@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace imtg {
 
@@ -44,6 +45,20 @@ struct SessionRecord {
     std::optional<ClockTime> deadline;
     ClockTime created_at{};
     ClockTime last_transition_at{};
+};
+
+enum class MetadataPatchMode { Keep, Clear, Set };
+
+template <typename T>
+struct MetadataPatch {
+    MetadataPatchMode mode = MetadataPatchMode::Keep;
+    std::optional<T> value;
+
+    static MetadataPatch keep() { return {}; }
+    static MetadataPatch clear() { return {MetadataPatchMode::Clear, std::nullopt}; }
+    static MetadataPatch set(T value) {
+        return {MetadataPatchMode::Set, std::optional<T>{std::move(value)}};
+    }
 };
 
 [[nodiscard]] Result<StorageBytes> encode_session_record(const SessionRecord& record);
@@ -169,6 +184,9 @@ struct UpdateProcessOptions {
     std::optional<PendingInput> next_pending_input;
     std::optional<ClockTime> next_deadline;
     std::optional<ScreenIdentity> next_screen;
+    MetadataPatch<PendingInput> pending_input_patch;
+    MetadataPatch<ClockTime> deadline_patch;
+    MetadataPatch<ScreenIdentity> screen_patch;
 };
 
 /// Atomically records an update, evaluates a transition, saves the session and

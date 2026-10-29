@@ -33,6 +33,12 @@ transition clears pending input and its prior deadline and assigns the new state
 Render requests support `Never`, `OnChange`, and `Always`; `Always` identities include the originating
 update so repeated renders at one revision do not collide. The processor rejects update/conversation bot
 mismatches before writing a marker and supports an optional strict expected-session-revision check.
+Strict checks register a storage read dependency and are therefore validated at commit, including for
+self-transitions. Canonical timeout events are accepted only when a session deadline exists and `now`
+has reached it; normal events after expiry are deterministically synthesized as timeout events. Metadata
+patches distinguish Keep, Clear and Set and persist state-independent changes with their own CAS revision.
+Serialized timestamps are signed millisecond values and are range-checked against the platform clock before
+conversion.
 Invalid, unsupported, truncated, oversized, or stale records fail closed. Processed-update identities are retained according to the backend's configured namespace
 retention policy; M2b does not claim indefinite exactly-once processing beyond that policy.
 

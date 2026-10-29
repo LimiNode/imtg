@@ -80,6 +80,14 @@ public:
     /// Reads from the transaction snapshot, including this transaction's pending writes.
     [[nodiscard]] virtual Result<std::optional<StorageRecord>> read(
         std::string_view name_space, std::string_view key) = 0;
+    /// Registers a compare-only dependency checked atomically at commit. The
+    /// dependency does not create a write and is useful for CAS-style reads.
+    [[nodiscard]] virtual Result<void> watch(
+        std::string_view, std::string_view,
+        StorageRevision) {
+        return Error{ErrorCode::StorageUnavailable,
+                     "compare-only read dependencies are not supported by this backend"};
+    }
     /// Creates a new key generation and returns its candidate committed revision.
     [[nodiscard]] virtual Result<StorageRevision> create_if_absent(
         std::string_view name_space, std::string_view key, std::string_view value) = 0;

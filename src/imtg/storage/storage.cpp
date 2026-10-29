@@ -101,6 +101,25 @@ public:
             *found->second.value, found->second.revision}};
     }
 
+    Result<void> watch(std::string_view name_space, std::string_view key,
+                       StorageRevision expected_revision) override
+    {
+        const auto precondition = check_active();
+        if (!precondition) return precondition.error();
+        const auto identity = make_key(name_space, key);
+        if (!identity) return identity.error();
+        const auto pending = m_writes.find(identity.value());
+        const auto found = m_snapshot.find(identity.value());
+        const auto visible_revision = pending != m_writes.end()
+            ? pending->second.resulting_revision
+            : (found == m_snapshot.end() ? StorageRevision{0} : found->second.revision);
+        if (visible_revision != expected_revision) {
+            return storage_error(ErrorCode::StorageConflict, "read dependency is stale");
+        }
+        m_dependencies[identity.value()] = expected_revision;
+        return Result<void>();
+    }
+
     Result<StorageRevision> create_if_absent(std::string_view name_space,
                                               std::string_view key,
                                               std::string_view value) override
@@ -231,6 +250,14 @@ public:
             const auto current_revision = found == m_backend.m_records.end()
                 ? StorageRevision{0} : found->second.revision;
             if (current_revision != entry.second.expected_revision) {
+                return conflict();
+            }
+        }
+        for (const auto& dependency : m_dependencies) {
+            const auto found = m_backend.m_records.find(dependency.first);
+            const auto current_revision = found == m_backend.m_records.end()
+                ? StorageRevision{0} : found->second.revision;
+            if (current_revision != dependency.second) {
                 return conflict();
             }
         }
@@ -365,6 +392,7 @@ private:
     TransactionState m_state = TransactionState::Active;
     RecordMap m_snapshot;
     std::unordered_map<RecordKey, Pending, RecordKeyHash> m_writes;
+    std::unordered_map<RecordKey, StorageRevision, RecordKeyHash> m_dependencies;
     std::thread::id m_owner;
 };
 

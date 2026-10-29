@@ -71,6 +71,10 @@ is stable, reads include pending writes, and all writes in one commit are publis
 key with no generation. Each changed key advances exactly once per successful transaction;
 repeated writes expose the same candidate committed revision, and a fresh transaction observes
 that exact revision after commit.
+`ITransaction::watch(namespace, key, expected_revision)` registers a compare-only read dependency;
+the in-memory backend validates it under the publication lock, so strict session revision checks also
+fence self-transitions that have no session write. Backends without this capability fail closed when
+the strict processor policy requests it.
 The destructor rolls back only a definitely active transaction. After `Unknown`, the transaction
 is terminal: callers must recover by reading authoritative state in a new transaction and must not
 retry or roll back the original operation.

@@ -75,6 +75,15 @@ void test_fsm_and_encoding()
           && decoded.value().deadline == record.deadline
           && decoded.value().created_at == record.created_at
           && decoded.value().last_transition_at == record.last_transition_at);
+    auto extreme = encoded.value();
+    for (std::size_t i = extreme.size() - 8; i < extreme.size(); ++i) extreme[i] = '\xff';
+    extreme.back() = '\x7f';
+    CHECK(!imtg::decode_session_record(extreme));
+    const auto before_epoch = imtg::SessionRecord{key, 1, {"awaiting_email", 1}, {"registration", 2}, 8,
+        std::nullopt, std::nullopt, imtg::ClockTime{std::chrono::milliseconds{-1}},
+        imtg::ClockTime{std::chrono::milliseconds{-1}}};
+    const auto before_encoded = imtg::encode_session_record(before_epoch);
+    CHECK(before_encoded && imtg::decode_session_record(before_encoded.value()));
     auto corrupt = encoded.value();
     corrupt[0] = 'X';
     CHECK(!imtg::decode_session_record(corrupt));
@@ -156,6 +165,18 @@ void test_repositories()
     CHECK(sessions.create(recreated, *recreating.transaction()));
     CHECK(recreating.commit().outcome == imtg::CommitOutcome::Committed);
 
+    auto fenced_a = begin(backend);
+    const auto fenced_loaded = sessions.load(key, *fenced_a.transaction());
+    CHECK(fenced_loaded && fenced_loaded.value());
+    CHECK(fenced_a.transaction()->watch("sessions", key.encode(), fenced_loaded.value()->revision));
+    auto fenced_b = begin(backend);
+    auto fenced_record = *sessions.load(key, *fenced_b.transaction()).value();
+    fenced_record.screen = {"changed", 1};
+    CHECK(sessions.save(fenced_record, fenced_record.revision, *fenced_b.transaction()));
+    CHECK(fenced_b.commit().outcome == imtg::CommitOutcome::Committed);
+    CHECK(processed.record_if_new({imtg::BotId{1}, 900}, *fenced_a.transaction()));
+    CHECK(fenced_a.commit().outcome == imtg::CommitOutcome::RejectedConflict);
+
     auto marker = begin(backend);
     CHECK(processed.record_if_new({imtg::BotId{1}, 44}, *marker.transaction()));
     const auto duplicate = processed.record_if_new({imtg::BotId{1}, 44}, *marker.transaction());
@@ -184,6 +205,16 @@ void test_timeout_and_unknown_recovery()
     const auto key = conversation(8, 9);
     const auto now = imtg::ClockTime{std::chrono::milliseconds{500}};
     const auto fsm = make_fsm();
+
+    {
+        imtg::InMemoryStorageBackend backend(schema());
+        imtg::AtomicUpdateProcessor processor(backend, sessions, processed, intents);
+        const auto premature = processor.process({imtg::BotId{8}, 100}, key, fsm,
+            imtg::FsmEvent::timeout(), now, initial_session(key, now));
+        CHECK(premature.outcome == imtg::UpdateProcessOutcome::Failed);
+        auto premature_check = begin(backend);
+        CHECK(processed.record_if_new({imtg::BotId{8}, 100}, *premature_check.transaction()).value());
+    }
 
     {
         imtg::InMemoryStorageBackend backend(schema());
@@ -301,6 +332,17 @@ void test_atomic_processor()
     CHECK(no_op.outcome == imtg::UpdateProcessOutcome::Committed && no_op.session
           && no_op.session->revision == 2 && !no_op.render_intent);
 
+    auto patch_options = imtg::UpdateProcessOptions{false};
+    patch_options.require_expected_revision = true;
+    patch_options.expected_revision = 2;
+    patch_options.screen_patch = imtg::MetadataPatch<imtg::ScreenIdentity>::set({"refreshed", 1});
+    const auto metadata = processor.process({imtg::BotId{3}, 6}, key, fsm,
+        {imtg::FsmEventId{"refresh", 1}, imtg::FsmEventKind::Normal, {}}, now + 3s,
+        std::nullopt, patch_options);
+    CHECK(metadata.outcome == imtg::UpdateProcessOutcome::Committed && metadata.session
+          && metadata.session->revision == 3
+          && metadata.session->screen.name == "refreshed");
+
     const auto forced_render = processor.process({imtg::BotId{3}, 5}, key, fsm,
         {imtg::FsmEventId{"refresh", 1}, imtg::FsmEventKind::Normal, {}}, now + 3s,
         std::nullopt, imtg::UpdateProcessOptions{true, imtg::RenderPolicy::Always});
@@ -314,7 +356,7 @@ void test_atomic_processor()
     auto verify = begin(backend);
     const auto session = sessions.load(key, *verify.transaction());
     const imtg::FsmStateId consent_state{"awaiting_consent", 1};
-    CHECK(session && session.value()->state == consent_state && session.value()->revision == 2);
+    CHECK(session && session.value()->state == consent_state && session.value()->revision == 3);
 
     imtg::InMemoryFailureInjection injection;
     injection.fail_before_publish = true;
@@ -327,7 +369,7 @@ void test_atomic_processor()
     auto after_failure = begin(backend);
     const auto unchanged = sessions.load(key, *after_failure.transaction());
     CHECK(unchanged && unchanged.value() && unchanged.value()->state == consent_state
-          && unchanged.value()->revision == 2);
+          && unchanged.value()->revision == 3);
 }
 
 } // namespace
