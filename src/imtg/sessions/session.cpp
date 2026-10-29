@@ -476,7 +476,7 @@ UpdateProcessResult AtomicUpdateProcessor::process(
     const FsmEvent& event, ClockTime now, std::optional<SessionRecord> initial_session,
     UpdateProcessOptions options) const
 {
-    if (update.bot_id != conversation.bot_id) {
+    if (!(update.bot_id == conversation.bot_id)) {
         return UpdateProcessResult{UpdateProcessOutcome::Failed,
             encoding_error(ErrorCode::InvalidArgument, "update bot identity does not match conversation"), {}, {}};
     }
