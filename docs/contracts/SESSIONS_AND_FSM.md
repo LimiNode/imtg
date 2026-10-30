@@ -1,6 +1,7 @@
 # Sessions and FSM contract
 
-**Semantic owner:** session/runtime maintainers. **Status:** contract-only.
+**Semantic owner:** session/runtime maintainers. **Status:** M2b typed session/FSM baseline implemented in
+`src/imtg/sessions/`; durable process-crash persistence remains deferred to the MDBX adapter.
 
 ## Minimum conversation identity
 
@@ -20,4 +21,30 @@ A session contains FSM state, current screen metadata, revision, selected scope,
 
 Updates for one `ConversationKey` are sequential; unrelated keys may run concurrently. Before scheduling, only stateless update/token validation and key derivation are permitted. Session loading, authorization, stale-revision checks, action resolution, and transition handling occur inside the serialized boundary and are revalidated immediately before commit. A persisted transition uses expected revision and the storage transaction boundary. On restart the session is loaded by exact key and schema version; unknown/expired states fail closed and are journaled. Processed-update deduplication, FSM transition, and durable render intent commit atomically; post-commit reconciliation converts the intent into an outbox effect as described in [STORAGE.md](STORAGE.md).
 
-**Verification:** key encoding/equality tests for private, group, per-user, and thread scopes; transition/guard/timeout tests; per-key ordering and concurrent-key isolation tests; two callbacks racing on one revision with the second rejected after in-boundary revalidation; restart/migration tests; and stale callback revision tests. **Dependencies:** UI/actions, storage, events/lifetime, and the M1 scheduler.
+M2b implements `SessionRecord`, a versioned length-prefixed binary-safe encoding, repository operations
+over a borrowed `ITransaction`, deterministic `Fsm` transitions, processed-update identities, and a
+minimal stable `RenderIntent` record. `AtomicUpdateProcessor` stages processed-update deduplication,
+session creation/transition, and optional render-intent creation in one transaction. An in-memory
+repository reconstruction proves backend-lifetime recovery only; it is not a process-crash durability
+claim. Timeout events are synthesized from an explicit session deadline, while cancellation and terminal
+states are ordinary typed transitions. The canonical `cancel/1` and `timeout/1` identities are reserved
+for their matching event kinds; ordinary events cannot impersonate system events. A successful state
+transition clears pending input and its prior deadline and assigns the new state as the screen identity.
+Render requests support `Never`, `OnChange`, and `Always`; `Always` identities include the originating
+update so repeated renders at one revision do not collide. The processor rejects update/conversation bot
+mismatches before writing a marker and supports an optional strict expected-session-revision check.
+Strict checks register a storage read dependency and are therefore validated at commit, including for
+self-transitions. Canonical timeout events are accepted only when a session deadline exists and `now`
+has reached it; normal events after expiry are deterministically synthesized as timeout events. Metadata
+patches distinguish Keep, Clear and Set and persist state-independent changes with their own CAS revision.
+Serialized timestamps are signed millisecond values and are range-checked against the platform clock before
+conversion.
+Invalid, unsupported, truncated, oversized, or stale records fail closed. Processed-update identities are retained according to the backend's configured namespace
+retention policy; M2b does not claim indefinite exactly-once processing beyond that policy.
+
+**Verification:** key encoding/equality tests for private, group, and per-user scopes; transition/guard/
+timeout/cancellation tests; repository create/load/save/delete and stale-revision tests; malformed and
+unsupported record tests; duplicate update, rollback, unknown/conflict commit, and atomic processed-update
+session+render-intent tests. Thread scheduling, restart/migration integration, and Telegram action
+authorization remain dependent on later runtime slices. **Dependencies:** UI/actions, storage,
+events/lifetime, and the M1 scheduler.

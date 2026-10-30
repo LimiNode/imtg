@@ -32,6 +32,8 @@ enum class ErrorCode {
     StorageStaleClaim,
     StorageUnavailable,
     StorageSchemaFailure,
+    StorageSerializationFailure,
+    StorageRecordTooLarge,
     StoragePermissionDenied,
     StorageUnknownCommit,
     StorageRevisionExhausted,

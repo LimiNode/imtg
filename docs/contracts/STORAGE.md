@@ -1,11 +1,11 @@
 # Storage contract
 
-**Semantic owner:** persistence maintainers. **Status:** M2a protocol and deterministic in-memory reference backend are implemented in `src/imtg/storage/storage.hpp`; durable repositories, claims, render intents, outbox, and MDBX remain planned.
+**Semantic owner:** persistence maintainers. **Status:** M2a protocol and deterministic in-memory reference backend are implemented in `src/imtg/storage/storage.hpp`; M2b adds typed session, processed-update, and minimal render-intent repositories. Durable claims, outbox delivery, and MDBX remain planned.
 
 ## Core interfaces
 
 ```cpp
-// M2a API excerpt; the durable repository interfaces below remain planned.
+// M2a/M2b API excerpt; claim and delivery interfaces remain planned.
 enum class CommitOutcome { Committed, RejectedConflict, Failed, Unknown };
 struct CommitResult {
     CommitOutcome outcome;
@@ -34,43 +34,33 @@ public:
     CommitResult commit();
 };
 
-class ISessionStore {
+class ISessionRepository {
 public:
-    virtual ~ISessionStore() = default;
-    virtual Result<SessionRecord> load(
+    virtual ~ISessionRepository() = default;
+    virtual Result<std::optional<SessionRecord>> load(
         const ConversationKey&, ITransaction&) = 0;
-    virtual Result<void> save(
-        const SessionRecord&, Revision expected, ITransaction&) = 0;
-};
-
-class IRenderIntentStore {
-public:
-    virtual ~IRenderIntentStore() = default;
-    virtual Result<RenderIntentId> append(RenderIntent, ITransaction&) = 0;
-    virtual Result<std::vector<ClaimedRenderIntent>> claim_batch(
-        ClaimRequest, ITransaction&) = 0;
-    virtual Result<void> complete(
-        RenderIntentId, ClaimToken fencing_token,
-        Revision expected, ITransaction&) = 0;
-};
-
-class IOutboxStore {
-public:
-    virtual ~IOutboxStore() = default;
-    virtual Result<OutboxId> append(OutboxEffect, ITransaction&) = 0;
-    virtual Result<std::vector<ClaimedOutboxEffect>> claim_batch(
-        ClaimRequest, ITransaction&) = 0;
-    virtual Result<void> acknowledge(
-        OutboxId, ClaimToken fencing_token,
-        DeliveryOutcome, ITransaction&) = 0;
+    virtual Result<SessionRecord> create(SessionRecord, ITransaction&) = 0;
+    virtual Result<SessionRecord> save(
+        SessionRecord, StorageRevision expected, ITransaction&) = 0;
+    virtual Result<void> erase(
+        const ConversationKey&, StorageRevision expected, ITransaction&) = 0;
 };
 
 class IProcessedUpdateStore {
 public:
     virtual ~IProcessedUpdateStore() = default;
-    virtual Result<bool> record_if_new(
-        UpdateIdentity, ITransaction&) = 0;
+    virtual Result<bool> record_if_new(UpdateIdentity, ITransaction&) = 0;
 };
+
+class IRenderIntentStore {
+public:
+    virtual ~IRenderIntentStore() = default;
+    virtual Result<RenderIntentId> append(const RenderIntent&, ITransaction&) = 0;
+    virtual Result<std::optional<RenderIntent>> load(
+        const RenderIntentId&, ITransaction&) = 0;
+};
+
+// M2c claim, fencing, outbox, and completion interfaces are planned additions.
 ```
 
 `UnitOfWork::begin()` returns a move-only owner of one transaction. The transaction borrows its
@@ -81,6 +71,15 @@ is stable, reads include pending writes, and all writes in one commit are publis
 key with no generation. Each changed key advances exactly once per successful transaction;
 repeated writes expose the same candidate committed revision, and a fresh transaction observes
 that exact revision after commit.
+`ITransaction::watch(namespace, key, expected_revision)` registers a compare-only read dependency;
+the in-memory backend validates it under the publication lock, so strict session revision checks also
+fence self-transitions that have no session write. Backends without this capability fail closed when
+the strict processor policy requests it. A watch-only commit validates dependencies without copying or
+publishing the record map and does not consume publication failure injection. If the watched key has a
+pending write in the same transaction, the dependency observes that transaction-visible generation and
+is fenced against the pending write's original backend generation; the normal write-set CAS remains
+authoritative. This makes watch-before-write and watch-after-write equivalent without masking concurrent
+changes.
 The destructor rolls back only a definitely active transaction. After `Unknown`, the transaction
 is terminal: callers must recover by reading authoritative state in a new transaction and must not
 retry or roll back the original operation.
@@ -149,6 +148,8 @@ boundaries, delete/recreate ABA rejection, rollback-on-destruction and move-assi
 rejection, duplicate creates, optimistic conflicts, atomic multi-record publication, ownership,
 allocation-free no-op commits, and deterministic known/unknown failure injection. Parallel-writer
 cases are capability-gated for
-future single-writer backends. The two-transaction render-intent chain,
+future single-writer backends. M2b additionally covers typed session encoding/recovery within backend
+lifetime, optimistic session saves, processed-update deduplication, and atomic TX1 publication of a
+session transition plus minimal render intent. The two-transaction render-intent claim/reconciliation chain,
 migrations beyond schema metadata, bounded queries, DBI-budget calculation, lease expiry/fencing,
-and late-ack rejection remain M2b–M2e work. **Dependencies:** none in core; MDBX adapter is M2d.
+and late-ack rejection remain M2c–M2e work. **Dependencies:** none in core; MDBX adapter is M2d.

@@ -5,11 +5,12 @@ imtg is a C++17 framework design for Telegram bots whose views are described wit
 ## Project status
 
 This repository has completed **M1 — Telegram-free deterministic foundation** and implements the
-**M2a backend-neutral storage foundation**. The C++17 `imtg_core` target includes deterministic
+**M2a backend-neutral storage foundation and M2b typed session/FSM baseline**. The C++17 `imtg_core` target includes deterministic
 UI/action primitives, a bounded reference runtime, snapshot/optimistic transactions, monotonic
-record generations, schema gates, explicit commit outcomes, and reusable offline conformance
-tests. Durable sessions, MDBX, render intents, outbox delivery, Telegram transport, and release
-artifacts remain planned. Code fragments remain conceptual unless identified as implemented in
+record generations, schema gates, explicit commit outcomes, typed session records, deterministic FSM
+transitions, processed-update deduplication, minimal atomic render intents, and reusable offline
+conformance tests. Durable process-crash persistence, MDBX, claim workers, outbox delivery, Telegram
+transport, and release artifacts remain planned. Code fragments remain conceptual unless identified as implemented in
 [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
 ## Design in one minute
@@ -58,6 +59,7 @@ The core owns contracts and deterministic orchestration. `kurlyk` is a planned t
 - [Roadmap](docs/ROADMAP.md) — dependency-gated milestones and acceptance criteria.
 - [Implementation status](docs/IMPLEMENTATION_STATUS.md) — what exists today.
 - [Reference scenarios](docs/reference-scenarios.md) — end-to-end design examples.
+- [Sessions and FSM](docs/contracts/SESSIONS_AND_FSM.md) — typed session and transactional transition contract.
 - [Engineering governance](docs/DOCUMENTATION_GOVERNANCE.md) — how contracts stay canonical.
 - [Coding style](docs/guides/coding-style.md) — C++17, naming, ownership, and Doxygen rules.
 
@@ -79,4 +81,4 @@ submodules under `external/<name>` and initialized non-recursively by default.
 
 ## Next step
 
-The next stacked PR is M2b: durable sessions and FSM integration on top of the accepted M2a protocol. See the roadmap for the full dependency chain.
+The next slice is M2c: render-intent processing, reconciliation, and durable outbox claims on top of the accepted M2b transaction boundary. See the roadmap for the full dependency chain.

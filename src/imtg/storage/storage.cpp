@@ -101,6 +101,30 @@ public:
             *found->second.value, found->second.revision}};
     }
 
+    Result<void> watch(std::string_view name_space, std::string_view key,
+                       StorageRevision expected_revision) override
+    {
+        const auto precondition = check_active();
+        if (!precondition) return precondition.error();
+        const auto identity = make_key(name_space, key);
+        if (!identity) return identity.error();
+        const auto pending = m_writes.find(identity.value());
+        const auto found = m_snapshot.find(identity.value());
+        const auto visible_revision = pending != m_writes.end()
+            ? pending->second.resulting_revision
+            : (found == m_snapshot.end() ? StorageRevision{0} : found->second.revision);
+        if (visible_revision != expected_revision) {
+            return storage_error(ErrorCode::StorageConflict, "read dependency is stale");
+        }
+        // A dependency observed after our own write is fenced against that
+        // write's original backend generation, not its candidate revision.
+        // This keeps watch-before-write and watch-after-write equivalent while
+        // preserving concurrent-writer conflict detection.
+        m_dependencies[identity.value()] = pending != m_writes.end()
+            ? pending->second.expected_revision : expected_revision;
+        return Result<void>();
+    }
+
     Result<StorageRevision> create_if_absent(std::string_view name_space,
                                               std::string_view key,
                                               std::string_view value) override
@@ -205,14 +229,22 @@ public:
             return failed(storage_error(ErrorCode::StorageReadOnly,
                                          "read-only transaction cannot write"));
         }
+        std::lock_guard<std::mutex> lock(m_backend.m_mutex);
+        for (const auto& dependency : m_dependencies) {
+            const auto found = m_backend.m_records.find(dependency.first);
+            const auto current_revision = found == m_backend.m_records.end()
+                ? StorageRevision{0} : found->second.revision;
+            if (current_revision != dependency.second) {
+                return conflict();
+            }
+        }
         if (m_writes.empty()) {
-            // Publication failure injection applies only when there is a write set to publish.
-            // Leaving it armed makes the next publishing commit deterministic.
+            // A watch-only commit validates dependencies under the same lock but
+            // does not copy/publish records or consume publication injection.
             m_state = TransactionState::Committed;
             return CommitResult{CommitOutcome::Committed, std::nullopt};
         }
 
-        std::lock_guard<std::mutex> lock(m_backend.m_mutex);
         if (m_backend.m_failure_injection.unknown_before_publish) {
             m_backend.m_failure_injection.unknown_before_publish = false;
             m_state = TransactionState::Unknown;
@@ -365,6 +397,7 @@ private:
     TransactionState m_state = TransactionState::Active;
     RecordMap m_snapshot;
     std::unordered_map<RecordKey, Pending, RecordKeyHash> m_writes;
+    std::unordered_map<RecordKey, StorageRevision, RecordKeyHash> m_dependencies;
     std::thread::id m_owner;
 };
 
