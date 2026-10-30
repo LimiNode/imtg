@@ -77,6 +77,33 @@ The backend-neutral record has the following semantic states:
 `Planned` is a storage fact, not evidence that Telegram accepted the effect.
 The outbox row carries the external attempt state separately.
 
+Only `Completed` and `Superseded` are terminal for intent planning. `Planned`
+means that TX2 durably published (or verified) the required effect; it is not a
+delivery acknowledgement and may still have an active or unresolved outbox
+effect. A later reconciliation may supersede a `Planned` intent only through a
+new fenced transaction that preserves the already-published effect and records
+the supersession reason.
+
+### Compatibility with M2b records
+
+M2b records contain `id`, `conversation`, `session_revision`, `metadata`, and
+an optional `origin`; they contain no claim, lease, state, or effect fields.
+M2c reads every valid M2b record as a `Pending` intent with no active claim and
+with `next_eligible_at` equal to the backend's current eligible time. The M2b
+identity is unchanged: the coalescing form remains
+`conversation|r=session_revision`, while an `Always` origin remains part of the
+identity. An M2c claim/revision envelope is additive metadata, not a rewrite of
+the identity.
+
+Backends may materialize the additive fields in a versioned envelope or in a
+side table keyed by `RenderIntentId`, but must use one schema gate and one
+transaction when publishing the representation. An old record is migrated to
+the additive representation only after it has been read and validated; a
+malformed or unknown version is `SchemaError`/`RecoveryRequired`, never an
+implicitly claimable row. The session repository and TX1 encoding remain
+unchanged. MDBX migration must preserve the original bytes/identity and be
+restartable before serving new claims.
+
 ## Claims, leases, and bounded scans
 
 The planned repository operations are:
@@ -94,12 +121,21 @@ limit, and a continuation key (or equivalent stable cursor). A worker never
 loads the whole table to find work. The continuation key is returned with the
 page and is exclusive on the next scan; it is not a mutable offset.
 
-The same rules apply to outbox effects. A backend may return fewer rows than
-the limit when the page ends, but it must not claim more than the configured
-global and per-worker budgets. Claiming is atomic with the fencing-token
-increment. If the transaction result is `Unknown`, recovery must inspect the
-persisted row before attempting another claim; it must not assume that the
-increment did or did not commit.
+The same bounded-scan rules apply to outbox effects, but their recovery state is
+different from render intents. A backend may return fewer rows than the limit
+when the page ends, but it must not claim more than the configured global and
+per-worker budgets. Claiming is atomic with the fencing-token increment. If the
+transaction result is `Unknown`, recovery must inspect the persisted row before
+attempting another claim; it must not assume that the increment did or did not
+commit.
+
+The eligible ordering is `(next_eligible_at, stable_record_id)` with an
+exclusive continuation key. If claiming changes `next_eligible_at`, the worker
+continues from the returned key and then starts a fresh page; it never reuses a
+mutable numeric offset. A bounded implementation must document its fairness
+rule (round-robin continuation or periodic restart from the first key) so a
+hot prefix cannot starve later records. Every claim attempt advances the token
+atomically and every completion validates the token and expected row revision.
 
 ## Reconciliation and TX2
 
@@ -111,7 +147,11 @@ increment did or did not commit.
    new effect, using the claim token and expected intent revision.
 4. If a delivery operation is required, TX2 writes exactly one stable
    `OutboxEffect` and marks the intent `Planned` or `Completed` according to
-   the operation contract. Both changes commit atomically.
+   the operation contract. The insertion (or byte-identical verification),
+   claim-token and expected-revision checks, desired-revision validation, and
+   intent transition all use the same caller-owned `ITransaction`/`UnitOfWork`.
+   They either all publish or none publish. A backend may expose an equivalent
+   atomic operation, but it must document that it has the same boundary.
 5. If a newer intent supersedes this one before TX2, the worker records
    `Superseded` with the newer identity. It does not erase an effect that was
    already committed for the older revision; the delivery worker applies the
@@ -119,9 +159,17 @@ increment did or did not commit.
 
 TX2 may be retried after a definite rollback. A `RejectedConflict` or
 `StaleClaim` causes the worker to discard its local plan and rescan. `Failed`
-and `Unknown` commit outcomes are persisted as technical diagnostics and
-recovered according to the backend contract; neither is silently treated as a
+and `Unknown` commit outcomes are not necessarily persistable in the same
+backend: the runtime emits an observable diagnostic, may append a best-effort
+technical journal entry, and performs authoritative recovery inspection in a
+new transaction. It must not claim that a durable diagnostic exists when the
+backend could not commit it, and neither outcome is silently treated as a
 successful completion.
+
+Claim and delivery acknowledgement may use additional short storage
+transactions. “TX1” and “TX2” name the two principal business transactions;
+they do not prohibit these lifecycle transactions or read-only recovery
+inspections.
 
 ## Outbox effect state and unknown outcomes
 
@@ -137,11 +185,77 @@ initial M2c protocol distinguishes at least:
   established; and
 - `Succeeded`, `Failed`, or `Superseded` — terminal policy decisions.
 
-`UnknownOutcome` is not an invitation to blindly resend. Recovery may retry
-only when the transport/method contract provides a safe idempotency or lookup
-proof. Otherwise it remains visible for reconciliation/manual policy, while a
-newer desired revision may supersede future work. A stale worker cannot turn an
-unknown row back into `Pending` because its token no longer matches.
+`UnknownOutcome` is not an invitation to blindly resend. The durable boundary
+is `dispatch_admitted`: before it becomes true, a definite rollback or
+definitely-not-started result may return an effect to `Pending`; once external
+dispatch has started, a lost response records `UnknownOutcome` and lease expiry
+alone never returns it to `Pending`. Recovery may retry only when the
+transport/method contract provides a safe idempotency or lookup proof.
+Otherwise it remains visible for reconciliation/manual policy, while a newer
+desired revision may supersede future work. Fencing protects storage
+acknowledgement, not external side-effect deduplication.
+
+The separate effect state machine is therefore:
+
+```text
+Pending -> ClaimedBeforeDispatch -> DispatchAdmitted
+                         |                  |
+                         |                  +--> Succeeded / RetryableFailure
+                         |                  +--> UnknownOutcome
+                         +--> Pending only after a definite pre-dispatch rollback
+UnknownOutcome -> retry only under an explicit safe-repeat proof
+```
+
+An expired `ClaimedBeforeDispatch` can be reclaimed only after storage proves
+that dispatch was not admitted. An expired `DispatchAdmitted` claim is
+recovered as `UnknownOutcome` (or remains `InFlight` until an explicit
+transport reconciliation), not blindly resent.
+
+### Applied-revision authority
+
+The authoritative applied state is a durable `AppliedTargetState` record keyed
+by a stable target identity, for example `(conversation, target_message_id,
+target_slot)`. The key is part of the target identity; separate Telegram
+messages or UI positions never collapse into one revision. The record contains
+the last confirmed `applied_revision`, the last confirmed effect identity, and
+the storage revision/fence that admitted that observation.
+
+TX2 planning never advances `applied_revision`. Only a confirmed external
+result may update it, in a short transaction that validates the effect's active
+claim token, expected effect revision, target identity, and monotonic revision
+rule. A late callback with a stale token or older revision returns `StaleClaim`
+and cannot overwrite newer applied state. `UnknownOutcome` leaves the applied
+revision unchanged and distinguishable from `Succeeded`.
+
+On restart, reconciliation reads desired intent, outbox state, and
+`AppliedTargetState` from storage; it never reconstructs applied state from the
+in-memory `FakeReconciler` or an unpersisted callback.
+
+### Stable OutboxEffect identity and supersession
+
+The stable effect identity is a tuple encoded into `OutboxEffectId`:
+
+```text
+(render_intent_id,
+ target_identity,
+ effect_kind,
+ effect_position,
+ operation_payload_identity)
+```
+
+`effect_position` is a stable slot/discriminator for operations that share a
+target (for example a message edit versus a keyboard replacement). The payload
+identity is a canonical hash or versioned canonical bytes, not a pointer. A
+repeat of the same intent/target/kind/position/payload returns the same effect
+identity. An `Always` intent has a distinct `render_intent_id`, so independent
+requests at the same session revision do not collide. If a caller attempts to
+reuse an identity with incompatible payload bytes, TX2 rejects it as a
+conflicting duplicate; it does not overwrite the existing effect.
+
+Before TX2 commits, the worker rechecks the latest desired intent/revision in
+the same transaction. If a newer intent exists, the old intent may be marked
+`Superseded` only there, with the newer identity and any already-published old
+effect retained. Supersession is never based solely on a pre-render snapshot.
 
 ## Failure-injection matrix
 
@@ -151,21 +265,32 @@ The M2c conformance suite must exercise each boundary:
 |---|---|
 | Before TX1 commit | No processed marker, state transition, or render intent is visible |
 | After TX1 commit, before claim | Pending intent is found by restart scan |
+| Claim transaction `Unknown` | Recovery inspects the intent/token in a new transaction before another claim |
 | After claim, before render | Lease expiry makes it claimable; old token is stale |
 | During render | No outbox effect is visible; intent remains eligible after lease expiry |
+| Newer session revision while rendering | TX2 rechecks desired state and either plans the current effect or records fenced supersession |
 | Before TX2 commit | No effect and no terminal intent update are visible |
 | TX2 conflict/stale claim | Existing newer record wins; old completion is rejected |
-| TX2 `Unknown` | Recovery reads the row and does not guess publication |
+| TX2 `Unknown` | Recovery inspects both intent and effect; it does not guess publication |
+| Competing TX2 planners | Exactly one byte-identical effect identity wins; incompatible payload is a conflict |
+| Independent `Always` intents at one revision | Distinct origin/intent/effect identities remain independently processable |
 | After TX2 commit, before delivery | Outbox effect is found by restart scan |
+| Effect committed but worker not started | Effect remains `Pending` and is claimable by a later worker |
+| External dispatch admitted, response lost | Effect becomes `UnknownOutcome`; lease expiry does not make it `Pending` |
 | External request definite failure | Bounded retry or terminal failure is recorded |
-| External request response lost | `UnknownOutcome`, never an implicit successful completion |
+| Lease expiry before external dispatch | Reclaim only after durable proof of no dispatch admission |
+| Lease expiry after external dispatch | Preserve `UnknownOutcome`/in-flight uncertainty; never blindly resend |
 | Delivery claim expiry | A higher fencing token may recover; stale acknowledgement is rejected |
+| Duplicate effect identity with conflicting payload | TX2 rejects the conflict and preserves the first durable effect |
+| Restart without the original callback | Reconstruct from persisted session, intent, outbox and applied-target records; never execute the callback |
 | Shutdown with pending work | Intake stops; leases/effects remain recoverable; no new callback starts after drain |
 
 Every case runs with bounded page sizes, two competing workers, a revision
 conflict, and a restart reconstruction pass. In-memory tests prove logical
-ordering and fencing only; MDBX tests later add process interruption and
-physical durability evidence.
+ordering and fencing only. The in-memory restart simulation reconstructs a new
+worker/backend view from committed records; it does not simulate a physical
+process crash. MDBX tests later add process interruption and physical
+durability evidence.
 
 ## Explicit non-goals
 

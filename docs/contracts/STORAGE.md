@@ -88,6 +88,9 @@ Names and value layouts may change during implementation, but these semantics ar
 
 The in-memory reference backend uses snapshot/optimistic semantics: a transaction reads a stable snapshot, sees its own writes, validates expected revisions at commit, and atomically publishes its write set. It supports multiple active optimistic writers. A backend fixture may declare that it supports only one active writer; portable conformance cases do not require parallel writers, while conflict-at-commit cases run only for capable backends. `record_if_new` returns `true` only for a new identity. Render-intent and outbox `claim_batch` return each row with an opaque, monotonically fenced `ClaimToken` and lease expiry. `complete`/`acknowledge` succeed only for the currently active token; an expired or superseded worker receives `StaleClaim` and cannot overwrite a newer owner's result.
 
+The proposed M2c render-intent, claim, fencing, applied-target and transactional
+outbox design is specified in [ADR 0005](../adr/0005-m2c-render-intent-reconciliation.md).
+
 ## Revisions, errors, and migration
 
 `save` requires the caller's expected revision. A mismatch returns a typed conflict and leaves the record unchanged. Storage errors distinguish not-found, invalid input, conflict, stale claim, unavailable/timeout, serialization/schema failure, permission failure, revision exhaustion, and unknown commit outcome. Reads use a consistent transaction snapshot where the backend supports it.
