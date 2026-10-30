@@ -74,7 +74,10 @@ that exact revision after commit.
 `ITransaction::watch(namespace, key, expected_revision)` registers a compare-only read dependency;
 the in-memory backend validates it under the publication lock, so strict session revision checks also
 fence self-transitions that have no session write. Backends without this capability fail closed when
-the strict processor policy requests it.
+the strict processor policy requests it. A watch-only commit validates dependencies without copying or
+publishing the record map and does not consume publication failure injection. If the watched key has a
+pending write in the same transaction, the dependency observes that transaction-visible generation and
+the normal write-set CAS remains authoritative.
 The destructor rolls back only a definitely active transaction. After `Unknown`, the transaction
 is terminal: callers must recover by reading authoritative state in a new transaction and must not
 retry or roll back the original operation.

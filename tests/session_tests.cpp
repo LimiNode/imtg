@@ -84,6 +84,14 @@ void test_fsm_and_encoding()
         imtg::ClockTime{std::chrono::milliseconds{-1}}};
     const auto before_encoded = imtg::encode_session_record(before_epoch);
     CHECK(before_encoded && imtg::decode_session_record(before_encoded.value()));
+    const auto modern = imtg::ClockTime{std::chrono::milliseconds{1793318400000LL}};
+    auto modern_record = record;
+    modern_record.created_at = modern;
+    modern_record.last_transition_at = modern;
+    const auto modern_encoded = imtg::encode_session_record(modern_record);
+    const auto modern_decoded = modern_encoded ? imtg::decode_session_record(modern_encoded.value())
+                                               : imtg::Result<imtg::SessionRecord>{modern_encoded.error()};
+    CHECK(modern_decoded && modern_decoded.value().created_at == modern);
     auto corrupt = encoded.value();
     corrupt[0] = 'X';
     CHECK(!imtg::decode_session_record(corrupt));
@@ -177,6 +185,26 @@ void test_repositories()
     CHECK(processed.record_if_new({imtg::BotId{1}, 900}, *fenced_a.transaction()));
     CHECK(fenced_a.commit().outcome == imtg::CommitOutcome::RejectedConflict);
 
+    auto watch_only = imtg::UnitOfWork::begin(backend, imtg::TransactionMode::ReadOnly);
+    CHECK(watch_only);
+    const auto watch_snapshot = sessions.load(key, *watch_only.value().transaction());
+    CHECK(watch_snapshot && watch_snapshot.value());
+    CHECK(watch_only.value().transaction()->watch("sessions", key.encode(),
+                                                   watch_snapshot.value()->revision));
+    CHECK(watch_only.value().commit().outcome == imtg::CommitOutcome::Committed);
+
+    auto watch_conflict = begin(backend);
+    const auto conflict_snapshot = sessions.load(key, *watch_conflict.transaction());
+    CHECK(conflict_snapshot && conflict_snapshot.value());
+    CHECK(watch_conflict.transaction()->watch("sessions", key.encode(),
+                                               conflict_snapshot.value()->revision));
+    auto watch_writer = begin(backend);
+    auto watch_changed = *sessions.load(key, *watch_writer.transaction()).value();
+    watch_changed.screen = {"watch-writer", 1};
+    CHECK(sessions.save(watch_changed, watch_changed.revision, *watch_writer.transaction()));
+    CHECK(watch_writer.commit().outcome == imtg::CommitOutcome::Committed);
+    CHECK(watch_conflict.commit().outcome == imtg::CommitOutcome::RejectedConflict);
+
     auto marker = begin(backend);
     CHECK(processed.record_if_new({imtg::BotId{1}, 44}, *marker.transaction()));
     const auto duplicate = processed.record_if_new({imtg::BotId{1}, 44}, *marker.transaction());
@@ -195,6 +223,13 @@ void test_repositories()
     const auto loaded_intent = intents.load(intent_id.value(), *intent_read.transaction());
     CHECK(loaded_intent && loaded_intent.value()->session_revision == 5
           && loaded_intent.value()->metadata == "screen");
+
+    auto bad_intent_work = begin(backend);
+    const auto bad_origin = imtg::UpdateIdentity{imtg::BotId{99}, 1};
+    const auto bad_intent = intents.append(
+        imtg::RenderIntent{imtg::RenderIntentRepository::make_id(key, 6, bad_origin),
+                           key, 6, {}, bad_origin}, *bad_intent_work.transaction());
+    CHECK(!bad_intent);
 }
 
 void test_timeout_and_unknown_recovery()

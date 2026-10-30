@@ -224,14 +224,22 @@ public:
             return failed(storage_error(ErrorCode::StorageReadOnly,
                                          "read-only transaction cannot write"));
         }
+        std::lock_guard<std::mutex> lock(m_backend.m_mutex);
+        for (const auto& dependency : m_dependencies) {
+            const auto found = m_backend.m_records.find(dependency.first);
+            const auto current_revision = found == m_backend.m_records.end()
+                ? StorageRevision{0} : found->second.revision;
+            if (current_revision != dependency.second) {
+                return conflict();
+            }
+        }
         if (m_writes.empty()) {
-            // Publication failure injection applies only when there is a write set to publish.
-            // Leaving it armed makes the next publishing commit deterministic.
+            // A watch-only commit validates dependencies under the same lock but
+            // does not copy/publish records or consume publication injection.
             m_state = TransactionState::Committed;
             return CommitResult{CommitOutcome::Committed, std::nullopt};
         }
 
-        std::lock_guard<std::mutex> lock(m_backend.m_mutex);
         if (m_backend.m_failure_injection.unknown_before_publish) {
             m_backend.m_failure_injection.unknown_before_publish = false;
             m_state = TransactionState::Unknown;
@@ -250,14 +258,6 @@ public:
             const auto current_revision = found == m_backend.m_records.end()
                 ? StorageRevision{0} : found->second.revision;
             if (current_revision != entry.second.expected_revision) {
-                return conflict();
-            }
-        }
-        for (const auto& dependency : m_dependencies) {
-            const auto found = m_backend.m_records.find(dependency.first);
-            const auto current_revision = found == m_backend.m_records.end()
-                ? StorageRevision{0} : found->second.revision;
-            if (current_revision != dependency.second) {
                 return conflict();
             }
         }

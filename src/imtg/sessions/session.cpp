@@ -60,9 +60,21 @@ Result<ClockTime> decode_time_millis(std::uint64_t raw)
     }
     using Duration = ClockTime::duration;
     using Rep = Duration::rep;
-    const long double ticks = static_cast<long double>(millis) *
-        (1000.0L * static_cast<long double>(Duration::period::den)) /
-        static_cast<long double>(Duration::period::num);
+    using Conversion = std::ratio_divide<std::milli, typename Duration::period>;
+    long double ticks = static_cast<long double>(millis) *
+        static_cast<long double>(Conversion::num) /
+        static_cast<long double>(Conversion::den);
+    if (Conversion::den == 1) {
+        const auto factor = static_cast<std::uint64_t>(Conversion::num);
+        const auto magnitude = millis < 0
+            ? static_cast<std::uint64_t>(-(millis + 1)) + 1
+            : static_cast<std::uint64_t>(millis);
+        const auto max_rep = static_cast<std::uint64_t>(std::numeric_limits<Rep>::max());
+        if (factor != 0 && magnitude > max_rep / factor) {
+            return encoding_error(ErrorCode::InvalidEncoding, "timestamp is outside the platform clock range");
+        }
+        ticks = static_cast<long double>(millis * static_cast<std::int64_t>(factor));
+    }
     const long double min_rep = static_cast<long double>(std::numeric_limits<Rep>::lowest());
     const long double max_rep = static_cast<long double>(std::numeric_limits<Rep>::max());
     if (ticks < min_rep || ticks > max_rep) {
@@ -428,6 +440,10 @@ Result<RenderIntentId> RenderIntentRepository::append(const RenderIntent& intent
             ? intent.id.value != make_id(intent.conversation, intent.session_revision, *intent.origin).value
             : intent.id.value != make_id(intent.conversation, intent.session_revision).value)) {
         return encoding_error(ErrorCode::InvalidArgument, "render intent identity is invalid");
+    }
+    if (intent.origin && !(intent.origin->bot_id == intent.conversation.bot_id)) {
+        return encoding_error(ErrorCode::InvalidArgument,
+                              "render intent origin bot does not match conversation");
     }
     if (intent.metadata.size() > max_encoded_field) {
         return encoding_error(ErrorCode::StorageRecordTooLarge, "render intent metadata is too large");
