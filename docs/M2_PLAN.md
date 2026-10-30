@@ -20,6 +20,11 @@ explicit migration execution remain deferred to the durable adapter.
 
 ## M2c — render-intent processing and durable outbox
 
+The proposed protocol and failure-injection matrix are defined in
+[ADR 0005](adr/0005-m2c-render-intent-reconciliation.md). This is a design
+gate only: no claim/outbox implementation or process-crash durability is
+declared by this document.
+
 Use the two-transaction protocol:
 
 ```text
