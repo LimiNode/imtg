@@ -62,6 +62,7 @@ The core owns contracts and deterministic orchestration. `kurlyk` is a planned t
 - [Sessions and FSM](docs/contracts/SESSIONS_AND_FSM.md) — typed session and transactional transition contract.
 - [Engineering governance](docs/DOCUMENTATION_GOVERNANCE.md) — how contracts stay canonical.
 - [Coding style](docs/guides/coding-style.md) — C++17, naming, ownership, and Doxygen rules.
+- [Public API documentation](docs/guides/public-api-documentation.md) — semantic coverage and strict validation.
 
 Normative contracts live in [`docs/contracts/`](docs/contracts/). Significant decisions are recorded in [`docs/adr/`](docs/adr/).
 

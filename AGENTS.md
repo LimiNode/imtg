@@ -10,6 +10,8 @@ This repository is documentation-first until the roadmap explicitly authorizes i
 4. Check architectural invariants and record non-obvious decisions in an ADR.
 5. Do not claim checks, builds, integrations, or CI results that were not actually run.
 6. Use Conventional Commits. Do not merge a PR without explicit user instruction.
+7. Document every new public type and nontrivial public operation with semantic English
+   Doxygen in the same PR as its implementation.
 
 ## Naming
 
@@ -23,6 +25,8 @@ This repository is documentation-first until the roadmap explicitly authorizes i
 - Exceptions require explicit architectural justification.
 
 Detailed rules are in [coding-style](docs/guides/coding-style.md), [agent workflow](docs/guides/coding-agent-workflow.md), and [documentation governance](docs/DOCUMENTATION_GOVERNANCE.md). Milestone-specific scope belongs in [ROADMAP.md](docs/ROADMAP.md), not in this root router.
+Public API documentation requirements and validation commands are in
+[public API documentation](docs/guides/public-api-documentation.md).
 
 ## Repository structure
 

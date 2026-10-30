@@ -16,9 +16,10 @@
 
 namespace imtg {
 
+/// \brief Backend-neutral command emitted by an action handler.
 struct ActionCommand {
-    std::string type;
-    std::string payload;
+    std::string type; ///< Application-defined command route.
+    std::string payload; ///< Application-defined command bytes.
 };
 
 class ActionRegistry;
@@ -26,12 +27,18 @@ class ActionRegistry;
 /// \brief Invocation-scoped command capability; it cannot be used after invoke returns.
 class ActionContext {
 public:
+    /// \brief Synchronous sink that accepts commands during one invocation.
     using DispatchSink = std::function<Result<void>(const ActionCommand&)>;
 
+    /// \brief Creates an invocation-scoped context around a command sink.
+    /// \param sink Sink called synchronously by `dispatch()`.
     explicit ActionContext(DispatchSink sink) : m_sink(std::move(sink)) {}
     ActionContext(const ActionContext&) = delete;
     ActionContext& operator=(const ActionContext&) = delete;
 
+    /// \brief Dispatches one command while the invocation remains active.
+    /// \param command Command transferred to the configured sink.
+    /// \return Sink result or `DispatchRejected` after the invocation ends.
     [[nodiscard]] Result<void> dispatch(ActionCommand command)
     {
         if (!m_active) {
@@ -56,32 +63,46 @@ private:
 };
 
 template <typename Payload>
+/// \brief Versioned application payload codec for one typed action route.
 struct PayloadCodec {
-    std::uint32_t version{};
-    std::function<Result<std::string>(const Payload&)> encode;
-    std::function<Result<Payload>(std::string_view)> decode;
+    std::uint32_t version{}; ///< Persisted payload schema version.
+    std::function<Result<std::string>(const Payload&)> encode; ///< Typed-to-bytes encoder.
+    std::function<Result<Payload>(std::string_view)> decode; ///< Untrusted bytes decoder.
 };
 
 template <typename Payload>
+/// \brief Registry-owned typed capability for binding and encoding an action.
+/// \details A handle becomes stale after unregistration/re-registration and must not
+/// outlive concurrent access to its owning registry without external quiescence.
 class ActionHandle {
 public:
     ActionHandle() = default;
 
+    /// \brief Reports whether the handle has basic identity and encoder state.
+    /// \return `true` when identity and encoder state are present.
+    /// \note Use `validate()` to detect stale or unregistered handles.
     [[nodiscard]] bool is_valid() const noexcept
     {
         return !m_action_id.value.empty() && static_cast<bool>(m_encode);
     }
 
+    /// \brief Returns the stable action route identity.
+    /// \return Route captured at registration.
     [[nodiscard]] const ActionId& action_id() const noexcept
     {
         return m_action_id;
     }
 
+    /// \brief Returns the payload schema version captured at registration.
+    /// \return Registered payload schema version.
     [[nodiscard]] std::uint32_t payload_version() const noexcept
     {
         return m_payload_version;
     }
 
+    /// \brief Encodes a typed payload using the captured codec.
+    /// \param payload Typed application payload.
+    /// \return Encoded bytes or a codec/invalid-handle error.
     [[nodiscard]] Result<std::string> encode_payload(const Payload& payload) const
     {
         if (!m_encode) {
@@ -90,6 +111,8 @@ public:
         return m_encode(payload);
     }
 
+    /// \brief Validates ownership, generation and payload version against the registry.
+    /// \return Success only while the original registration remains current.
     [[nodiscard]] Result<void> validate() const;
 
 private:
@@ -107,15 +130,25 @@ class ActionRegistry {
 public:
     // The registry must outlive concurrent handle validation and UI binding.
     // Destruction is an external-owner operation; callers provide quiescence.
+    /// \brief Creates a registry borrowing its token codec and clock.
+    /// \param token_codec Codec that must outlive the registry and concurrent calls.
+    /// \param clock Clock that must outlive the registry and concurrent calls.
+    /// \thread_safety Registration, validation, token creation and invocation are synchronized.
     ActionRegistry(const ITokenCodec& token_codec, const IClock& clock)
         : m_token_codec(token_codec), m_clock(clock), m_identity(std::make_shared<int>(0))
     {
     }
 
     template <typename Payload>
+    /// \brief Typed synchronous action handler.
     using Handler = std::function<Result<void>(ActionContext&, const Payload&)>;
 
     template <typename Payload>
+    /// \brief Registers one canonical action route and returns its generation-bound handle.
+    /// \param action_id Canonical `name.vN` route, unique in this registry.
+    /// \param codec Complete typed payload codec.
+    /// \param handler Synchronous handler; its context is invalid after return.
+    /// \return Handle or a validation/duplicate error.
     [[nodiscard]] Result<ActionHandle<Payload>> register_action(
         ActionId action_id,
         PayloadCodec<Payload> codec,
@@ -161,6 +194,11 @@ public:
     }
 
     template <typename Payload>
+    /// \brief Encodes a registered typed action into an external token.
+    /// \param handle Current handle owned by this registry.
+    /// \param payload Typed application payload.
+    /// \param expires_at Optional system-clock expiry checked during invocation.
+    /// \return External token or a stale-handle/codec error.
     [[nodiscard]] Result<std::string> make_token(
         const ActionHandle<Payload>& handle,
         const Payload& payload,
@@ -186,12 +224,22 @@ public:
             DecodedAction{handle.action_id(), handle.payload_version(), encoded.value(), expires_at});
     }
 
+    /// \brief Decodes, validates and synchronously invokes one action token.
+    /// \param token Untrusted external token.
+    /// \param sink Command sink valid only for the duration of this call.
+    /// \return Handler/sink result or a token, expiry or registration error.
     [[nodiscard]] Result<void> invoke(std::string_view token,
                                       ActionContext::DispatchSink sink) const;
 
+    /// \brief Removes one route and permanently stales handles to its generation.
+    /// \param action_id Route to unregister.
+    /// \return Success or `UnknownAction` when absent.
     [[nodiscard]] Result<void> unregister_action(const ActionId& action_id);
 
     template <typename Payload>
+    /// \brief Checks that a typed handle still names the current registration generation.
+    /// \param handle Handle to validate.
+    /// \return Success or an ownership, stale-generation or version error.
     [[nodiscard]] Result<void> validate_handle(const ActionHandle<Payload>& handle) const
     {
         if (!handle.is_valid() || handle.m_owner != this
