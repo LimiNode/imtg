@@ -54,7 +54,7 @@ enum class FsmEventKind {
     Timeout,
 };
 
-/// \brief Immutable event input evaluated by a deterministic FSM.
+/// \brief Value-owned event input evaluated by a deterministic FSM.
 struct FsmEvent {
     FsmEventId id; ///< Versioned identity used for transition lookup.
     FsmEventKind kind = FsmEventKind::Normal; ///< Trust-domain classification.

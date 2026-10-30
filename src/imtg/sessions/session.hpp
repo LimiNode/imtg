@@ -188,7 +188,8 @@ public:
     /// \brief Records an identity if absent and returns whether it was new.
     /// \param identity Bot-scoped update identity.
     /// \param transaction Borrowed read-write transaction receiving the marker.
-    /// \return `true` only for the transaction that first staged the marker.
+    /// \return `true` when this transaction tentatively stages a previously
+    /// unseen marker in its snapshot; uniqueness is established only at commit.
     [[nodiscard]] virtual Result<bool> record_if_new(
         const UpdateIdentity& identity, ITransaction& transaction) const = 0;
 };
@@ -199,7 +200,9 @@ public:
     /// \brief Transactionally records a bot-scoped update marker.
     /// \param identity Update identity to record.
     /// \param transaction Borrowed read-write transaction receiving the marker.
-    /// \return `true` only when this transaction first staged the marker.
+    /// \return `true` when this transaction tentatively stages a previously
+    /// unseen marker in its snapshot; a concurrent transaction may also return
+    /// `true`, while commit-time fencing admits only one marker.
     [[nodiscard]] Result<bool> record_if_new(
         const UpdateIdentity& identity, ITransaction& transaction) const override;
 };
@@ -349,11 +352,3 @@ private:
 } // namespace imtg
 
 #endif // IMTG_SESSIONS_SESSION_HPP
-    /// \brief Creates one session; publication is deferred to the transaction commit.
-    /// \brief Saves one session with optimistic expected-revision fencing.
-    /// \brief Erases one session with optimistic expected-revision fencing.
-    /// \brief Returns the canonical stable storage key encoding.
-    /// \brief Records an identity if absent and returns whether it was new.
-    /// \brief Loads and validates a render intent from a transaction snapshot.
-    /// \brief Builds the coalescing identity for a state-change render.
-    /// \brief Builds an independent identity for an Always-policy render.
