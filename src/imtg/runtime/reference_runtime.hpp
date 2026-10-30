@@ -180,12 +180,12 @@ public:
                      CommandFunction command,
                      ErrorFunction error,
                      RuntimeConfig config = {});
-    /// \brief Compatibility constructor configuring only the global queue capacity.
+    /// \brief Compatibility constructor configuring the per-conversation queue capacity.
     /// \param actions Registry that must outlive the runtime.
     /// \param render Desired-tree callback.
     /// \param command Command callback.
     /// \param error Failure observer.
-    /// \param queue_capacity Global queued-task bound.
+    /// \param queue_capacity Maximum queued tasks accepted for each conversation.
     ReferenceRuntime(ActionRegistry& actions,
                      RenderFunction render,
                      CommandFunction command,

@@ -63,8 +63,9 @@ struct UiNode {
 class UiTree {
 public:
     UiTree() = default;
-    /// \brief Takes ownership of a validated flattened node sequence.
-    /// \param nodes Nodes whose child indices refer to this sequence.
+    /// \brief Takes ownership of a supplied flattened node sequence.
+    /// \param nodes Nodes supplied by the caller. The constructor does not
+    ///        validate child-index ranges or other tree invariants.
     explicit UiTree(std::vector<UiNode> nodes) : m_nodes(std::move(nodes)) {}
 
     /// \brief Returns immutable flattened nodes for this render.
