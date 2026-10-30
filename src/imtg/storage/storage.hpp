@@ -80,8 +80,13 @@ public:
     /// Reads from the transaction snapshot, including this transaction's pending writes.
     [[nodiscard]] virtual Result<std::optional<StorageRecord>> read(
         std::string_view name_space, std::string_view key) = 0;
-    /// Registers a compare-only dependency checked atomically at commit. The
-    /// dependency does not create a write and is useful for CAS-style reads.
+    /// \brief Registers a compare-only dependency checked atomically at commit.
+    /// \param name_space Namespace containing the record.
+    /// \param key Canonical record key.
+    /// \param expected_revision Transaction-visible revision to fence.
+    /// \return Success when the visible revision matches, or a typed conflict.
+    /// \note A pending local write is fenced against its original backend
+    /// generation; this method never creates a write itself.
     [[nodiscard]] virtual Result<void> watch(
         std::string_view, std::string_view,
         StorageRevision) {

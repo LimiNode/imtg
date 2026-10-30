@@ -15,6 +15,7 @@
 
 namespace imtg {
 
+/// \brief Versioned identifier for input expected by the current conversation state.
 struct PendingInput {
     std::string name;
     std::uint32_t version{};
@@ -25,6 +26,7 @@ struct PendingInput {
     }
 };
 
+/// \brief Versioned identity of the screen represented by a session.
 struct ScreenIdentity {
     std::string name;
     std::uint32_t version{};
@@ -35,6 +37,10 @@ struct ScreenIdentity {
     }
 };
 
+/// \brief Persisted conversation session snapshot.
+/// \details `revision` is authoritative only when returned by a repository;
+/// callers creating a record must leave it zero. Deadlines are UTC/system-clock
+/// values and are revalidated by the owner after restart.
 struct SessionRecord {
     ConversationKey conversation;
     std::uint32_t schema_version = 1;
@@ -47,8 +53,10 @@ struct SessionRecord {
     ClockTime last_transition_at{};
 };
 
+/// \brief Operation applied to one independently mutable session metadata field.
 enum class MetadataPatchMode { Keep, Clear, Set };
 
+/// \brief Small Keep/Clear/Set patch used by metadata-only processor updates.
 template <typename T>
 struct MetadataPatch {
     MetadataPatchMode mode = MetadataPatchMode::Keep;
@@ -61,33 +69,46 @@ struct MetadataPatch {
     }
 };
 
+/// \brief Encodes a bounded, versioned, binary-safe session record.
 [[nodiscard]] Result<StorageBytes> encode_session_record(const SessionRecord& record);
+/// \brief Decodes and validates a session record without normalizing malformed data.
 [[nodiscard]] Result<SessionRecord> decode_session_record(std::string_view encoded);
 
+/// \brief Transaction-borrowing repository contract for session records.
 class ISessionRepository {
 public:
     virtual ~ISessionRepository() = default;
+    /// \brief Loads from the transaction snapshot, including pending writes.
     [[nodiscard]] virtual Result<std::optional<SessionRecord>> load(
         const ConversationKey&, ITransaction&) const = 0;
+    /// \brief Creates a revision-zero logical session with CAS-safe publication.
     [[nodiscard]] virtual Result<SessionRecord> create(
         SessionRecord, ITransaction&) const = 0;
+    /// \brief Saves using the caller's expected revision.
     [[nodiscard]] virtual Result<SessionRecord> save(
         SessionRecord, StorageRevision expected_revision, ITransaction&) const = 0;
+    /// \brief Erases using the caller's expected revision.
     [[nodiscard]] virtual Result<void> erase(
         const ConversationKey&, StorageRevision expected_revision, ITransaction&) const = 0;
 };
 
+/// \brief In-memory/backend-neutral implementation of the session repository.
 class SessionRepository final : public ISessionRepository {
 public:
+    /// \brief Creates a repository with a schema and encoded-record size limit.
     explicit SessionRepository(std::uint32_t schema_version = 1,
                                std::size_t max_record_size = 64 * 1024) noexcept;
 
+    /// \brief Loads one session from a caller-owned transaction.
     [[nodiscard]] Result<std::optional<SessionRecord>> load(
         const ConversationKey&, ITransaction&) const override;
+    /// \brief Creates one session; publication is deferred to transaction commit.
     [[nodiscard]] Result<SessionRecord> create(
         SessionRecord, ITransaction&) const override;
+    /// \brief Saves one session with optimistic expected-revision fencing.
     [[nodiscard]] Result<SessionRecord> save(
         SessionRecord, StorageRevision expected_revision, ITransaction&) const override;
+    /// \brief Erases one session with optimistic expected-revision fencing.
     [[nodiscard]] Result<void> erase(
         const ConversationKey&, StorageRevision expected_revision, ITransaction&) const override;
 
@@ -98,10 +119,12 @@ private:
     std::size_t m_max_record_size;
 };
 
+/// \brief Stable bot-scoped identity used for processed-update deduplication.
 struct UpdateIdentity {
     BotId bot_id;
     std::uint64_t update_id{};
 
+    /// \brief Returns the canonical stable storage key encoding.
     [[nodiscard]] std::string encode() const;
     friend bool operator==(const UpdateIdentity& left, const UpdateIdentity& right) noexcept
     {
@@ -109,19 +132,24 @@ struct UpdateIdentity {
     }
 };
 
+/// \brief Transactional deduplication store contract.
 class IProcessedUpdateStore {
 public:
     virtual ~IProcessedUpdateStore() = default;
+    /// \brief Records an identity if absent and returns whether it was new.
     [[nodiscard]] virtual Result<bool> record_if_new(
         const UpdateIdentity&, ITransaction&) const = 0;
 };
 
+/// \brief Storage-backed implementation of processed-update deduplication.
 class ProcessedUpdateRepository final : public IProcessedUpdateStore {
 public:
+    /// \brief Transactionally records a bot-scoped update marker.
     [[nodiscard]] Result<bool> record_if_new(
         const UpdateIdentity&, ITransaction&) const override;
 };
 
+/// \brief Stable identity of a durable render request.
 struct RenderIntentId {
     std::string value;
 
@@ -131,6 +159,9 @@ struct RenderIntentId {
     }
 };
 
+/// \brief Durable request to reconcile a conversation's rendered UI.
+/// \note It records intent only; claiming, delivery and outbox completion are
+/// outside M2b. An origin is used for independent Always-policy requests.
 struct RenderIntent {
     RenderIntentId id;
     ConversationKey conversation;
@@ -139,6 +170,7 @@ struct RenderIntent {
     std::optional<UpdateIdentity> origin;
 };
 
+/// \brief Transactional render-intent repository contract.
 class IRenderIntentStore {
 public:
     virtual ~IRenderIntentStore() = default;
@@ -148,19 +180,25 @@ public:
         const RenderIntentId&, ITransaction&) const = 0;
 };
 
+/// \brief Storage-backed implementation of render-intent persistence.
 class RenderIntentRepository final : public IRenderIntentStore {
 public:
+    /// \brief Appends a validated durable render intent to a transaction.
     [[nodiscard]] Result<RenderIntentId> append(
         const RenderIntent&, ITransaction&) const override;
+    /// \brief Loads and validates a render intent from a transaction snapshot.
     [[nodiscard]] Result<std::optional<RenderIntent>> load(
         const RenderIntentId&, ITransaction&) const override;
 
+    /// \brief Builds the coalescing identity for a state-change render.
     [[nodiscard]] static RenderIntentId make_id(
         const ConversationKey&, StorageRevision session_revision);
+    /// \brief Builds an independent identity for an Always-policy render.
     [[nodiscard]] static RenderIntentId make_id(
         const ConversationKey&, StorageRevision session_revision, const UpdateIdentity& origin);
 };
 
+/// \brief Terminal classification of an atomic update processing attempt.
 enum class UpdateProcessOutcome {
     Committed,
     Duplicate,
@@ -169,6 +207,7 @@ enum class UpdateProcessOutcome {
     Unknown,
 };
 
+/// \brief Result of processing one update, including committed session/intent data.
 struct UpdateProcessResult {
     UpdateProcessOutcome outcome;
     std::optional<Error> error;
@@ -176,6 +215,8 @@ struct UpdateProcessResult {
     std::optional<RenderIntentId> render_intent;
 };
 
+/// \brief Explicit rendering, revision and metadata policy for one update.
+/// \note Strict expected revisions require backend compare-only watch support.
 struct UpdateProcessOptions {
     bool create_render_intent = true;
     RenderPolicy render_policy = RenderPolicy::OnChange;
@@ -189,13 +230,26 @@ struct UpdateProcessOptions {
     MetadataPatch<ScreenIdentity> screen_patch;
 };
 
-/// Atomically records an update, evaluates a transition, saves the session and
+/// \brief Atomically records an update, evaluates a transition, saves the session and
 /// optionally appends a minimal render intent in one borrowed transaction.
+/// \details The processed marker, session mutation and intent are published
+/// together. `Unknown` is terminal; callers must inspect authoritative storage
+/// in a new transaction rather than retrying this operation.
 class AtomicUpdateProcessor final {
 public:
+    /// \brief Binds repository contracts to one storage backend.
     AtomicUpdateProcessor(IStorageBackend&, const ISessionRepository&,
                           const IProcessedUpdateStore&, const IRenderIntentStore&);
 
+    /// \brief Processes one update under the supplied FSM and storage snapshot.
+    /// \param update Bot-scoped update identity for deduplication.
+    /// \param conversation Canonical conversation being mutated.
+    /// \param fsm Immutable transition graph.
+    /// \param event Normal, cancellation or trusted timeout event.
+    /// \param now Authoritative UTC/system-clock value for deadline checks.
+    /// \param initial_session Required only when the conversation does not yet exist.
+    /// \param options Revision, metadata and render policy.
+    /// \return A typed outcome; failed/conflicted operations publish no staged records.
     [[nodiscard]] UpdateProcessResult process(
         const UpdateIdentity&, const ConversationKey&, const Fsm&, const FsmEvent&,
         ClockTime now, std::optional<SessionRecord> initial_session = std::nullopt,
@@ -211,3 +265,11 @@ private:
 } // namespace imtg
 
 #endif // IMTG_SESSIONS_SESSION_HPP
+    /// \brief Creates one session; publication is deferred to the transaction commit.
+    /// \brief Saves one session with optimistic expected-revision fencing.
+    /// \brief Erases one session with optimistic expected-revision fencing.
+    /// \brief Returns the canonical stable storage key encoding.
+    /// \brief Records an identity if absent and returns whether it was new.
+    /// \brief Loads and validates a render intent from a transaction snapshot.
+    /// \brief Builds the coalescing identity for a state-change render.
+    /// \brief Builds an independent identity for an Always-policy render.
