@@ -205,6 +205,51 @@ void test_repositories()
     CHECK(watch_writer.commit().outcome == imtg::CommitOutcome::Committed);
     CHECK(watch_conflict.commit().outcome == imtg::CommitOutcome::RejectedConflict);
 
+    const auto watch_key = conversation(10, 11);
+    auto watch_create = begin(backend);
+    CHECK(sessions.create(initial_session(watch_key, now), *watch_create.transaction()));
+    CHECK(watch_create.commit().outcome == imtg::CommitOutcome::Committed);
+
+    // Watch before a write and watch after a write fence the same original generation.
+    auto watch_before = begin(backend);
+    auto before_record = *sessions.load(watch_key, *watch_before.transaction()).value();
+    CHECK(watch_before.transaction()->watch("sessions", watch_key.encode(), before_record.revision));
+    before_record.screen = {"before", 1};
+    CHECK(sessions.save(before_record, before_record.revision, *watch_before.transaction()));
+    CHECK(watch_before.commit().outcome == imtg::CommitOutcome::Committed);
+
+    auto watch_after = begin(backend);
+    auto after_record = *sessions.load(watch_key, *watch_after.transaction()).value();
+    CHECK(sessions.save(after_record, after_record.revision, *watch_after.transaction()));
+    const auto after_candidate = watch_after.transaction()->read("sessions", watch_key.encode());
+    CHECK(after_candidate && after_candidate.value());
+    CHECK(watch_after.transaction()->watch("sessions", watch_key.encode(),
+                                            after_candidate.value()->revision));
+    CHECK(watch_after.commit().outcome == imtg::CommitOutcome::Committed);
+
+    const auto create_key = conversation(10, 12);
+    auto watch_after_create = begin(backend);
+    const auto created_candidate = sessions.create(initial_session(create_key, now),
+                                                     *watch_after_create.transaction());
+    CHECK(created_candidate);
+    CHECK(watch_after_create.transaction()->watch("sessions", create_key.encode(),
+                                                   created_candidate.value().revision));
+    CHECK(watch_after_create.commit().outcome == imtg::CommitOutcome::Committed);
+
+    const auto erase_key = conversation(10, 13);
+    auto erase_create = begin(backend);
+    CHECK(sessions.create(initial_session(erase_key, now), *erase_create.transaction()));
+    CHECK(erase_create.commit().outcome == imtg::CommitOutcome::Committed);
+    auto watch_after_erase = begin(backend);
+    const auto erase_record = sessions.load(erase_key, *watch_after_erase.transaction());
+    CHECK(erase_record && erase_record.value());
+    CHECK(sessions.erase(erase_key, erase_record.value()->revision, *watch_after_erase.transaction()));
+    const auto erased_visible = watch_after_erase.transaction()->read("sessions", erase_key.encode());
+    CHECK(erased_visible && !erased_visible.value());
+    CHECK(watch_after_erase.transaction()->watch("sessions", erase_key.encode(),
+                                                  erase_record.value()->revision + 1));
+    CHECK(watch_after_erase.commit().outcome == imtg::CommitOutcome::Committed);
+
     auto marker = begin(backend);
     CHECK(processed.record_if_new({imtg::BotId{1}, 44}, *marker.transaction()));
     const auto duplicate = processed.record_if_new({imtg::BotId{1}, 44}, *marker.transaction());

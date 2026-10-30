@@ -77,7 +77,9 @@ fence self-transitions that have no session write. Backends without this capabil
 the strict processor policy requests it. A watch-only commit validates dependencies without copying or
 publishing the record map and does not consume publication failure injection. If the watched key has a
 pending write in the same transaction, the dependency observes that transaction-visible generation and
-the normal write-set CAS remains authoritative.
+is fenced against the pending write's original backend generation; the normal write-set CAS remains
+authoritative. This makes watch-before-write and watch-after-write equivalent without masking concurrent
+changes.
 The destructor rolls back only a definitely active transaction. After `Unknown`, the transaction
 is terminal: callers must recover by reading authoritative state in a new transaction and must not
 retry or roll back the original operation.

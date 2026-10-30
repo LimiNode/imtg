@@ -29,6 +29,8 @@ a stale self-transition to publish only its marker or render intent. Canonical t
 only at or after an existing deadline; cancellation remains an explicit application event and is allowed
 after expiry. Session metadata uses Keep/Clear/Set patches, and metadata-only changes use the same expected
 revision CAS as state transitions. Wire timestamps are signed milliseconds with checked range conversion.
+When a watched key also has a pending local write, the dependency is recorded against that write's original
+backend generation, so watch-before-write and watch-after-write have identical fencing semantics.
 
 `AtomicUpdateProcessor` stages `record_if_new(update_identity)`, the session create/transition, and an
 optional stable `RenderIntent` in one optimistic transaction. A duplicate marker commits as a no-op and

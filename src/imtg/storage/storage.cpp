@@ -116,7 +116,12 @@ public:
         if (visible_revision != expected_revision) {
             return storage_error(ErrorCode::StorageConflict, "read dependency is stale");
         }
-        m_dependencies[identity.value()] = expected_revision;
+        // A dependency observed after our own write is fenced against that
+        // write's original backend generation, not its candidate revision.
+        // This keeps watch-before-write and watch-after-write equivalent while
+        // preserving concurrent-writer conflict detection.
+        m_dependencies[identity.value()] = pending != m_writes.end()
+            ? pending->second.expected_revision : expected_revision;
         return Result<void>();
     }
 
