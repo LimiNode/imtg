@@ -115,6 +115,39 @@ sequential limit holds an in-flight token until completion. In
 sentinel meaning “wait for the current sequential request”; it is not a real
 infinite timer.
 
+The audited `HttpRequestHandler` retry predicate is precise and narrower than
+an HTTP retry allowlist:
+
+```text
+should_retry =
+    retry_attempts != 0 &&
+    (has_curl_error || !has_valid_status) &&
+    retry_attempt < retry_attempts &&
+    !has_stream_chunk
+```
+
+Here `valid_statuses` is the set of statuses accepted as successful by the
+request; it is not a list of statuses permitted for retry. A CURL failure is
+independently retry-eligible when automatic retries are enabled. Setting
+`retry_attempts = 0` disables automatic retry. Configuring `retry_attempts = 3`
+allows at most three total attempts in this implementation (the initial
+attempt plus two retries, because the counter is incremented before the
+comparison). Once a streaming body chunk has been emitted, the request is not
+automatically retried, avoiding a second partial stream. Intermediate stream
+callbacks carry `response->ready == false`; only the final callback sets
+`ready == true`.
+
+Status `499` is used by the library for client cancellation and `451` may be a
+synthetic or transport-level status in a test/adapter path. Neither number by
+itself proves that a remote server rejected the operation. A Telegram adapter
+must inspect the CURL error, `ready`, response body and method contract before
+classifying an attempt as definitely rejected, retryable, or
+`UnknownOutcome`.
+
+Generic per-request HTTP/CURL retry allowlists are not an existing public
+kurlyk capability. If needed, that policy is a separate upstream extension;
+imtg must not imply that `valid_statuses` already provides it.
+
 imtg must not build a second generic network manager, HTTP retry loop or rate
 limiter. The M3 adapter instead supplies:
 
