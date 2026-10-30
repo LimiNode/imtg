@@ -77,7 +77,10 @@ public:
 
     [[nodiscard]] virtual TransactionMode mode() const noexcept = 0;
     [[nodiscard]] virtual TransactionState state() const noexcept = 0;
-    /// Reads from the transaction snapshot, including this transaction's pending writes.
+    /// \brief Reads from the transaction snapshot, including pending local writes.
+    /// \param name_space Namespace containing the record.
+    /// \param key Canonical record key.
+    /// \return The visible record, or an empty optional when absent.
     [[nodiscard]] virtual Result<std::optional<StorageRecord>> read(
         std::string_view name_space, std::string_view key) = 0;
     /// \brief Registers a compare-only dependency checked atomically at commit.
@@ -88,8 +91,11 @@ public:
     /// \note A pending local write is fenced against its original backend
     /// generation; this method never creates a write itself.
     [[nodiscard]] virtual Result<void> watch(
-        std::string_view, std::string_view,
-        StorageRevision) {
+        std::string_view name_space, std::string_view key,
+        StorageRevision expected_revision) {
+        (void)name_space;
+        (void)key;
+        (void)expected_revision;
         return Error{ErrorCode::StorageUnavailable,
                      "compare-only read dependencies are not supported by this backend"};
     }

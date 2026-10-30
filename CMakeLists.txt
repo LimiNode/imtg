@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 
 project(imtg VERSION 0.1.0 LANGUAGES CXX)
 
+option(IMTG_BUILD_DOCUMENTATION "Build the optional Doxygen documentation check" OFF)
+
 include(GNUInstallDirs)
 include(CTest)
 include(CMakePackageConfigHelpers)
@@ -49,4 +51,26 @@ install(FILES
 
 if(BUILD_TESTING)
     add_subdirectory(tests)
+endif()
+
+if(IMTG_BUILD_DOCUMENTATION)
+    find_package(Doxygen QUIET)
+    if(DOXYGEN_FOUND)
+        set(IMTG_DOXYGEN_OUTPUT_DIRECTORY
+            "${CMAKE_CURRENT_BINARY_DIR}/docs" CACHE PATH
+            "Output directory for the optional Doxygen check")
+        configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/docs/Doxyfile.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile"
+            @ONLY)
+        add_custom_target(imtg_documentation
+            COMMAND "${DOXYGEN_EXECUTABLE}" "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            COMMENT "Validating documented public imtg APIs with Doxygen"
+            VERBATIM)
+    else()
+        message(WARNING
+            "IMTG_BUILD_DOCUMENTATION is ON, but Doxygen was not found; "
+            "the documentation target will not be available")
+    endif()
 endif()
