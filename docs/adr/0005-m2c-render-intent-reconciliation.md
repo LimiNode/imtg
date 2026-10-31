@@ -104,13 +104,18 @@ implicitly claimable row. The session repository and TX1 encoding remain
 unchanged. MDBX migration must preserve the original bytes/identity and be
 restartable before serving new claims.
 
-The desired-generation marker is likewise additive. For an existing M2b record,
-the first M2c read establishes a deterministic baseline generation without
-claiming or publishing an effect. Every subsequent M2c TX1 that creates or
-coalesces an intent advances the shared marker in the same transaction as the
-intent write. Thus an old M2b identity remains valid, while new TX2 instances
-can watch one versioned head rather than relying on a non-serializable absence
-query.
+The desired-generation marker is likewise additive. For existing M2b records,
+the first M2c admission uses a schema/admission gate and one compare-and-set
+transaction to atomically initialize a deterministic baseline generation. The
+initialization may not lower an already-created generation; a concurrent
+initializer or first M2c TX1 either observes the existing value or retries its
+CAS. No claim or effect is published until that gate has committed. Every
+subsequent M2c TX1 that creates or coalesces an intent advances the shared
+marker in the same transaction as the intent write. Thus an old M2b identity
+remains valid, while new TX2 instances can watch one monotonically versioned
+head rather than relying on a non-serializable absence query. The same schema
+gate covers legacy-envelope validation, so concurrent TX1/TX2 operations cannot
+observe a partially initialized marker.
 
 ## Claims, leases, and bounded scans
 
@@ -325,9 +330,12 @@ TX2 commit must fail because its watched generation changed
 worker discards the stale plan and rescans
 ```
 
-If TX2 observes a newer intent only during its commit validation, it may mark
-the old intent `Superseded` there, with the newer identity and any already-
-published old effect retained. Supersession is never based solely on a
+If the desired-generation watch fails, the TX2 commit is rejected and no
+mutation from that transaction is published: it cannot simultaneously mark
+the old intent `Superseded`. The worker discards the rejected transaction,
+starts a new transaction, re-reads the authoritative desired state, and only
+then may mark the old intent `Superseded` with the newer identity. Any already-
+published old effect is retained. Supersession is never based solely on a
 pre-render snapshot.
 
 ### Target ordering and external limitations
