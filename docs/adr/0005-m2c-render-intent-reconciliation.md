@@ -167,9 +167,45 @@ backend could not commit it, and neither outcome is silently treated as a
 successful completion.
 
 Claim and delivery acknowledgement may use additional short storage
-transactions. “TX1” and “TX2” name the two principal business transactions;
+transactions. "TX1" and "TX2" name the two principal business transactions;
 they do not prohibit these lifecycle transactions or read-only recovery
 inspections.
+
+### Durable pre-dispatch boundary
+
+The effect worker must establish a durable conservative boundary before it
+invokes any transport. The required sequence is:
+
+```text
+TX: claim effect
+  -> commit
+TX: record MayHaveDispatched / DispatchAdmitted marker
+  -> commit confirmed
+call transport asynchronously
+  -> admission accepted or rejected
+  -> completion callback
+  -> fenced outcome transaction
+```
+
+`MayHaveDispatched` (also called `DispatchAdmitted` in the state machine) is a
+durable effect-row marker, not an in-memory boolean. It means that the external
+operation may have started, even if the transport has not yet acknowledged it.
+The marker is committed in a separate short transaction before the transport
+call. A worker must not dispatch from an uncommitted marker. If that marker
+transaction returns `Unknown`, the worker performs authoritative inspection of
+the effect row in a new transaction and does not dispatch merely because the
+commit was not confirmed. An observed committed marker is conservatively
+recovered as `UnknownOutcome` after a crash before the HTTP call; an absent
+marker may be retried only after the storage record proves that no marker was
+published and the claim is still valid.
+
+Only a synchronous admission result that proves the external request was not
+accepted may return the effect to `Pending`/`RetryableFailure`. A response loss,
+process crash, callback loss, or ambiguous transport error after the marker is
+committed is `UnknownOutcome` until an idempotency or lookup proof resolves it.
+This logical protocol does not claim physical durability: the in-memory
+backend models commit outcomes, while MDBX must later demonstrate persistence
+across process interruption.
 
 ## Outbox effect state and unknown outcomes
 
@@ -186,7 +222,8 @@ initial M2c protocol distinguishes at least:
 - `Succeeded`, `Failed`, or `Superseded` — terminal policy decisions.
 
 `UnknownOutcome` is not an invitation to blindly resend. The durable boundary
-is `dispatch_admitted`: before it becomes true, a definite rollback or
+is the committed `MayHaveDispatched`/`DispatchAdmitted` marker: before it
+becomes true, a definite rollback or
 definitely-not-started result may return an effect to `Pending`; once external
 dispatch has started, a lost response records `UnknownOutcome` and lease expiry
 alone never returns it to `Pending`. Recovery may retry only when the
@@ -233,29 +270,78 @@ in-memory `FakeReconciler` or an unpersisted callback.
 
 ### Stable OutboxEffect identity and supersession
 
-The stable effect identity is a tuple encoded into `OutboxEffectId`:
+The stable logical effect slot is separate from the operation payload:
 
 ```text
-(render_intent_id,
+LogicalEffectSlot = (
+ render_intent_id,
  target_identity,
  effect_kind,
- effect_position,
- operation_payload_identity)
+ effect_position)
 ```
 
 `effect_position` is a stable slot/discriminator for operations that share a
-target (for example a message edit versus a keyboard replacement). The payload
-identity is a canonical hash or versioned canonical bytes, not a pointer. A
-repeat of the same intent/target/kind/position/payload returns the same effect
-identity. An `Always` intent has a distinct `render_intent_id`, so independent
-requests at the same session revision do not collide. If a caller attempts to
-reuse an identity with incompatible payload bytes, TX2 rejects it as a
-conflicting duplicate; it does not overwrite the existing effect.
+target (for example a message edit versus a keyboard replacement). The
+`OutboxEffectId` is stable for this logical slot; canonical payload bytes and a
+versioned payload digest are stored in the effect record, but are not part of
+the slot identity. A repeat of the same slot with byte-identical payload is an
+idempotent verification. A repeat of the same slot with different payload is a
+conflict and must fail the atomic unique-slot/CAS check; it must not create a
+second effect or overwrite the first one. An `Always` intent has a distinct
+`render_intent_id`, so independent requests at the same session revision retain
+independent slots.
 
 Before TX2 commits, the worker rechecks the latest desired intent/revision in
-the same transaction. If a newer intent exists, the old intent may be marked
-`Superseded` only there, with the newer identity and any already-published old
-effect retained. Supersession is never based solely on a pre-render snapshot.
+the same transaction. TX2 must watch/write the following dependencies under
+the optimistic/snapshot transaction model:
+
+- session revision;
+- applied target revision;
+- current render-intent claim token and row revision;
+- the latest desired head or a stable desired-generation marker; and
+- the conflicting outbox logical-slot identity.
+
+If checking for a newer intent is required, TX1 atomically advances a shared,
+versioned desired-generation marker together with the new intent. TX2 watches
+that marker. A newer intent committed after the TX2 snapshot therefore causes
+TX2 to fail with `RejectedConflict`/retry rather than publishing stale output.
+Independent `Always` intents at the same session revision do not supersede one
+another merely because they share a session revision.
+
+Deterministic interleaving:
+
+```text
+TX2 snapshot reads desired generation G5
+newer TX1 commits generation G6
+TX2 commit must fail because its watched generation changed
+worker discards the stale plan and rescans
+```
+
+If TX2 observes a newer intent only during its commit validation, it may mark
+the old intent `Superseded` there, with the newer identity and any already-
+published old effect retained. Supersession is never based solely on a
+pre-render snapshot.
+
+### Target ordering and external limitations
+
+Target identity is logical and stable before a physical Telegram
+`message_id` exists. After a successful send, the durable mapping from logical
+target to physical `message_id` is recorded with the confirmed effect. The
+storage protocol prevents concurrent conflicting dispatches for one logical
+target by fencing the target row and its logical slots. An old in-flight or
+`UnknownOutcome` effect is not silently discarded when a newer revision
+appears: policy must choose lookup, safe idempotent retry, conservative manual
+reconciliation, or explicit supersession while retaining the audit record.
+
+Late completion and late remote application are expected. Fencing rejects a
+stale storage callback, and monotonic applied-revision checks prevent an older
+confirmed observation from overwriting a newer one. Storage fencing cannot
+guarantee strict external execution order: a remote server may apply two edits
+in reverse order, and a server without conditional writes may apply stale
+content. kurlyk sequential rate limits can provide pacing only; they are not
+durable ownership or ordering. The implementation must document this
+conservative limitation and use lookup/idempotency or target-level policy when
+strict remote ordering is required.
 
 ## Failure-injection matrix
 
@@ -273,7 +359,17 @@ The M2c conformance suite must exercise each boundary:
 | TX2 conflict/stale claim | Existing newer record wins; old completion is rejected |
 | TX2 `Unknown` | Recovery inspects both intent and effect; it does not guess publication |
 | Competing TX2 planners | Exactly one byte-identical effect identity wins; incompatible payload is a conflict |
+| Crash before pre-dispatch marker commit | No transport call is inferred; after authoritative inspection the still-unmarked claim may return to `Pending` |
+| Pre-dispatch marker commit `Unknown` | Inspect the effect row before dispatch; never dispatch solely because commit confirmation was lost |
+| Crash after marker commit, before HTTP | Recover conservatively as `UnknownOutcome`; do not assume that no request was sent |
+| Transport admission rejection | Return to `Pending`/`RetryableFailure` only when the adapter proves the request was not accepted |
+| Successful submission with lost response | Preserve `UnknownOutcome` until an idempotency key or authoritative lookup resolves it |
+| Two conflicting payloads for one logical slot | Atomic unique-slot/CAS rejects the second payload; at most one effect row exists |
+| Newer session revision during TX2 | Watched desired generation causes a conflict/retry; stale output is not published |
 | Independent `Always` intents at one revision | Distinct origin/intent/effect identities remain independently processable |
+| Two edits of one target complete in reverse order | Stale token/revision cannot overwrite the newer applied state; remote ordering limitation is recorded |
+| Unknown older edit plus newer desired revision | Retain the unknown effect and reconcile the newer revision under explicit lookup/idempotency policy |
+| Initial send before a physical message ID exists | Use a stable logical target; record the logical-to-physical mapping only after confirmed send |
 | After TX2 commit, before delivery | Outbox effect is found by restart scan |
 | Effect committed but worker not started | Effect remains `Pending` and is claimable by a later worker |
 | External dispatch admitted, response lost | Effect becomes `UnknownOutcome`; lease expiry does not make it `Pending` |
