@@ -45,3 +45,17 @@ jobs:
         run: cmake --build build/asan-ubsan --parallel
       - name: Test
         run: ctest --test-dir build/asan-ubsan --output-on-failure
+
+  documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Doxygen and Graphviz
+        run: sudo apt-get update && sudo apt-get install --yes doxygen graphviz
+      - name: Configure documentation
+        run: >-
+          cmake -S . -B build/documentation
+          -DBUILD_TESTING=OFF
+          -DIMTG_BUILD_DOCUMENTATION=ON
+      - name: Validate public API documentation
+        run: cmake --build build/documentation --target imtg_documentation

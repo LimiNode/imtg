@@ -1,8 +1,7 @@
 PROJECT_NAME           = imtg
 PROJECT_NUMBER         = @PROJECT_VERSION@
 OUTPUT_DIRECTORY       = @IMTG_DOXYGEN_OUTPUT_DIRECTORY@
-INPUT                  = @CMAKE_CURRENT_SOURCE_DIR@/src/imtg/sessions \
-                         @CMAKE_CURRENT_SOURCE_DIR@/src/imtg/storage/storage.hpp
+INPUT                  = @CMAKE_CURRENT_SOURCE_DIR@/src/imtg
 FILE_PATTERNS          = *.hpp
 RECURSIVE              = YES
 EXCLUDE_PATTERNS       = */detail/*
@@ -12,5 +11,6 @@ GENERATE_XML           = NO
 QUIET                  = NO
 WARN_IF_UNDOCUMENTED   = YES
 WARN_NO_PARAMDOC       = YES
-WARN_AS_ERROR          = NO
+WARN_AS_ERROR          = FAIL_ON_WARNINGS
 WARN_LOGFILE           = @IMTG_DOXYGEN_OUTPUT_DIRECTORY@/warnings.log
+ALIASES                += thread_safety="\\par Thread safety"

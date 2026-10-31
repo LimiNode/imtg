@@ -48,21 +48,25 @@ enum class CommitOutcome {
     Unknown,
 };
 
+/// \brief Terminal outcome of one transaction commit attempt.
 struct CommitResult {
-    CommitOutcome outcome;
-    std::optional<Error> error;
+    CommitOutcome outcome; ///< Publication status; `Unknown` must never be retried blindly.
+    std::optional<Error> error; ///< Diagnostic for non-committed outcomes.
 };
 
+/// \brief Value and non-zero generation visible in a transaction snapshot.
 struct StorageRecord {
-    StorageBytes value;
-    StorageRevision revision{};
+    StorageBytes value; ///< Backend-neutral record bytes.
+    StorageRevision revision{}; ///< Optimistic-concurrency generation.
 };
 
+/// \brief Version metadata governing backend admission and migrations.
 struct StorageSchema {
-    std::uint32_t profile_version{};
-    std::unordered_map<std::string, std::uint32_t> namespace_versions;
-    MigrationState migration_state = MigrationState::Stable;
+    std::uint32_t profile_version{}; ///< Overall storage profile version.
+    std::unordered_map<std::string, std::uint32_t> namespace_versions; ///< Per-namespace schemas.
+    MigrationState migration_state = MigrationState::Stable; ///< Admission/recovery state.
 
+    /// \brief Compares all schema metadata fields.
     friend bool operator==(const StorageSchema& left, const StorageSchema& right)
     {
         return left.profile_version == right.profile_version
@@ -71,11 +75,18 @@ struct StorageSchema {
     }
 };
 
+/// \brief Thread-affine snapshot transaction with optimistic commit fencing.
+/// \note The originating backend must outlive the transaction. Unless an implementation
+/// documents otherwise, all operations are called from the creating thread.
 class ITransaction {
 public:
     virtual ~ITransaction() = default;
 
+    /// \brief Returns the read-only or read-write transaction mode.
+    /// \return Mode selected at transaction creation.
     [[nodiscard]] virtual TransactionMode mode() const noexcept = 0;
+    /// \brief Returns the current terminal or active state.
+    /// \return Current transaction state.
     [[nodiscard]] virtual TransactionState state() const noexcept = 0;
     /// \brief Reads from the transaction snapshot, including pending local writes.
     /// \param name_space Namespace containing the record.
@@ -99,35 +110,59 @@ public:
         return Error{ErrorCode::StorageUnavailable,
                      "compare-only read dependencies are not supported by this backend"};
     }
-    /// Creates a new key generation and returns its candidate committed revision.
+    /// \brief Creates a new key generation in the local write set.
+    /// \param name_space Namespace containing the record.
+    /// \param key Canonical record key, absent from the transaction snapshot.
+    /// \param value Bytes to stage.
+    /// \return Candidate committed revision or a typed conflict/error.
     [[nodiscard]] virtual Result<StorageRevision> create_if_absent(
         std::string_view name_space, std::string_view key, std::string_view value) = 0;
-    /// Updates a visible record using its transaction-visible revision.
-    /// Repeated writes in one transaction return the same candidate committed revision.
+    /// \brief Updates a visible record using its transaction-visible revision.
+    /// \param name_space Namespace containing the record.
+    /// \param key Canonical record key.
+    /// \param value Replacement bytes.
+    /// \param expected_revision Transaction-visible revision to replace.
+    /// \return Candidate committed revision or a typed conflict/error.
+    /// \note Repeated writes in one transaction return the same candidate revision.
     [[nodiscard]] virtual Result<StorageRevision> write(
         std::string_view name_space,
         std::string_view key,
         std::string_view value,
         StorageRevision expected_revision) = 0;
+    /// \brief Stages deletion of a visible record.
+    /// \param name_space Namespace containing the record.
+    /// \param key Canonical record key.
+    /// \param expected_revision Transaction-visible revision to erase.
+    /// \return Success when the revision matches, otherwise a typed error.
     [[nodiscard]] virtual Result<void> erase(
         std::string_view name_space,
         std::string_view key,
         StorageRevision expected_revision) = 0;
-    /// Publishes the write set or returns a terminal commit outcome.
+    /// \brief Atomically publishes the write set or returns a terminal outcome.
+    /// \return `Unknown` means publication cannot be inferred and must be resolved by reading state.
     [[nodiscard]] virtual CommitResult commit() = 0;
-    /// Rolls back only an active transaction owned by the calling thread.
+    /// \brief Rolls back only an active transaction owned by the calling thread.
     virtual void rollback() noexcept = 0;
 };
 
+/// \brief Backend-neutral owner and factory for storage transactions.
+/// \thread_safety Implementations document concurrency limits; the reference backend is concurrent.
 class IStorageBackend {
 public:
     virtual ~IStorageBackend() = default;
 
-    /// The returned transaction borrows the backend; the backend must outlive it.
-    /// Implementations fail closed when schema metadata does not permit transaction intake.
+    /// \brief Begins a transaction when schema metadata permits admission.
+    /// \param mode Requested read-only or read-write mode.
+    /// \return A transaction borrowing this backend, or a schema/admission error.
+    /// \note The backend must outlive the returned transaction.
     [[nodiscard]] virtual Result<std::unique_ptr<ITransaction>> begin_transaction(
         TransactionMode mode) = 0;
+    /// \brief Returns the currently configured schema metadata.
+    /// \return Schema or a backend access error.
     [[nodiscard]] virtual Result<StorageSchema> schema() const = 0;
+    /// \brief Validates backend metadata against an expected schema.
+    /// \param expected Required profile, namespace versions and migration state.
+    /// \return Success only when the schema is compatible.
     [[nodiscard]] virtual Result<void> validate_schema(const StorageSchema& expected) const = 0;
 };
 
@@ -135,26 +170,42 @@ public:
 class UnitOfWork {
 public:
     UnitOfWork() noexcept = default;
+    /// \brief Takes exclusive ownership of a backend transaction.
+    /// \param transaction Transaction to own; null creates an invalid unit.
     explicit UnitOfWork(std::unique_ptr<ITransaction> transaction) noexcept
         : m_transaction(std::move(transaction))
     {
     }
     UnitOfWork(const UnitOfWork&) = delete;
     UnitOfWork& operator=(const UnitOfWork&) = delete;
+    /// \brief Transfers transaction ownership.
     UnitOfWork(UnitOfWork&&) noexcept = default;
     /// Replaces ownership after rolling back the currently owned active transaction.
+    /// \param other Unit whose transaction ownership is transferred.
+    /// \return This unit after the transfer.
     UnitOfWork& operator=(UnitOfWork&& other) noexcept;
     ~UnitOfWork();
 
+    /// \brief Begins and owns a transaction borrowed from `backend`.
+    /// \param backend Backend that must outlive the returned unit.
+    /// \param mode Requested transaction mode.
+    /// \return Owning unit or a backend admission error.
     [[nodiscard]] static Result<UnitOfWork> begin(IStorageBackend& backend,
                                                   TransactionMode mode);
+    /// \brief Reports whether this unit owns a transaction.
+    /// \return `true` when `transaction()` is non-null.
     [[nodiscard]] bool valid() const noexcept { return static_cast<bool>(m_transaction); }
+    /// \brief Returns the mutable owned transaction, or null when invalid.
+    /// \return Mutable borrowed pointer or null.
     [[nodiscard]] ITransaction* transaction() noexcept { return m_transaction.get(); }
+    /// \brief Returns the const owned transaction, or null when invalid.
+    /// \return Const borrowed pointer or null.
     [[nodiscard]] const ITransaction* transaction() const noexcept
     {
         return m_transaction.get();
     }
-    /// Commits the owned transaction; `Unknown` remains terminal and is not retried.
+    /// \brief Commits the owned transaction; `Unknown` remains terminal and is not retried.
+    /// \return Terminal commit result or an invalid-state failure.
     [[nodiscard]] CommitResult commit();
     /// Rolls back an active transaction. Unknown outcomes are never rolled back.
     void rollback() noexcept;
@@ -163,11 +214,12 @@ private:
     std::unique_ptr<ITransaction> m_transaction;
 };
 
+/// \brief One-shot deterministic fault controls for storage conformance tests.
 struct InMemoryFailureInjection {
-    bool fail_write_set_preparation = false;
-    bool fail_before_publish = false;
-    bool unknown_before_publish = false;
-    bool unknown_after_publish = false;
+    bool fail_write_set_preparation = false; ///< Fail while preparing a copied write set.
+    bool fail_before_publish = false; ///< Return `Failed` before publication.
+    bool unknown_before_publish = false; ///< Return `Unknown` without publishing.
+    bool unknown_after_publish = false; ///< Publish and then return `Unknown`.
 };
 
 /// \brief Deterministic snapshot/optimistic backend used as the M2 semantic baseline.
@@ -176,16 +228,25 @@ struct InMemoryFailureInjection {
 /// recreated record. This backend is not durable.
 class InMemoryStorageBackend final : public IStorageBackend {
 public:
+    /// \brief Creates a process-local backend with fixed schema metadata.
+    /// \param schema Schema governing transaction admission.
     explicit InMemoryStorageBackend(StorageSchema schema = StorageSchema{1, {}});
     ~InMemoryStorageBackend() override;
 
+    /// \copydoc IStorageBackend::begin_transaction
     [[nodiscard]] Result<std::unique_ptr<ITransaction>> begin_transaction(
         TransactionMode mode) override;
+    /// \copydoc IStorageBackend::schema
     [[nodiscard]] Result<StorageSchema> schema() const override;
+    /// \copydoc IStorageBackend::validate_schema
     [[nodiscard]] Result<void> validate_schema(const StorageSchema& expected) const override;
 
     /// \brief Installs one-shot failures for deterministic tests.
+    /// \param injection Failure points consumed by subsequent real writes.
     void set_failure_injection(InMemoryFailureInjection injection);
+    /// \brief Returns the number of currently visible records.
+    /// \return Count of records with visible values.
+    /// \thread_safety Safe to call concurrently.
     [[nodiscard]] std::size_t record_count() const noexcept;
 
 private:

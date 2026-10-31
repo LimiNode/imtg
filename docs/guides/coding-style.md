@@ -15,4 +15,9 @@
 - Public headers use an `IMTG_..._HPP` include guard (or an equivalent project-approved mechanism) and include only what they require. The header that defines a public type owns its declaration; umbrella headers re-export owned headers but do not create duplicate declarations. Dependency direction follows architecture: core contracts do not include adapter headers.
 - Do not rename third-party APIs. Naming exceptions require an ADR.
 
-Public APIs use Doxygen in English. Document semantics rather than repeating signatures, including ownership, lifetime, errors, side effects, and thread safety. Preferred tags include `\brief`, `\param`, `\return`, `\throws`, `\pre`, `\post`, `\invariant`, `\complexity`, and `\thread_safety`.
+Every new public type and nontrivial public operation uses Doxygen in English in the same PR
+as its implementation. Document semantics rather than repeating signatures, including
+ownership, lifetime, errors, side effects, and thread safety. Preferred tags include `\brief`,
+`\param`, `\return`, `\throws`, `\pre`, `\post`, `\invariant`, `\complexity`, and
+`\thread_safety`. The strict optional validation workflow is described in
+[public API documentation](public-api-documentation.md).
