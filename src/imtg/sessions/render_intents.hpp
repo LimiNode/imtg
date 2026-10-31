@@ -109,12 +109,12 @@ public:
         const RenderIntentId& id, ClockTime fallback_time, ITransaction& transaction) const;
 
     /// \brief Claims a bounded page of eligible intents with monotonic fencing.
-    /// \param limit Non-zero maximum number of base records inspected and claimed.
+    /// \param limit Non-zero maximum number of eligible records to claim.
     /// \param now Current authoritative time.
     /// \param lease_duration Positive lease duration.
     /// \param continuation Exclusive stable base-key cursor; empty starts at the first key.
     /// \param transaction Caller-owned read-write transaction.
-    /// \return Claims staged in this transaction and a continuation cursor.
+    /// \return Up to `limit` claims staged in this transaction and a continuation cursor.
     /// \note A successful return is tentative until the caller commits. A
     /// commit result of `Unknown` requires `inspect()` before another claim.
     [[nodiscard]] Result<RenderIntentClaimPage> claim_render_intents(

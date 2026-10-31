@@ -284,30 +284,37 @@ Result<RenderIntentClaimPage> RenderIntentClaimRepository::claim_render_intents(
     if (limit == 0 || lease_duration.count() <= 0) {
         return claim_error(ErrorCode::InvalidArgument, "claim limit and lease must be positive");
     }
-    const auto page = transaction.scan(render_namespace, continuation, limit);
-    if (!page) return page.error();
     RenderIntentClaimPage result;
-    if (!page.value().empty()) result.continuation = page.value().back().key;
-    for (const auto& entry : page.value()) {
-        const auto context = load_context(RenderIntentId{entry.key}, now, transaction);
-        if (!context) return context.error();
-        if (!context.value()) continue;
-        auto current = context.value()->claim;
-        if (current.state == RenderIntentLifecycleState::Completed
-            || current.state == RenderIntentLifecycleState::Planned
-            || current.state == RenderIntentLifecycleState::Superseded) continue;
-        if (current.next_eligible_at > now
-            || (current.state == RenderIntentLifecycleState::Claimed && now < current.lease_until)) continue;
-        const auto next_token = next_storage_revision(current.claim_token.value);
-        if (!next_token) return next_token.error();
-        RenderIntentClaim next = current;
-        next.state = RenderIntentLifecycleState::Claimed;
-        next.claim_token = ClaimToken{next_token.value()};
-        next.lease_until = now + lease_duration;
-        next.next_eligible_at = now;
-        auto written = write_claim(*context.value(), next, transaction);
-        if (!written) return written.error();
-        result.claims.push_back(std::move(written).value());
+    std::string cursor{continuation};
+    while (result.claims.size() < limit) {
+        const auto page = transaction.scan(render_namespace, cursor, limit);
+        if (!page) return page.error();
+        if (page.value().empty()) break;
+        cursor = page.value().back().key;
+        result.continuation = cursor;
+        for (const auto& entry : page.value()) {
+            const auto context = load_context(RenderIntentId{entry.key}, now, transaction);
+            if (!context) return context.error();
+            if (!context.value()) continue;
+            auto current = context.value()->claim;
+            if (current.state == RenderIntentLifecycleState::Completed
+                || current.state == RenderIntentLifecycleState::Planned
+                || current.state == RenderIntentLifecycleState::Superseded) continue;
+            if (current.next_eligible_at > now
+                || (current.state == RenderIntentLifecycleState::Claimed && now < current.lease_until)) continue;
+            const auto next_token = next_storage_revision(current.claim_token.value);
+            if (!next_token) return next_token.error();
+            RenderIntentClaim next = current;
+            next.state = RenderIntentLifecycleState::Claimed;
+            next.claim_token = ClaimToken{next_token.value()};
+            next.lease_until = now + lease_duration;
+            next.next_eligible_at = now;
+            auto written = write_claim(*context.value(), next, transaction);
+            if (!written) return written.error();
+            result.claims.push_back(std::move(written).value());
+            if (result.claims.size() == limit) break;
+        }
+        if (page.value().size() < limit) break;
     }
     return result;
 }
