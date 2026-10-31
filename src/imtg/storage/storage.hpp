@@ -12,6 +12,7 @@
 #include <string_view>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 namespace imtg {
 
@@ -60,6 +61,12 @@ struct StorageRecord {
     StorageRevision revision{}; ///< Optimistic-concurrency generation.
 };
 
+/// \brief One visible record returned by a bounded namespace scan.
+struct StorageScanEntry {
+    std::string key; ///< Canonical key of the visible record.
+    StorageRecord record; ///< Value and generation observed in the snapshot.
+};
+
 /// \brief Version metadata governing backend admission and migrations.
 struct StorageSchema {
     std::uint32_t profile_version{}; ///< Overall storage profile version.
@@ -94,6 +101,23 @@ public:
     /// \return The visible record, or an empty optional when absent.
     [[nodiscard]] virtual Result<std::optional<StorageRecord>> read(
         std::string_view name_space, std::string_view key) = 0;
+    /// \brief Returns a bounded lexicographic page of visible records.
+    /// \param name_space Namespace to enumerate.
+    /// \param continuation Exclusive key cursor; empty starts at the first key.
+    /// \param limit Maximum number of records to return; must be non-zero.
+    /// \return At most `limit` entries and no hidden/tombstoned records.
+    /// \note The page is snapshot-consistent. It is a scan primitive, not a
+    /// predicate lock; callers must watch records whose revisions they claim.
+    [[nodiscard]] virtual Result<std::vector<StorageScanEntry>> scan(
+        std::string_view name_space, std::string_view continuation,
+        std::size_t limit)
+    {
+        (void)name_space;
+        (void)continuation;
+        (void)limit;
+        return Error{ErrorCode::StorageUnavailable,
+                     "bounded scans are not supported by this backend"};
+    }
     /// \brief Registers a compare-only dependency checked atomically at commit.
     /// \param name_space Namespace containing the record.
     /// \param key Canonical record key.
