@@ -101,6 +101,43 @@ public:
             *found->second.value, found->second.revision}};
     }
 
+    Result<std::vector<StorageScanEntry>> scan(std::string_view name_space,
+                                               std::string_view continuation,
+                                               std::size_t limit) override
+    {
+        const auto precondition = check_active();
+        if (!precondition) return precondition.error();
+        if (name_space.empty() || limit == 0) {
+            return storage_error(ErrorCode::InvalidArgument,
+                                 "scan namespace and limit must be non-empty");
+        }
+        std::vector<StorageScanEntry> entries;
+        entries.reserve(limit);
+        std::vector<std::string> keys;
+        for (const auto& entry : m_snapshot) {
+            if (entry.first.name_space == name_space && entry.second.value.has_value()
+                && entry.first.key > continuation) {
+                keys.push_back(entry.first.key);
+            }
+        }
+        for (const auto& entry : m_writes) {
+            if (entry.first.name_space == name_space && entry.second.value.has_value()
+                && entry.first.key > continuation
+                && m_snapshot.find(entry.first) == m_snapshot.end()) {
+                keys.push_back(entry.first.key);
+            }
+        }
+        std::sort(keys.begin(), keys.end());
+        keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+        for (const auto& key : keys) {
+            if (entries.size() == limit) break;
+            const auto visible = read(name_space, key);
+            if (!visible) return visible.error();
+            if (visible.value()) entries.push_back(StorageScanEntry{key, *visible.value()});
+        }
+        return entries;
+    }
+
     Result<void> watch(std::string_view name_space, std::string_view key,
                        StorageRevision expected_revision) override
     {
