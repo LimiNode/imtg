@@ -104,6 +104,14 @@ implicitly claimable row. The session repository and TX1 encoding remain
 unchanged. MDBX migration must preserve the original bytes/identity and be
 restartable before serving new claims.
 
+The desired-generation marker is likewise additive. For an existing M2b record,
+the first M2c read establishes a deterministic baseline generation without
+claiming or publishing an effect. Every subsequent M2c TX1 that creates or
+coalesces an intent advances the shared marker in the same transaction as the
+intent write. Thus an old M2b identity remains valid, while new TX2 instances
+can watch one versioned head rather than relying on a non-serializable absence
+query.
+
 ## Claims, leases, and bounded scans
 
 The planned repository operations are:
