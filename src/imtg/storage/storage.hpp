@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -290,13 +291,17 @@ private:
             return left.name_space == right.name_space && left.key == right.key;
         }
     };
-    struct RecordKeyHash {
-        std::size_t operator()(const RecordKey& value) const noexcept;
+    struct RecordKeyLess {
+        bool operator()(const RecordKey& left, const RecordKey& right) const noexcept
+        {
+            return left.name_space < right.name_space
+                || (left.name_space == right.name_space && left.key < right.key);
+        }
     };
 
     mutable std::mutex m_mutex;
     StorageSchema m_schema;
-    std::unordered_map<RecordKey, StoredRecord, RecordKeyHash> m_records;
+    std::map<RecordKey, StoredRecord, RecordKeyLess> m_records;
     InMemoryFailureInjection m_failure_injection;
 };
 

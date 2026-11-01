@@ -54,6 +54,7 @@ struct RenderIntentClaim {
 struct RenderIntentClaimPage {
     std::vector<RenderIntentClaim> claims; ///< Claims staged by this transaction.
     std::optional<std::string> continuation; ///< Exclusive key for the next bounded scan page.
+    std::size_t examined = 0; ///< Number of base records examined during this operation.
 };
 
 /// \brief Monotonic desired-state generation used to fence reconciliation plans.
@@ -100,6 +101,22 @@ public:
 /// transaction commits successfully.
 class RenderIntentClaimRepository final {
 public:
+    /// rief Creates a claim repository with bounded scan controls.
+    /// \param page_size Maximum number of base records fetched per storage page.
+    /// \param examination_budget Maximum records examined by one claim operation.
+    explicit RenderIntentClaimRepository(std::size_t page_size = 64,
+                                         std::size_t examination_budget = 1024) noexcept
+        : m_page_size(page_size), m_examination_budget(examination_budget)
+    {
+    }
+
+    /// \brief Admits legacy M2b intents by atomically initializing generation markers.
+    /// \param transaction Caller-owned read-write transaction.
+    /// \return Success when every valid legacy intent observed in bounded pages has
+    /// a desired-generation marker. The caller must commit and resolve `Unknown` by
+    /// authoritative inspection before claims are admitted.
+    [[nodiscard]] Result<void> admit_legacy_intents(ITransaction& transaction) const;
+
     /// \brief Reads one claim envelope, treating a valid legacy row as Pending.
     /// \param id Stable render-intent identity.
     /// \param fallback_time Eligibility time used for an unmaterialized legacy row.
@@ -116,7 +133,9 @@ public:
     /// \param transaction Caller-owned read-write transaction.
     /// \return Up to `limit` claims staged in this transaction and a continuation cursor.
     /// \note A successful return is tentative until the caller commits. A
-    /// commit result of `Unknown` requires `inspect()` before another claim.
+    /// commit result of `Unknown` requires `inspect()` before another claim. If
+    /// the method returns an error after staging earlier rows, the caller must
+    /// roll back the transaction and must not publish that partial batch.
     [[nodiscard]] Result<RenderIntentClaimPage> claim_render_intents(
         std::size_t limit, ClockTime now, std::chrono::milliseconds lease_duration,
         std::string_view continuation, ITransaction& transaction) const;
@@ -167,6 +186,10 @@ public:
     [[nodiscard]] Result<RenderIntentClaim> supersede_render_intent(
         const RenderIntentId& id, ClaimToken token, StorageRevision expected_row_revision,
         ClockTime now, const RenderIntentId& newer_intent_id, ITransaction& transaction) const;
+
+private:
+    std::size_t m_page_size;
+    std::size_t m_examination_budget;
 };
 
 } // namespace imtg

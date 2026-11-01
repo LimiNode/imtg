@@ -9,6 +9,8 @@ namespace imtg {
 
 namespace {
 
+constexpr std::size_t max_scan_page = 4096;
+
 Error storage_error(ErrorCode code, const char* message)
 {
     return Error{code, message};
@@ -69,7 +71,7 @@ void UnitOfWork::rollback() noexcept
 
 class InMemoryStorageBackend::Transaction final : public ITransaction {
 public:
-    using RecordMap = std::unordered_map<RecordKey, StoredRecord, RecordKeyHash>;
+    using RecordMap = std::map<RecordKey, StoredRecord, RecordKeyLess>;
 
     Transaction(InMemoryStorageBackend& backend, TransactionMode mode, RecordMap snapshot,
                 std::thread::id owner)
@@ -107,33 +109,59 @@ public:
     {
         const auto precondition = check_active();
         if (!precondition) return precondition.error();
-        if (name_space.empty() || limit == 0) {
+        if (name_space.empty() || limit == 0 || limit > max_scan_page) {
             return storage_error(ErrorCode::InvalidArgument,
-                                 "scan namespace and limit must be non-empty");
+                                 "scan namespace and limit are outside the bounded range");
         }
         std::vector<StorageScanEntry> entries;
         entries.reserve(limit);
-        std::vector<std::string> keys;
-        for (const auto& entry : m_snapshot) {
-            if (entry.first.name_space == name_space && entry.second.value.has_value()
-                && entry.first.key > continuation) {
-                keys.push_back(entry.first.key);
-            }
+        const RecordKey lower_bound_key{std::string(name_space), std::string(continuation)};
+        auto snapshot_it = m_snapshot.lower_bound(lower_bound_key);
+        auto writes_it = m_writes.lower_bound(lower_bound_key);
+        if (snapshot_it != m_snapshot.end() && snapshot_it->first.name_space == name_space
+            && snapshot_it->first.key == continuation) {
+            ++snapshot_it;
         }
-        for (const auto& entry : m_writes) {
-            if (entry.first.name_space == name_space && entry.second.value.has_value()
-                && entry.first.key > continuation
-                && m_snapshot.find(entry.first) == m_snapshot.end()) {
-                keys.push_back(entry.first.key);
-            }
+        if (writes_it != m_writes.end() && writes_it->first.name_space == name_space
+            && writes_it->first.key == continuation) {
+            ++writes_it;
         }
-        std::sort(keys.begin(), keys.end());
-        keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
-        for (const auto& key : keys) {
-            if (entries.size() == limit) break;
-            const auto visible = read(name_space, key);
+        const auto advance_snapshot = [&]() {
+            while (snapshot_it != m_snapshot.end()
+                   && snapshot_it->first.name_space != name_space) {
+                if (snapshot_it->first.name_space > name_space) break;
+                ++snapshot_it;
+            }
+        };
+        const auto advance_writes = [&]() {
+            while (writes_it != m_writes.end()
+                   && writes_it->first.name_space != name_space) {
+                if (writes_it->first.name_space > name_space) break;
+                ++writes_it;
+            }
+        };
+        advance_snapshot();
+        advance_writes();
+        while (entries.size() < limit) {
+            const bool snapshot_match = snapshot_it != m_snapshot.end()
+                && snapshot_it->first.name_space == name_space
+                && snapshot_it->first.key > continuation;
+            const bool writes_match = writes_it != m_writes.end()
+                && writes_it->first.name_space == name_space
+                && writes_it->first.key > continuation;
+            if (!snapshot_match && !writes_match) break;
+
+            RecordKey key;
+            if (!writes_match || (snapshot_match && snapshot_it->first.key < writes_it->first.key)) {
+                key = snapshot_it->first;
+            } else {
+                key = writes_it->first;
+            }
+            const auto visible = read(name_space, key.key);
             if (!visible) return visible.error();
-            if (visible.value()) entries.push_back(StorageScanEntry{key, *visible.value()});
+            if (visible.value()) entries.push_back(StorageScanEntry{key.key, *visible.value()});
+            while (snapshot_it != m_snapshot.end() && snapshot_it->first == key) ++snapshot_it;
+            while (writes_it != m_writes.end() && writes_it->first == key) ++writes_it;
         }
         return entries;
     }
@@ -433,18 +461,10 @@ private:
     TransactionMode m_mode;
     TransactionState m_state = TransactionState::Active;
     RecordMap m_snapshot;
-    std::unordered_map<RecordKey, Pending, RecordKeyHash> m_writes;
-    std::unordered_map<RecordKey, StorageRevision, RecordKeyHash> m_dependencies;
+    std::map<RecordKey, Pending, RecordKeyLess> m_writes;
+    std::map<RecordKey, StorageRevision, RecordKeyLess> m_dependencies;
     std::thread::id m_owner;
 };
-
-std::size_t InMemoryStorageBackend::RecordKeyHash::operator()(
-    const RecordKey& value) const noexcept
-{
-    const auto first = std::hash<std::string>{}(value.name_space);
-    const auto second = std::hash<std::string>{}(value.key);
-    return first ^ (second + static_cast<std::size_t>(0x9e3779b9U) + (first << 6) + (first >> 2));
-}
 
 InMemoryStorageBackend::InMemoryStorageBackend(StorageSchema schema)
     : m_schema(std::move(schema))
@@ -462,7 +482,7 @@ Result<std::unique_ptr<ITransaction>> InMemoryStorageBackend::begin_transaction(
             return storage_error(ErrorCode::StorageSchemaFailure,
                                  "storage schema is not ready for transactions");
         }
-        auto snapshot = std::unordered_map<RecordKey, StoredRecord, RecordKeyHash>(m_records);
+        auto snapshot = std::map<RecordKey, StoredRecord, RecordKeyLess>(m_records);
         return std::unique_ptr<ITransaction>(
             new Transaction(*this, mode, std::move(snapshot), std::this_thread::get_id()));
     } catch (const std::exception& exception) {
