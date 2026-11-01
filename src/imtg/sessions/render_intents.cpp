@@ -394,7 +394,8 @@ Result<RenderIntentClaimPage> RenderIntentClaimRepository::claim_render_intents(
     std::string cursor{continuation};
     while (result.claims.size() < limit && result.examined < m_examination_budget) {
         const auto remaining_budget = m_examination_budget - result.examined;
-        const auto page_limit = std::min({m_page_size, remaining_budget, limit});
+        const auto lookahead = limit < 4096 ? limit + 1 : limit;
+        const auto page_limit = std::min({m_page_size, remaining_budget, lookahead});
         const auto page = transaction.scan(render_namespace, cursor, page_limit);
         if (!page) return page.error();
         if (page.value().empty()) {
