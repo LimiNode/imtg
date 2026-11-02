@@ -162,6 +162,10 @@ void test_delete_recreate_aba(const BackendFixture& fixture)
     const auto recreated = recreating.transaction()->create_if_absent(
         "sessions", "aba", "generation-three");
     CHECK(recreated && recreated.value() == 3);
+    const auto visible_scan = recreating.transaction()->scan("sessions", {}, 10);
+    CHECK(visible_scan && visible_scan.value().size() == 1
+          && visible_scan.value().front().key == "aba"
+          && visible_scan.value().front().record.value == "generation-three");
     CHECK(recreating.commit().outcome == imtg::CommitOutcome::Committed);
 
     auto stale_cas = begin(*backend);
@@ -192,6 +196,43 @@ void test_delete_recreate_aba(const BackendFixture& fixture)
         "sessions", "aba-active", "stale-overwrite", 1);
     CHECK(stale_write && stale_write.value() == 2);
     CHECK(stale.commit().outcome == imtg::CommitOutcome::RejectedConflict);
+}
+
+void test_bounded_scan_visibility(const BackendFixture& fixture)
+{
+    auto backend = fixture.create_backend(stable_schema());
+    CHECK(create_record(*backend, "scan-a", "a") == 1);
+    CHECK(create_record(*backend, "scan-b", "b") == 1);
+    auto work = begin(*backend);
+    const auto updated = work.transaction()->write("sessions", "scan-a", "updated", 1);
+    CHECK(updated && updated.value() == 2);
+    CHECK(work.transaction()->erase("sessions", "scan-b", 1));
+    CHECK(work.transaction()->create_if_absent("sessions", "scan-c", "c"));
+    const auto first = work.transaction()->scan("sessions", {}, 1);
+    CHECK(first && first.value().size() == 1 && first.value().front().key == "scan-a");
+    const auto second = work.transaction()->scan("sessions", first.value().front().key, 10);
+    CHECK(second && second.value().size() == 1 && second.value().front().key == "scan-c");
+    work.rollback();
+}
+
+void test_scan_sees_tombstone_recreation(const BackendFixture& fixture)
+{
+    auto backend = fixture.create_backend(stable_schema());
+    CHECK(create_record(*backend, "scan-recreated", "first") == 1);
+    auto erase = begin(*backend);
+    CHECK(erase.transaction()->erase("sessions", "scan-recreated", 1));
+    CHECK(erase.commit().outcome == imtg::CommitOutcome::Committed);
+
+    auto recreate = begin(*backend);
+    const auto created = recreate.transaction()->create_if_absent(
+        "sessions", "scan-recreated", "third");
+    CHECK(created && created.value() == 3);
+    const auto page = recreate.transaction()->scan("sessions", {}, 1);
+    CHECK(page && page.value().size() == 1
+          && page.value().front().key == "scan-recreated"
+          && page.value().front().record.value == "third"
+          && page.value().front().record.revision == 3);
+    recreate.rollback();
 }
 
 void test_atomicity_and_conflicts(const BackendFixture& fixture)
@@ -372,6 +413,8 @@ void run_conformance(const BackendFixture& fixture)
     test_read_your_writes_and_revisions(fixture);
     test_snapshot_and_basic_constraints(fixture);
     test_delete_recreate_aba(fixture);
+    test_bounded_scan_visibility(fixture);
+    test_scan_sees_tombstone_recreation(fixture);
     test_atomicity_and_conflicts(fixture);
     test_thread_ownership(fixture);
 }

@@ -1,4 +1,5 @@
 #include "imtg/sessions/session.hpp"
+#include "imtg/sessions/render_intents.hpp"
 
 #include <limits>
 #include <utility>
@@ -454,6 +455,15 @@ Result<RenderIntentId> RenderIntentRepository::append(const RenderIntent& intent
     append_string(value, intent.metadata);
     value.push_back(intent.origin ? '\x01' : '\x00');
     if (intent.origin) append_string(value, intent.origin->encode());
+    // M2c adds a versioned desired-generation marker in the same TX1 write set.
+    // Legacy M2b identities and payload bytes remain unchanged.
+    DesiredGenerationRepository generations;
+    const auto scope = intent.conversation.encode();
+    const auto marker = generations.ensure(scope, transaction);
+    if (!marker) return marker.error();
+    const auto advanced = generations.advance(scope, marker.value().value,
+                                              marker.value().row_revision, transaction);
+    if (!advanced) return advanced.error();
     const auto created = transaction.create_if_absent(render_namespace, intent.id.value, value);
     if (!created) return created.error();
     return intent.id;

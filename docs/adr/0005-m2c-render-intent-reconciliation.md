@@ -142,13 +142,35 @@ transaction result is `Unknown`, recovery must inspect the persisted row before
 attempting another claim; it must not assume that the increment did or did not
 commit.
 
-The eligible ordering is `(next_eligible_at, stable_record_id)` with an
-exclusive continuation key. If claiming changes `next_eligible_at`, the worker
-continues from the returned key and then starts a fresh page; it never reuses a
-mutable numeric offset. A bounded implementation must document its fairness
-rule (round-robin continuation or periodic restart from the first key) so a
-hot prefix cannot starve later records. Every claim attempt advances the token
-atomically and every completion validates the token and expected row revision.
+The production eligible ordering is `(next_eligible_at, stable_record_id)` with
+an exclusive continuation key. The M2c-a in-memory semantic baseline may scan
+by `stable_record_id` instead: each operation has a configurable non-zero
+examination budget, returns progress even when it finds no eligible rows, and
+requires the caller to continue while an opaque cursor is present. This staged
+reference strategy proves bounded progress and fencing but is not the durable
+adapter's performance model. Its continuation is versioned and opaque so the
+future MDBX due index can use the production ordering without exposing a DBI
+key or changing the public cursor contract.
+
+If claiming changes `next_eligible_at`, the worker continues from the returned
+cursor and later starts a fresh pass; it never reuses a mutable numeric offset.
+The stable-ID reference pass prevents a hot/ineligible prefix from blocking
+later IDs because every examined row advances the cursor. The durable adapter
+must implement and benchmark the due index before acceptance. Every claim
+attempt advances the token atomically and every completion validates the token
+and expected row revision.
+
+The in-memory `scan()` no longer builds or sorts an O(N) temporary key list: it
+merges ordered snapshot and pending-write ranges using O(page size) result
+memory. Beginning an in-memory transaction still copies the full O(N) snapshot;
+M2c-a does not claim O(1) transaction creation or model MDBX reader costs.
+
+Legacy M2b admission is an offline atomic migration. The reference repository
+accepts only datasets that fit its explicit examination budget, validates them
+in one caller-owned transaction, and requires rollback if the budget or any
+record validation fails. It publishes no partially admitted batch. Larger
+datasets require a separately schema-gated, resumable durable migration before
+serving claims; page size alone is not treated as a total-work bound.
 
 ## Reconciliation and TX2
 

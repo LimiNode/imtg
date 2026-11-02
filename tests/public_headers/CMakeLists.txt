@@ -15,6 +15,7 @@ set(IMTG_PUBLIC_HEADERS
     imtg/runtime/runtime.hpp
     imtg/storage/storage.hpp
     imtg/sessions/fsm.hpp
+    imtg/sessions/render_intents.hpp
     imtg/sessions/session.hpp
     imtg/ui/tree.hpp
     imtg/ui/ui.hpp)
