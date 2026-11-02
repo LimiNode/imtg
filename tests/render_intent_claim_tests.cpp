@@ -185,6 +185,60 @@ void test_competing_claims_and_unknown_recovery()
     CHECK(inspect.commit().outcome == imtg::CommitOutcome::Committed);
 }
 
+void test_claim_unknown_after_publication_recovery()
+{
+    imtg::InMemoryStorageBackend backend(schema());
+    const auto id = append_intent(backend, conversation(801, 901), 1);
+    imtg::RenderIntentClaimRepository claims;
+    const auto now = imtg::ClockTime{5000ms};
+
+    imtg::InMemoryFailureInjection injection;
+    injection.unknown_after_publish = true;
+    backend.set_failure_injection(injection);
+    auto first = begin(backend);
+    const auto staged = claims.claim_render_intents(
+        1, now, 100ms, {}, *first.transaction());
+    CHECK(staged && staged.value().claims.size() == 1);
+    const auto original = staged.value().claims.front();
+    CHECK(first.commit().outcome == imtg::CommitOutcome::Unknown);
+
+    auto inspect = begin(backend, imtg::TransactionMode::ReadOnly);
+    const auto recovered = claims.inspect(id, now, *inspect.transaction());
+    CHECK(recovered && recovered.value()
+          && recovered.value()->state == imtg::RenderIntentLifecycleState::Claimed
+          && recovered.value()->claim_token.value == original.claim_token.value
+          && recovered.value()->row_revision == original.row_revision
+          && recovered.value()->lease_until == original.lease_until);
+    CHECK(inspect.commit().outcome == imtg::CommitOutcome::Committed);
+
+    auto competing = begin(backend);
+    const auto blocked = claims.claim_render_intents(
+        1, now, 100ms, {}, *competing.transaction());
+    CHECK(blocked && blocked.value().claims.empty());
+    competing.rollback();
+
+    auto reclaim = begin(backend);
+    const auto reclaimed = claims.claim_render_intents(
+        1, now + 101ms, 100ms, {}, *reclaim.transaction());
+    CHECK(reclaimed && reclaimed.value().claims.size() == 1
+          && reclaimed.value().claims.front().claim_token.value > original.claim_token.value);
+    const auto replacement = reclaimed.value().claims.front();
+    CHECK(reclaim.commit().outcome == imtg::CommitOutcome::Committed);
+
+    auto stale = begin(backend);
+    const auto stale_completion = claims.complete_render_intent(
+        id, original.claim_token, original.row_revision, now + 101ms,
+        *stale.transaction());
+    CHECK(!stale_completion && stale_completion.error().code == imtg::ErrorCode::StorageStaleClaim);
+    stale.rollback();
+
+    auto complete = begin(backend);
+    const auto completed = claims.complete_render_intent(
+        id, replacement.claim_token, replacement.row_revision, now + 101ms,
+        *complete.transaction());
+    CHECK(completed && complete.commit().outcome == imtg::CommitOutcome::Committed);
+}
+
 void test_bounded_pagination_and_legacy_bootstrap()
 {
     imtg::InMemoryStorageBackend backend(schema());
@@ -615,6 +669,7 @@ int main()
 {
     test_claim_and_fencing();
     test_competing_claims_and_unknown_recovery();
+    test_claim_unknown_after_publication_recovery();
     test_bounded_pagination_and_legacy_bootstrap();
     test_partial_page_continuation_and_budget_progress();
     test_lease_precision_and_boundaries();
