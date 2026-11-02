@@ -53,7 +53,7 @@ struct RenderIntentClaim {
 /// \brief Bounded result of a claim scan.
 struct RenderIntentClaimPage {
     std::vector<RenderIntentClaim> claims; ///< Claims staged by this transaction.
-    std::optional<std::string> continuation; ///< Exclusive key for the next bounded scan page.
+    std::optional<std::string> continuation; ///< Opaque versioned cursor; empty optional means end of range.
     std::size_t examined = 0; ///< Number of base records examined during this operation.
 };
 
@@ -101,7 +101,7 @@ public:
 /// transaction commits successfully.
 class RenderIntentClaimRepository final {
 public:
-    /// rief Creates a claim repository with bounded scan controls.
+    /// \brief Creates a claim repository with bounded scan controls.
     /// \param page_size Maximum number of base records fetched per storage page.
     /// \param examination_budget Maximum records examined by one claim operation.
     explicit RenderIntentClaimRepository(std::size_t page_size = 64,
@@ -110,11 +110,14 @@ public:
     {
     }
 
-    /// \brief Admits legacy M2b intents by atomically initializing generation markers.
+    /// \brief Admits a bounded legacy M2b dataset by atomically initializing markers.
     /// \param transaction Caller-owned read-write transaction.
-    /// \return Success when every valid legacy intent observed in bounded pages has
-    /// a desired-generation marker. The caller must commit and resolve `Unknown` by
-    /// authoritative inspection before claims are admitted.
+    /// \return Success when the entire dataset fits the examination budget and every
+    /// valid intent has a desired-generation marker staged in this transaction.
+    /// \note This is an offline, O(N) migration over at most `examination_budget`
+    /// rows. Exceeding the budget or any validation error requires rollback of the
+    /// whole transaction. The caller must commit and resolve `Unknown` by authoritative
+    /// marker inspection before claims are admitted.
     [[nodiscard]] Result<void> admit_legacy_intents(ITransaction& transaction) const;
 
     /// \brief Reads one claim envelope, treating a valid legacy row as Pending.
@@ -129,13 +132,18 @@ public:
     /// \param limit Non-zero maximum number of eligible records to claim.
     /// \param now Current authoritative time.
     /// \param lease_duration Positive lease duration.
-    /// \param continuation Exclusive stable base-key cursor; empty starts at the first key.
+    /// \param continuation Opaque versioned cursor returned by a prior call; empty starts over.
     /// \param transaction Caller-owned read-write transaction.
     /// \return Up to `limit` claims staged in this transaction and a continuation cursor.
     /// \note A successful return is tentative until the caller commits. A
     /// commit result of `Unknown` requires `inspect()` before another claim. If
     /// the method returns an error after staging earlier rows, the caller must
     /// roll back the transaction and must not publish that partial batch.
+    /// \note The in-memory reference strategy scans stable IDs and examines no more
+    /// than `examination_budget` rows. Callers continue whenever `continuation` is
+    /// present, including pages with no claims. Durable adapters must use an
+    /// eligibility index ordered by `(next_eligible_at, stable_record_id)` without
+    /// exposing its internal key through this cursor.
     [[nodiscard]] Result<RenderIntentClaimPage> claim_render_intents(
         std::size_t limit, ClockTime now, std::chrono::milliseconds lease_duration,
         std::string_view continuation, ITransaction& transaction) const;
@@ -145,7 +153,8 @@ public:
     /// \param token Token returned by a committed claim.
     /// \param expected_row_revision Side-state revision returned by that claim.
     /// \param now Current authoritative time; an expired lease is stale.
-    /// \param lease_until New strictly-future lease expiry.
+    /// \param lease_until New strictly-future lease expiry. Persistence rounds
+    /// sub-millisecond values toward the future and returns that stored value.
     /// \param transaction Caller-owned read-write transaction.
     /// \return The renewed claim staged for commit.
     [[nodiscard]] Result<RenderIntentClaim> renew_render_intent(

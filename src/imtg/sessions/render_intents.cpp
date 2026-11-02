@@ -14,6 +14,7 @@ namespace {
 constexpr std::string_view render_namespace = "render_intents";
 constexpr std::string_view claim_namespace = "render_intent_claims";
 constexpr std::string_view generation_namespace = "render_intent_generations";
+constexpr std::string_view claim_cursor_magic = "IRC1";
 
 Error claim_error(ErrorCode code, const char* message)
 {
@@ -88,9 +89,19 @@ Result<std::int64_t> time_value(ClockTime value)
         || millis > static_cast<long double>(std::numeric_limits<std::int64_t>::max())) {
         return claim_error(ErrorCode::InvalidEncoding, "timestamp is outside the wire range");
     }
-    // Wire timestamps are signed milliseconds; sub-millisecond precision is truncated
-    // toward zero by the explicit conversion below.
-    return static_cast<std::int64_t>(millis);
+    const auto truncated = std::chrono::duration_cast<std::chrono::milliseconds>(
+        value.time_since_epoch());
+    auto rounded = truncated.count();
+    // Claim timestamps use conservative ceiling-to-millisecond encoding. A
+    // persisted lease or eligibility time is therefore never earlier than the
+    // caller-supplied instant, including for negative/pre-epoch values.
+    if (truncated < value.time_since_epoch()) {
+        if (rounded == std::numeric_limits<std::int64_t>::max()) {
+            return claim_error(ErrorCode::InvalidEncoding, "timestamp is outside the wire range");
+        }
+        ++rounded;
+    }
+    return rounded;
 }
 
 Result<ClockTime> from_time_value(std::uint64_t raw)
@@ -121,15 +132,49 @@ Result<ClockTime> from_time_value(std::uint64_t raw)
 Result<ClockTime> add_lease(ClockTime now, std::chrono::milliseconds lease)
 {
     if (lease.count() <= 0) return claim_error(ErrorCode::InvalidArgument, "lease must be positive");
-    const auto now_millis = time_value(now);
-    if (!now_millis) return now_millis.error();
-    const auto delta = lease.count();
-    if ((delta > 0 && now_millis.value() > std::numeric_limits<std::int64_t>::max() - delta)
-        || (delta < 0 && now_millis.value() < std::numeric_limits<std::int64_t>::min() - delta)) {
+    using Duration = ClockTime::duration;
+    const long double requested_ticks = static_cast<long double>(lease.count())
+        * static_cast<long double>(std::milli::num)
+        * static_cast<long double>(Duration::period::den)
+        / static_cast<long double>(std::milli::den)
+        / static_cast<long double>(Duration::period::num);
+    if (!std::isfinite(requested_ticks)
+        || requested_ticks > static_cast<long double>(std::numeric_limits<Duration::rep>::max())) {
         return claim_error(ErrorCode::InvalidArgument, "lease exceeds clock range");
     }
-    const auto sum = static_cast<std::int64_t>(now_millis.value() + delta);
-    return from_time_value(static_cast<std::uint64_t>(sum));
+    const auto delta_count = static_cast<Duration::rep>(std::ceil(requested_ticks));
+    if (delta_count <= 0
+        || now.time_since_epoch().count()
+            > std::numeric_limits<Duration::rep>::max() - delta_count) {
+        return claim_error(ErrorCode::InvalidArgument, "lease exceeds clock range");
+    }
+    const auto target = ClockTime{Duration{now.time_since_epoch().count() + delta_count}};
+    const auto persisted = time_value(target);
+    if (!persisted) return persisted.error();
+    return from_time_value(static_cast<std::uint64_t>(persisted.value()));
+}
+
+std::string encode_cursor(std::string_view storage_key)
+{
+    std::string cursor{claim_cursor_magic};
+    append_u64(cursor, static_cast<std::uint64_t>(storage_key.size()));
+    cursor.append(storage_key.data(), storage_key.size());
+    return cursor;
+}
+
+Result<std::string> decode_cursor(std::string_view cursor)
+{
+    if (cursor.empty()) return std::string{};
+    if (cursor.size() < claim_cursor_magic.size()
+        || cursor.substr(0, claim_cursor_magic.size()) != claim_cursor_magic) {
+        return claim_error(ErrorCode::UnsupportedVersion, "claim continuation version is unsupported");
+    }
+    Reader reader(cursor.substr(claim_cursor_magic.size()));
+    const auto key = reader.string();
+    if (!key || reader.remaining() != 0 || key.value().empty()) {
+        return claim_error(ErrorCode::InvalidEncoding, "claim continuation is malformed");
+    }
+    return key.value();
 }
 
 Result<StorageBytes> encode_claim(const RenderIntentClaim& claim)
@@ -276,12 +321,14 @@ Result<RenderIntentClaim> write_claim(ClaimContext context, RenderIntentClaim ne
     if (!watched) return watched.error();
     const auto encoded = encode_claim(next);
     if (!encoded) return encoded.error();
+    auto persisted = decode_claim(next.id, encoded.value());
+    if (!persisted) return persisted.error();
     Result<StorageRevision> written = context.has_side_state
         ? transaction.write(claim_namespace, context.claim.id.value, encoded.value(), context.claim.row_revision)
         : transaction.create_if_absent(claim_namespace, context.claim.id.value, encoded.value());
     if (!written) return written.error();
-    next.row_revision = written.value();
-    return next;
+    persisted.value().row_revision = written.value();
+    return std::move(persisted).value();
 }
 
 bool lease_live(const RenderIntentClaim& claim, ClockTime now) noexcept
@@ -356,16 +403,25 @@ Result<std::optional<RenderIntentClaim>> RenderIntentClaimRepository::inspect(
 
 Result<void> RenderIntentClaimRepository::admit_legacy_intents(ITransaction& transaction) const
 {
-    if (m_page_size == 0 || m_page_size > 4096) {
-        return claim_error(ErrorCode::InvalidArgument, "legacy admission page size is invalid");
+    if (m_page_size == 0 || m_page_size > 4096 || m_examination_budget == 0) {
+        return claim_error(ErrorCode::InvalidArgument, "legacy admission bounds are invalid");
     }
     RenderIntentRepository intents;
     std::string cursor;
+    std::size_t examined = 0;
     for (;;) {
-        const auto page = transaction.scan(render_namespace, cursor, m_page_size);
+        const auto remaining = m_examination_budget - examined;
+        const auto page_limit = std::min(m_page_size, remaining == 0 ? std::size_t{1}
+                                                                     : remaining);
+        const auto page = transaction.scan(render_namespace, cursor, page_limit);
         if (!page) return page.error();
         if (page.value().empty()) break;
+        if (remaining == 0) {
+            return claim_error(ErrorCode::InvalidArgument,
+                               "legacy admission exceeds its transaction budget");
+        }
         for (const auto& entry : page.value()) {
+            ++examined;
             const auto decoded = intents.load(RenderIntentId{entry.key}, transaction);
             if (!decoded) return decoded.error();
             if (!decoded.value()) continue;
@@ -377,7 +433,7 @@ Result<void> RenderIntentClaimRepository::admit_legacy_intents(ITransaction& tra
         if (next == cursor) return claim_error(ErrorCode::StorageSerializationFailure,
                                                 "legacy admission cursor did not advance");
         cursor = next;
-        if (page.value().size() < m_page_size) break;
+        if (page.value().size() < page_limit) break;
     }
     return Result<void>();
 }
@@ -391,22 +447,25 @@ Result<RenderIntentClaimPage> RenderIntentClaimRepository::claim_render_intents(
         return claim_error(ErrorCode::InvalidArgument, "claim limit and lease must be positive");
     }
     RenderIntentClaimPage result;
-    std::string cursor{continuation};
+    const auto decoded_continuation = decode_cursor(continuation);
+    if (!decoded_continuation) return decoded_continuation.error();
+    std::string cursor{decoded_continuation.value()};
     while (result.claims.size() < limit && result.examined < m_examination_budget) {
         const auto remaining_budget = m_examination_budget - result.examined;
-        const auto lookahead = limit < 4096 ? limit + 1 : limit;
-        const auto page_limit = std::min({m_page_size, remaining_budget, lookahead});
+        const auto page_limit = std::min(m_page_size, remaining_budget);
         const auto page = transaction.scan(render_namespace, cursor, page_limit);
         if (!page) return page.error();
         if (page.value().empty()) {
             result.continuation.reset();
             break;
         }
+        std::size_t consumed = 0;
         for (const auto& entry : page.value()) {
             // The cursor advances only after this entry has actually been examined.
             cursor = entry.key;
-            result.continuation = cursor;
+            result.continuation = encode_cursor(cursor);
             ++result.examined;
+            ++consumed;
             const auto context = load_context(RenderIntentId{entry.key}, now, transaction);
             if (!context) return context.error();
             if (!context.value()) continue;
@@ -431,7 +490,7 @@ Result<RenderIntentClaimPage> RenderIntentClaimRepository::claim_render_intents(
             if (result.claims.size() == limit) break;
             if (result.examined == m_examination_budget) break;
         }
-        if (page.value().size() < page_limit) {
+        if (consumed == page.value().size() && page.value().size() < page_limit) {
             result.continuation.reset();
             break;
         }
