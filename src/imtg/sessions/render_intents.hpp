@@ -172,6 +172,17 @@ public:
         const RenderIntentId& id, ClaimToken token, StorageRevision expected_row_revision,
         ClockTime now, ITransaction& transaction) const;
 
+    /// \brief Marks a live claim Planned after an outbox effect was staged.
+    /// \param id Intent identity.
+    /// \param token Current fencing token.
+    /// \param expected_row_revision Claim side-state revision.
+    /// \param now Current authoritative time.
+    /// \param transaction Caller-owned read-write transaction.
+    /// \return Planned claim staged for commit.
+    [[nodiscard]] Result<RenderIntentClaim> plan_render_intent(
+        const RenderIntentId& id, ClaimToken token, StorageRevision expected_row_revision,
+        ClockTime now, ITransaction& transaction) const;
+
     /// \brief Releases a live claim back to Pending at a selected eligible time.
     /// \param id Stable intent identity.
     /// \param token Token returned by a committed claim.

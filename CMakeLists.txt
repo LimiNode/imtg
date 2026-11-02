@@ -17,7 +17,8 @@ add_library(imtg_core STATIC
     src/imtg/storage/storage.cpp
     src/imtg/sessions/fsm.cpp
     src/imtg/sessions/session.cpp
-    src/imtg/sessions/render_intents.cpp)
+    src/imtg/sessions/render_intents.cpp
+    src/imtg/reconciliation/outbox.cpp)
 add_library(imtg::core ALIAS imtg_core)
 set_target_properties(imtg_core PROPERTIES EXPORT_NAME core)
 

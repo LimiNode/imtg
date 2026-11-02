@@ -1,6 +1,6 @@
 # Implementation status
 
-**As of M2b:** the repository contains the complete Telegram-free M1 foundation, the M2a backend-neutral storage protocol, and the M2b typed session/FSM semantic baseline. The five stacked M1 PRs plus Repository Layout and M2a are merged into `main`; durable process-crash persistence, delivery, and transport remain planned for later milestones.
+**As of M2c-b:** the repository contains the complete Telegram-free M1 foundation, the M2a backend-neutral storage protocol, the M2b typed session/FSM semantic baseline, and the first M2c-b reconciliation/outbox slice. Durable process-crash persistence, delivery, and transport remain planned for later milestones.
 
 M1 acceptance gates are complete: deterministic rendering, typed/versioned actions, stale-handle rejection, per-conversation ordering, bounded admission and shutdown, observable worker failure, and dispatcher quiescence are covered by the offline test suite and the Debug/Release plus sanitizer CI matrix. M2a adds snapshot/optimistic transaction semantics, schema metadata, commit outcomes, and reusable conformance tests. M2b adds typed sessions, deterministic FSM transitions, processed-update deduplication, and atomic minimal render-intent publication; M2c–M2e remain planned.
 
@@ -17,7 +17,7 @@ M1 acceptance gates are complete: deterministic rendering, typed/versioned actio
 | Storage protocol and in-memory backend | `implemented` | [STORAGE.md](contracts/STORAGE.md); `src/imtg/storage/storage.hpp`; fixture-based `imtg_storage_tests` conformance suite with revision, ABA, schema-gate, ownership, and commit-outcome coverage |
 | Durable repositories and MDBX backend | `planned` | M2c–M2e durable claims, recovery, MDBX adapter, and process-crash proof |
 | Telegram transport / kurlyk | `planned` | M3 adapter tests against fakes and documented API limits |
-| Render intents, reconciliation, and outbox | `partial` | M2b minimal atomic render-intent record; M2c/M3 claim, reconciliation, outbox, and delivery tests |
+| Render intents, reconciliation, and outbox | `partial` | M2c-a claims/fencing plus M2c-b logical slots, deterministic planner, applied-target baseline, and atomic outbox publication; delivery-state and full recovery matrix remain future work |
 | Localization | `planned` | M4 catalog, fallback, and pluralization tests |
 | Users, chats, history, access control, jobs | `planned` | M4/M5 service and retention tests |
 | Build targets, releases, CI | `implemented` | CMake install/export package, Debug/Release CTest, and CI matrix |

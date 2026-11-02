@@ -17,6 +17,7 @@ set(IMTG_PUBLIC_HEADERS
     imtg/sessions/fsm.hpp
     imtg/sessions/render_intents.hpp
     imtg/sessions/session.hpp
+    imtg/reconciliation/outbox.hpp
     imtg/ui/tree.hpp
     imtg/ui/ui.hpp)
 

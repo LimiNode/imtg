@@ -534,6 +534,24 @@ Result<RenderIntentClaim> RenderIntentClaimRepository::complete_render_intent(
     return write_claim(*context.value(), next, transaction);
 }
 
+Result<RenderIntentClaim> RenderIntentClaimRepository::plan_render_intent(
+    const RenderIntentId& id, ClaimToken token, StorageRevision expected_row_revision,
+    ClockTime now, ITransaction& transaction) const
+{
+    const auto context = load_context(id, now, transaction);
+    if (!context) return context.error();
+    if (!context.value() || !context.value()->has_side_state)
+        return claim_error(ErrorCode::StorageStaleClaim, "claim metadata is absent");
+    if (context.value()->claim.row_revision != expected_row_revision
+        || context.value()->claim.claim_token != token || !lease_live(context.value()->claim, now))
+        return claim_error(ErrorCode::StorageStaleClaim, "claim token or lease is stale");
+    auto next = context.value()->claim;
+    next.state = RenderIntentLifecycleState::Planned;
+    next.lease_until = ClockTime{};
+    next.next_eligible_at = now;
+    return write_claim(*context.value(), next, transaction);
+}
+
 Result<RenderIntentClaim> RenderIntentClaimRepository::release_render_intent(
     const RenderIntentId& id, ClaimToken token, StorageRevision expected_row_revision,
     ClockTime now, ClockTime next_eligible_at, ITransaction& transaction) const
