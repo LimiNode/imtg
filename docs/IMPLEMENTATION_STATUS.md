@@ -2,7 +2,7 @@
 
 **As of M2c-b:** the repository contains the complete Telegram-free M1 foundation, the M2a backend-neutral storage protocol, the M2b typed session/FSM semantic baseline, and the first M2c-b reconciliation/outbox slice. Durable process-crash persistence, delivery, and transport remain planned for later milestones.
 
-M1 acceptance gates are complete: deterministic rendering, typed/versioned actions, stale-handle rejection, per-conversation ordering, bounded admission and shutdown, observable worker failure, and dispatcher quiescence are covered by the offline test suite and the Debug/Release plus sanitizer CI matrix. M2a adds snapshot/optimistic transaction semantics, schema metadata, commit outcomes, and reusable conformance tests. M2b adds typed sessions, deterministic FSM transitions, processed-update deduplication, and atomic minimal render-intent publication; M2c–M2e remain planned.
+M1 acceptance gates are complete: deterministic rendering, typed/versioned actions, stale-handle rejection, per-conversation ordering, bounded admission and shutdown, observable worker failure, and dispatcher quiescence are covered by the offline test suite and the Debug/Release plus sanitizer CI matrix. M2a adds snapshot/optimistic transaction semantics, schema metadata, commit outcomes, and reusable conformance tests. M2b adds typed sessions, deterministic FSM transitions, processed-update deduplication, and atomic minimal render-intent publication. M2c-a claims/fencing and the first M2c-b reconciliation/outbox slice are implemented; complete recovery conformance and durable adapters remain open.
 
 | Area | Status | Evidence / next proof |
 |---|---|---|

@@ -15,6 +15,7 @@ add_library(imtg_core STATIC
     src/imtg/actions/registry.cpp
     src/imtg/runtime/reference_runtime.cpp
     src/imtg/storage/storage.cpp
+    src/imtg/storage/time_encoding.cpp
     src/imtg/sessions/fsm.cpp
     src/imtg/sessions/session.cpp
     src/imtg/sessions/render_intents.cpp

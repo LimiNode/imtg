@@ -1,4 +1,5 @@
 #include "imtg/sessions/render_intents.hpp"
+#include "imtg/storage/time_encoding.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -80,53 +81,12 @@ private:
 
 Result<std::int64_t> time_value(ClockTime value)
 {
-    using Duration = ClockTime::duration;
-    const long double millis = static_cast<long double>(value.time_since_epoch().count())
-        * static_cast<long double>(Duration::period::num)
-        * 1000.0L / static_cast<long double>(Duration::period::den);
-    if (!std::isfinite(millis)
-        || millis < static_cast<long double>(std::numeric_limits<std::int64_t>::min())
-        || millis > static_cast<long double>(std::numeric_limits<std::int64_t>::max())) {
-        return claim_error(ErrorCode::InvalidEncoding, "timestamp is outside the wire range");
-    }
-    const auto truncated = std::chrono::duration_cast<std::chrono::milliseconds>(
-        value.time_since_epoch());
-    auto rounded = truncated.count();
-    // Claim timestamps use conservative ceiling-to-millisecond encoding. A
-    // persisted lease or eligibility time is therefore never earlier than the
-    // caller-supplied instant, including for negative/pre-epoch values.
-    if (truncated < value.time_since_epoch()) {
-        if (rounded == std::numeric_limits<std::int64_t>::max()) {
-            return claim_error(ErrorCode::InvalidEncoding, "timestamp is outside the wire range");
-        }
-        ++rounded;
-    }
-    return rounded;
+    return encode_storage_timestamp(value);
 }
 
 Result<ClockTime> from_time_value(std::uint64_t raw)
 {
-    std::int64_t millis = 0;
-    if (raw <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-        millis = static_cast<std::int64_t>(raw);
-    } else if (raw == (std::uint64_t{1} << 63)) {
-        millis = std::numeric_limits<std::int64_t>::min();
-    } else {
-        const auto magnitude = static_cast<std::int64_t>(~raw);
-        millis = -1 - magnitude;
-    }
-    using Duration = ClockTime::duration;
-    const long double ticks = static_cast<long double>(millis)
-        * static_cast<long double>(std::milli::num)
-        * static_cast<long double>(Duration::period::den)
-        / static_cast<long double>(std::milli::den)
-        / static_cast<long double>(Duration::period::num);
-    if (!std::isfinite(ticks)
-        || ticks < static_cast<long double>(std::numeric_limits<Duration::rep>::lowest())
-        || ticks > static_cast<long double>(std::numeric_limits<Duration::rep>::max())) {
-        return claim_error(ErrorCode::InvalidEncoding, "timestamp is outside the clock range");
-    }
-    return ClockTime{std::chrono::duration_cast<Duration>(std::chrono::milliseconds{millis})};
+    return decode_storage_timestamp(raw);
 }
 
 Result<ClockTime> add_lease(ClockTime now, std::chrono::milliseconds lease)

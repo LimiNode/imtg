@@ -1,6 +1,6 @@
 # Storage contract
 
-**Semantic owner:** persistence maintainers. **Status:** M2a protocol and deterministic in-memory reference backend are implemented in `src/imtg/storage/storage.hpp`; M2b adds typed session, processed-update, and minimal render-intent repositories. Durable claims, outbox delivery, and MDBX remain planned.
+**Semantic owner:** persistence maintainers. **Status:** M2a protocol and deterministic in-memory reference backend are implemented in `src/imtg/storage/storage.hpp`; M2b adds typed session, processed-update, and minimal render-intent repositories; M2c-a adds claims/fencing and M2c-b adds the initial reconciliation/outbox records. Complete recovery conformance, delivery semantics, and MDBX remain planned.
 
 ## Core interfaces
 
@@ -60,7 +60,8 @@ public:
         const RenderIntentId&, ITransaction&) = 0;
 };
 
-// M2c claim, fencing, outbox, and completion interfaces are planned additions.
+// M2c claim, fencing, reconciliation and outbox interfaces live under
+// src/imtg/sessions/ and src/imtg/reconciliation/.
 ```
 
 `UnitOfWork::begin()` returns a move-only owner of one transaction. The transaction borrows its
@@ -88,8 +89,19 @@ Names and value layouts may change during implementation, but these semantics ar
 
 The in-memory reference backend uses snapshot/optimistic semantics: a transaction reads a stable snapshot, sees its own writes, validates expected revisions at commit, and atomically publishes its write set. It supports multiple active optimistic writers. A backend fixture may declare that it supports only one active writer; portable conformance cases do not require parallel writers, while conflict-at-commit cases run only for capable backends. `record_if_new` returns `true` only for a new identity. Render-intent and outbox `claim_batch` return each row with an opaque, monotonically fenced `ClaimToken` and lease expiry. `complete`/`acknowledge` succeed only for the currently active token; an expired or superseded worker receives `StaleClaim` and cannot overwrite a newer owner's result.
 
-The proposed M2c render-intent, claim, fencing, applied-target and transactional
-outbox design is specified in [ADR 0005](../adr/0005-m2c-render-intent-reconciliation.md).
+The M2c render-intent, claim, fencing, applied-target and transactional outbox
+design is specified in [ADR 0005](../adr/0005-m2c-render-intent-reconciliation.md).
+The reference implementation uses schema version `OE1` for outbox effects,
+`LES1` for logical slots and `AT1` for applied targets. The logical namespaces
+are `outbox_effects`, `applied_targets`, and the existing
+`render_intent_claims`/`render_intent_generations` side state. A future MDBX
+adapter maps them to the planned `outbox`/metadata profile without creating
+per-conversation DBIs without changing logical identities; this in-memory
+mapping makes no durability claim. Encoders cap individual fields at 1 MiB,
+logical slot and physical-key identities at 4096 bytes, and complete records at
+4 MiB. Payload digests use the standard FNV-1a 64-bit algorithm with its
+versioned `fnv1a64:` label; they detect accidental mismatch and are not
+authentication or authorization primitives.
 
 ## Revisions, errors, and migration
 

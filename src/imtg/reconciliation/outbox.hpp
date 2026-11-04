@@ -161,12 +161,29 @@ struct ReconciliationInput {
     RenderPolicy render_policy = RenderPolicy::OnChange; ///< Render policy.
     std::uint32_t payload_version = 1; ///< Payload schema version.
     std::string canonical_payload; ///< Deterministically rendered payload.
+    std::optional<ConversationKey> conversation; ///< Conversation fenced by TX2.
+    StorageRevision session_revision{}; ///< Session revision used by planning.
+    std::uint64_t desired_generation{}; ///< Desired-generation value used by planning.
+    StorageRevision desired_generation_row_revision{}; ///< Generation marker revision.
+    StorageRevision applied_target_revision{}; ///< Applied-target row revision observed by planning.
 };
 
 /// \brief Deterministic result of rendering and comparing one target.
 struct ReconciliationPlan {
     bool no_op = false; ///< True when no external effect is required.
     OutboxEffect effect; ///< Effect to publish when not a no-op.
+    RenderIntentId render_intent_id; ///< Intent identity bound to this plan.
+    std::string target_identity; ///< Target identity bound to this plan.
+    EffectKind effect_kind = EffectKind::Replace; ///< Operation kind bound to this plan.
+    std::string effect_position; ///< Logical slot bound to this plan.
+    StorageRevision desired_revision{}; ///< Desired revision bound to this plan.
+    StorageRevision applied_revision{}; ///< Applied revision observed while planning.
+    RenderPolicy render_policy = RenderPolicy::OnChange; ///< Policy used to produce this plan.
+    std::optional<ConversationKey> conversation; ///< Conversation bound to this plan.
+    StorageRevision session_revision{}; ///< Expected session revision.
+    std::uint64_t desired_generation{}; ///< Expected desired-generation value.
+    StorageRevision desired_generation_row_revision{}; ///< Expected generation row revision.
+    StorageRevision applied_target_revision{}; ///< Expected applied-target row revision.
 };
 
 /// \brief Builds deterministic plans without holding a storage transaction.
@@ -180,6 +197,17 @@ public:
 
 /// \brief Result of publishing a plan in TX2.
 enum class ReconciliationOutcome { Planned, AlreadyApplied, RejectedConflict, Failed, Unknown };
+
+/// \brief Classification returned by authoritative inspection after Unknown.
+enum class ReconciliationRecoveryOutcome { Published, NotPublished, Inconclusive };
+
+/// \brief Authoritative records observed while resolving an uncertain TX2 commit.
+struct ReconciliationRecovery {
+    ReconciliationRecoveryOutcome outcome = ReconciliationRecoveryOutcome::Inconclusive; ///< Recovery classification.
+    std::optional<RenderIntentClaim> claim; ///< Current claim side state.
+    std::optional<OutboxEffect> effect; ///< Effect with the expected identity, when present.
+    std::optional<Error> error; ///< Diagnostic when inspection cannot establish coherence.
+};
 
 /// \brief Result of publishing a reconciliation plan.
 struct ReconciliationResult {
@@ -200,6 +228,19 @@ public:
                          const IOutboxRepository& outbox) noexcept
         : m_backend(backend), m_claims(claims), m_outbox(outbox) {}
 
+    /// \brief Stages TX2 in a caller-owned transaction without committing it.
+    /// \param plan Immutable plan produced outside storage.
+    /// \param intent_id Claimed render-intent identity.
+    /// \param token Live claim token.
+    /// \param intent_row_revision Live claim row revision.
+    /// \param now Current authoritative time.
+    /// \param transaction Caller-owned read-write transaction.
+    /// \return Staged effect, or empty for a validated no-op.
+    [[nodiscard]] Result<std::optional<OutboxEffect>> stage(
+        const ReconciliationPlan& plan, const RenderIntentId& intent_id,
+        ClaimToken token, StorageRevision intent_row_revision,
+        ClockTime now, ITransaction& transaction) const;
+
     /// Publishes an effect and intent transition atomically.
     /// \param plan Plan produced outside storage.
     /// \param intent_id Claimed render-intent identity.
@@ -210,6 +251,15 @@ public:
     [[nodiscard]] ReconciliationResult publish(
         const ReconciliationPlan& plan, const RenderIntentId& intent_id,
         ClaimToken token, StorageRevision intent_row_revision,
+        ClockTime now) const;
+
+    /// \brief Inspects authoritative intent and effect rows after Unknown.
+    /// \param plan Original immutable plan.
+    /// \param intent_id Claimed render-intent identity.
+    /// \param now Current authoritative time.
+    /// \return Conservative recovery classification; no planning is retried.
+    [[nodiscard]] Result<ReconciliationRecovery> inspect_unknown(
+        const ReconciliationPlan& plan, const RenderIntentId& intent_id,
         ClockTime now) const;
 
 private:
