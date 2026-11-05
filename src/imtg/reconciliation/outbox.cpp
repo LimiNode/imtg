@@ -276,11 +276,11 @@ Result<std::optional<OutboxEffect>> AtomicReconciliation::stage(
     const auto planned_id = plan.render_intent_id.value.empty()
         ? (plan.effect.slot.render_intent_id.value.empty() ? id : plan.effect.slot.render_intent_id)
         : plan.render_intent_id;
-    if (planned_id != id) return err(ErrorCode::StorageConflict,"plan belongs to another render intent");
+    if (!(planned_id == id)) return err(ErrorCode::StorageConflict,"plan belongs to another render intent");
     if (plan.no_op && (plan.target_identity.empty() || plan.desired_revision == 0)) {
         return err(ErrorCode::StorageConflict,"no-op plan has no applied-state context");
     }
-    if (!plan.no_op && (plan.effect.slot.render_intent_id != id
+    if (!plan.no_op && (!(plan.effect.slot.render_intent_id == id)
         || plan.effect.slot.target_identity != plan.target_identity
         || plan.effect.slot.effect_kind != plan.effect_kind
         || plan.effect.slot.effect_position != plan.effect_position
@@ -347,7 +347,7 @@ Result<ReconciliationRecovery> AtomicReconciliation::inspect_unknown(
     const auto planned_id = plan.render_intent_id.value.empty()
         ? (plan.effect.slot.render_intent_id.value.empty() ? intent_id : plan.effect.slot.render_intent_id)
         : plan.render_intent_id;
-    if (planned_id != intent_id)
+    if (!(planned_id == intent_id))
         return err(ErrorCode::StorageConflict, "plan belongs to another render intent");
     if (!plan.no_op && plan.effect.id.value.empty())
         return err(ErrorCode::InvalidArgument, "recovery plan has no effect identity");
