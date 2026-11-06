@@ -8,8 +8,12 @@ The M1/M2 contracts center interactive work on a `ConversationKey`, session/FSM
 state and optional render intents. A moderation bot must process a message,
 join request or flood signal without creating a screen. A shop must answer a
 payment pre-checkout update within the Telegram deadline even when a UI session
-is idle or its render queue is busy. A support bot needs both dialog forms and
-background notifications.
+is idle or its render queue is busy. The Telegram Bot API currently gives a
+`pre_checkout_query` response a ten-second window
+([official method documentation](https://core.telegram.org/bots/api#answerprecheckoutquery));
+the adapter supplies the received deadline and a safety margin rather than
+assuming that a late response is valid. A support bot needs both dialog forms
+and background notifications.
 
 Independent event frameworks would duplicate imtg's keyed scheduling, shutdown
 and transaction boundaries. Making every update a UI render would couple
@@ -31,18 +35,22 @@ Handlers declare one of two modes:
 
 Urgent update classes such as payment pre-checkout and join requests use a
 bounded urgent admission lane inside that scheduler. The lane has a finite
-capacity and a finite worker/burst budget, shares the normal worker pool's
-shutdown, quiescence and failure accounting, and uses weighted fairness so
-ordinary work cannot starve. It is a scheduling policy, not a permission
-shortcut: filters, middleware, authorization and payment-state CAS still run
-before an urgent response is accepted.
+capacity and a finite worker/burst budget, with a reserved worker slot (or
+equivalent reserved execution budget) so long ordinary handlers cannot occupy
+all urgent capacity. It shares the normal worker pool's shutdown, quiescence
+and failure accounting. A configured finite urgent-burst limit and minimum
+ordinary service share provide weighted fairness, so ordinary work cannot
+starve. It is a scheduling policy, not a permission shortcut: filters,
+middleware, authorization and payment-state CAS still run before an urgent
+response is accepted.
 
-Each admitted item carries a receipt time and an explicit response deadline.
-The scheduler rejects an item as `DeadlineMissed` when its remaining budget is
-not sufficient to start and complete the required handler; overload returns
-`QueueFull`. Both outcomes are observable and fail closed. In particular, a
-payment pre-checkout path never acknowledges a payment as valid unless its
-required verification and transactional CAS have completed.
+Each admitted item carries a receipt time, an explicit response deadline and a
+bounded handler-cost budget. The scheduler rejects an item as `DeadlineMissed`
+when its remaining budget, including the safety margin, cannot cover that
+declared cost; overload returns `QueueFull`. Both outcomes are observable and
+fail closed. In particular, a payment pre-checkout path never acknowledges a
+payment as valid unless its required verification and transactional CAS have
+completed.
 
 The normal and urgent lanes share a domain-conflict gate. Updates that can
 touch the same payment/order or other domain key serialize through the same
