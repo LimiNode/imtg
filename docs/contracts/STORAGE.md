@@ -157,6 +157,11 @@ and operation identity, applied-target row and confirmed-applied revision,
 render policy, and the original claim token and claim-row revision. TX2 loads
 and watches the authoritative session, generation marker, applied target,
 claim, and outbox identity before staging any effect or claim transition.
+The authoritative applied-target `desired_revision` must not be newer than the
+plan being published; an `Always` plan also rejects a confirmed-applied
+revision newer than its desired revision. Applied-target physical identities
+are bounded to 4096 bytes in the reference format and are validated on both
+write and decode.
 `AtomicReconciliation::stage()` is fail-closed for borrowed transactions: an
 error rolls the transaction back and the owner must not commit it. Recovery
 after `Unknown` compares the original attempt's claim, exact immutable effect

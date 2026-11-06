@@ -330,6 +330,12 @@ rule. A late callback with a stale token or older revision returns `StaleClaim`
 and cannot overwrite newer applied state. `UnknownOutcome` leaves the applied
 revision unchanged and distinguishable from `Succeeded`.
 
+During TX2, an authoritative target whose `desired_revision` is newer than the
+plan is a stale-plan conflict and cannot be published. An `Always` plan also
+rejects a confirmed-applied revision newer than its desired revision. The
+reference `AT1` codec bounds `physical_identity` to 4096 bytes and applies the
+same bound when decoding persisted records.
+
 On restart, reconciliation reads desired intent, outbox state, and
 `AppliedTargetState` from storage; it never reconstructs applied state from the
 in-memory `FakeReconciler` or an unpersisted callback.

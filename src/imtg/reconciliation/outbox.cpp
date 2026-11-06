@@ -141,6 +141,10 @@ Result<void> validate_plan_context(const ReconciliationPlan& plan)
     if (static_cast<unsigned>(context.render_policy) > static_cast<unsigned>(RenderPolicy::Always)
         || context.render_policy == RenderPolicy::Never)
         return err(ErrorCode::InvalidArgument, "render policy cannot publish reconciliation");
+    if (context.render_policy == RenderPolicy::Always
+        && context.confirmed_applied_revision > context.desired_revision)
+        return err(ErrorCode::StorageConflict,
+                   "always-render plan is older than confirmed applied state");
     if (context.render_intent_id.value.empty() || plan.render_intent_id.value.empty()
         || context.conversation.encode().empty() || context.session_revision == 0
         || context.desired_revision == 0 || context.desired_generation == 0
@@ -314,7 +318,8 @@ Result<StorageBytes> encode_applied(const AppliedTargetState& s) {
     if(s.target_identity.empty()) return err(ErrorCode::InvalidArgument,"target identity is empty");
     const auto target = decode_logical_target_identity(s.target_identity);
     if (!target) return target.error();
-    if (s.target_identity.size() > max_field_size || (s.physical_identity && s.physical_identity->size() > max_field_size)
+    if (s.target_identity.size() > max_logical_slot_size
+        || (s.physical_identity && s.physical_identity->size() > max_logical_slot_size)
         || (s.last_confirmed_effect && s.last_confirmed_effect->value.size() > max_logical_slot_size))
         return err(ErrorCode::StorageRecordTooLarge, "applied target record is too large");
     if (s.confirmed_applied_revision > s.desired_revision)
@@ -331,7 +336,14 @@ Result<AppliedTargetState> decode_applied(std::string_view b) {
     s.target_identity=t.value();
     if (s.target_identity.empty()) return err(ErrorCode::InvalidEncoding,"applied target identity is empty");
     auto ph=r.byte(); if(!ph) return ph.error(); if(ph.value()>1) return err(ErrorCode::InvalidEncoding,"applied target marker is malformed");
-    if(ph.value()) { auto v=r.str(); if(!v) return v.error(); s.physical_identity=v.value(); }
+    if(ph.value()) {
+        auto v=r.str();
+        if(!v) return v.error();
+        if (v.value().size() > max_logical_slot_size)
+            return err(ErrorCode::StorageRecordTooLarge,
+                       "physical target identity is too large");
+        s.physical_identity=v.value();
+    }
     auto d=r.u64(); auto a=r.u64(); if(!d||!a||r.remaining()<1) return err(ErrorCode::InvalidEncoding,"applied target encoding is malformed");
     s.desired_revision=d.value(); s.confirmed_applied_revision=a.value();
     if (s.confirmed_applied_revision > s.desired_revision)
@@ -369,6 +381,10 @@ Result<ReconciliationPlan> ReconciliationPlanner::build(const ReconciliationInpu
         return err(ErrorCode::InvalidArgument, "render policy cannot publish reconciliation");
     if (static_cast<unsigned>(in.effect_kind) > static_cast<unsigned>(EffectKind::Replace))
         return err(ErrorCode::InvalidArgument, "effect kind is invalid");
+    if (in.render_policy == RenderPolicy::Always
+        && in.applied_revision > in.desired_revision)
+        return err(ErrorCode::StorageConflict,
+                   "always-render plan is older than confirmed applied state");
     const auto target = decode_logical_target_identity(in.target_identity);
     if (!target) return target.error();
     if (target.value().conversation != in.context->conversation)
@@ -479,6 +495,11 @@ Result<std::optional<OutboxEffect>> AtomicReconciliation::stage(
         if (state.value()->revision != plan.context.applied_target_revision
             || state.value()->confirmed_applied_revision != plan.context.confirmed_applied_revision) {
             return reject(err(ErrorCode::StorageConflict, "applied target state is stale"));
+        }
+        if (state.value()->desired_revision > plan.context.desired_revision
+            || state.value()->confirmed_applied_revision > plan.context.desired_revision) {
+            return reject(err(ErrorCode::StorageConflict,
+                              "applied target state is newer than the plan"));
         }
     } else if (plan.context.applied_target_revision != 0
                || plan.context.confirmed_applied_revision != 0 || plan.no_op) {

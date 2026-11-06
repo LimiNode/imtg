@@ -222,6 +222,12 @@ void test_codec_and_replay()
     invalid_effect_kind.effect_kind = static_cast<EffectKind>(99);
     invalid_effect_kind.context->effect_kind = static_cast<EffectKind>(99);
     CHECK(!planner.build(invalid_effect_kind));
+    auto stale_always = input;
+    stale_always.applied_revision = 3;
+    stale_always.render_policy = RenderPolicy::Always;
+    stale_always.context->confirmed_applied_revision = 3;
+    stale_always.context->render_policy = RenderPolicy::Always;
+    CHECK(!planner.build(stale_always));
 
     InMemoryStorageBackend applied_backend;
     save_applied(applied_backend, AppliedTargetState{target_for(key), std::nullopt, 3, 2, std::nullopt, 0}, 0);
@@ -241,6 +247,62 @@ void test_codec_and_replay()
         *desired_decreased.transaction());
     CHECK(!desired_regression && desired_regression.error().code == ErrorCode::StorageConflict);
     desired_decreased.rollback();
+
+    InMemoryStorageBackend physical_backend;
+    const auto physical_target = target_for(key, "physical");
+    AppliedTargetRepository physical_repository;
+    auto physical_create = begin(physical_backend);
+    auto physical_state = physical_repository.save(
+        AppliedTargetState{physical_target, std::string(4096, 'p'), 2, 1,
+                           std::nullopt, 0},
+        0, *physical_create.transaction());
+    CHECK(physical_state);
+    CHECK(physical_create.commit().outcome == CommitOutcome::Committed);
+    auto physical_update = begin(physical_backend);
+    auto oversized_physical = physical_repository.save(
+        AppliedTargetState{physical_target, std::string(4097, 'p'), 2, 1,
+                           std::nullopt, 1},
+        1, *physical_update.transaction());
+    CHECK(!oversized_physical
+          && oversized_physical.error().code == ErrorCode::StorageRecordTooLarge);
+    physical_update.rollback();
+
+    auto oversized_record = begin(physical_backend);
+    const auto oversized_target = target_for(key, "oversized");
+    const auto oversized_bytes = std::string("AT1", 3)
+        + std::string(4 * 1024 * 1024 + 1, 'x');
+    CHECK(oversized_record.transaction()->create_if_absent(
+        "applied_targets", oversized_target, oversized_bytes));
+    CHECK(oversized_record.commit().outcome == CommitOutcome::Committed);
+    auto oversized_read = begin(physical_backend, TransactionMode::ReadOnly);
+    auto oversized_loaded = physical_repository.load(
+        oversized_target, *oversized_read.transaction());
+    CHECK(!oversized_loaded
+          && oversized_loaded.error().code == ErrorCode::StorageRecordTooLarge);
+
+    const auto oversized_physical_target = target_for(key, "oversized-physical");
+    auto put_u64 = [](std::string& bytes, std::uint64_t value) {
+        for (unsigned i = 0; i != 8; ++i)
+            bytes.push_back(static_cast<char>((value >> (8 * i)) & 0xff));
+    };
+    std::string oversized_physical_record{"AT1"};
+    put_u64(oversized_physical_record, oversized_physical_target.size());
+    oversized_physical_record.append(oversized_physical_target);
+    oversized_physical_record.push_back('\x01');
+    put_u64(oversized_physical_record, 4097);
+    oversized_physical_record.append(4097, 'p');
+    put_u64(oversized_physical_record, 2);
+    put_u64(oversized_physical_record, 1);
+    oversized_physical_record.push_back('\x00');
+    auto oversized_physical_write = begin(physical_backend);
+    CHECK(oversized_physical_write.transaction()->create_if_absent(
+        "applied_targets", oversized_physical_target, oversized_physical_record));
+    CHECK(oversized_physical_write.commit().outcome == CommitOutcome::Committed);
+    auto oversized_physical_read = begin(physical_backend, TransactionMode::ReadOnly);
+    auto oversized_physical_loaded = physical_repository.load(
+        oversized_physical_target, *oversized_physical_read.transaction());
+    CHECK(!oversized_physical_loaded
+          && oversized_physical_loaded.error().code == ErrorCode::StorageRecordTooLarge);
 }
 
 void test_target_scope_isolation()
@@ -568,6 +630,27 @@ void test_generation_and_applied_conflicts()
     CHECK(absent && !absent.value());
     auto rejected = publisher.publish(plan.value(), id, claim.claim_token, claim.row_revision, ClockTime{});
     CHECK(rejected.outcome == ReconciliationOutcome::RejectedConflict);
+
+    InMemoryStorageBackend newer_target_backend;
+    create_session_watch_row(newer_target_backend, key);
+    const auto newer_target_id = publish_intent(newer_target_backend, key);
+    save_applied(newer_target_backend,
+                 AppliedTargetState{target_for(key), std::nullopt, 3, 0,
+                                    std::nullopt, 0}, 0);
+    const auto newer_target_claim = claim_intent(
+        newer_target_backend, newer_target_id, ClockTime{});
+    auto older_target_plan = planner.build(input_for(
+        key, newer_target_id, newer_target_claim, 2, 0, 1));
+    CHECK(older_target_plan);
+    RenderIntentClaimRepository newer_target_claims;
+    OutboxRepository newer_target_outbox;
+    AtomicReconciliation newer_target_publisher(
+        newer_target_backend, newer_target_claims, newer_target_outbox);
+    const auto older_target_result = newer_target_publisher.publish(
+        older_target_plan.value(), newer_target_id,
+        newer_target_claim.claim_token, newer_target_claim.row_revision,
+        ClockTime{});
+    CHECK(older_target_result.outcome == ReconciliationOutcome::RejectedConflict);
 
     InMemoryStorageBackend session_backend;
     create_session_watch_row(session_backend, key);
