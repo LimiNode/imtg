@@ -28,6 +28,12 @@ The application registry holds executable handlers in process memory and stable 
 6. **Commit:** synchronous `ctx.dispatch()` commits the processed update, state change, and render intent. The callback itself is not persisted.
 7. **Reconcile:** post-commit work produces a new desired UI revision and durable outbox effect. The old token is no longer preferred.
 
+Not every update is interactive. M3 headless handlers may process moderation,
+payment, join-request or background events through the same router and keyed
+scheduler without creating a UI tree, session screen or `RenderIntent`.
+Domain records such as tickets, orders and sanctions keep their own identities
+and revisions; a UI may present them later but does not own their lifecycle.
+
 For example, conceptual application composition and rendering are:
 
 ```cpp

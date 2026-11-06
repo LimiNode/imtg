@@ -4,6 +4,12 @@
 
 M1 acceptance gates are complete: deterministic rendering, typed/versioned actions, stale-handle rejection, per-conversation ordering, bounded admission and shutdown, observable worker failure, and dispatcher quiescence are covered by the offline test suite and the Debug/Release plus sanitizer CI matrix. M2a adds snapshot/optimistic transaction semantics, schema metadata, commit outcomes, and reusable conformance tests. M2b adds typed sessions, deterministic FSM transitions, processed-update deduplication, and atomic minimal render-intent publication. M2c-a claims/fencing and the first M2c-b reconciliation/outbox slice are implemented; canonical `LT1` target scoping, applied-target desired-revision fencing, bounded physical identities, mandatory TX2 context/fencing, fail-closed staging, injected-repository recovery, and deterministic Unknown/interleaving tests are now covered. Durable adapters, delivery acknowledgements, and complete cross-backend recovery conformance remain open.
 
+The Telegram application profile work is documentation-only planning. Typed
+gateway routing, headless handlers, payment-priority handling, forms/tickets,
+commerce, moderation, durable jobs and the three reference applications are
+not implemented by this repository status; they are dependency-gated M3–M6
+work described in the research profiles and roadmap.
+
 | Area | Status | Evidence / next proof |
 |---|---|---|
 | Architecture and contracts | `contract-only` | Markdown documents in `docs/`; review links and invariants |

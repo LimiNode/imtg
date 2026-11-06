@@ -22,9 +22,12 @@ explicit migration execution remain deferred to the durable adapter.
 
 The proposed protocol and failure-injection matrix are defined in
 [ADR 0005](adr/0005-m2c-render-intent-reconciliation.md). M2c-a claims/fencing
-and the initial M2c-b reconciliation/outbox slice are implemented on the
-backend-neutral in-memory baseline. This does not claim physical process-crash
-durability or external delivery semantics.
+and the M2c-b reconciliation/outbox slice are implemented on the
+backend-neutral in-memory baseline. Publishable TX2 plans require complete
+intent/conversation/session/generation/target/applied and original-claim
+context; borrowed staging is fail-closed; and Unknown recovery must attribute
+the exact immutable effect to the original attempt. This does not claim
+physical process-crash durability or a Telegram adapter.
 
 Use the two-transaction protocol:
 
@@ -36,6 +39,12 @@ delivery: claim effect, execute external operation, record fenced outcome
 ```
 
 Records have stable identities. Claims use leases and monotonically increasing fencing tokens. Recovery defines retry eligibility, supersession, `UnknownOutcome`, expected-revision checks, bounded pagination, and crash behavior between every phase. A failure-injection matrix is required before implementation.
+
+M2c-c is the next delivery-acknowledgement boundary. It must preserve M2c-b
+logical slot/effect identity while adding fenced delivery-state transitions;
+actual Telegram calls, provider policy, commerce fulfillment and moderation
+actions remain M3–M5 adapter/module work. Headless routing is a M3 gateway
+contract and must not be implemented by manufacturing UI render intents.
 
 ## M2d — MDBX adapter
 
