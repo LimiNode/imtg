@@ -391,6 +391,39 @@ void test_fencing_and_unknown_recovery()
     auto recovered_before = publisher.inspect_unknown(plan.value(), id, now);
     CHECK(recovered_before && recovered_before.value().outcome == ReconciliationRecoveryOutcome::NotPublished);
 
+    InMemoryStorageBackend changed_session_backend;
+    create_session_watch_row(changed_session_backend, key);
+    const auto changed_session_id = publish_intent(changed_session_backend, key);
+    save_applied(changed_session_backend,
+                 AppliedTargetState{target_for(key), std::nullopt, 2, 1, std::nullopt, 0}, 0);
+    const auto changed_session_claim = claim_intent(changed_session_backend,
+                                                    changed_session_id, now);
+    auto changed_session_plan = planner.build(
+        input_for(key, changed_session_id, changed_session_claim, 2, 1, 1));
+    CHECK(changed_session_plan);
+    InMemoryFailureInjection changed_session_failure;
+    changed_session_failure.unknown_before_publish = true;
+    changed_session_backend.set_failure_injection(changed_session_failure);
+    AtomicReconciliation changed_session_publisher(
+        changed_session_backend, claims, outbox);
+    const auto changed_session_publish = changed_session_publisher.publish(
+        changed_session_plan.value(), changed_session_id,
+        changed_session_claim.claim_token, changed_session_claim.row_revision, now);
+    CHECK(changed_session_publish.outcome == ReconciliationOutcome::Unknown);
+    SessionRepository changed_sessions;
+    auto changed_session_update = begin(changed_session_backend);
+    auto changed_session_record = changed_sessions.load(
+        key, *changed_session_update.transaction());
+    CHECK(changed_session_record && changed_session_record.value().has_value());
+    changed_session_record.value()->screen.version = 2;
+    CHECK(changed_sessions.save(*changed_session_record.value(), 2,
+                                *changed_session_update.transaction()));
+    CHECK(changed_session_update.commit().outcome == CommitOutcome::Committed);
+    const auto changed_session_recovery = changed_session_publisher.inspect_unknown(
+        changed_session_plan.value(), changed_session_id, now);
+    CHECK(changed_session_recovery
+          && changed_session_recovery.value().outcome == ReconciliationRecoveryOutcome::Inconclusive);
+
     auto renewed_work = begin(backend);
     const auto renewed = claims.renew_render_intent(
         id, claim.claim_token, claim.row_revision, now, now + std::chrono::hours(2),
