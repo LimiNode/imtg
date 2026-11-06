@@ -192,6 +192,18 @@ serving claims; page size alone is not treated as a total-work bound.
    already committed for the older revision; the delivery worker applies the
    documented coalescing policy.
 
+Every publishable TX2 plan carries an immutable reconciliation context: the
+intent and canonical conversation identities, observed session and desired
+generation values with their storage-row revisions, logical target and
+operation identity, observed applied-target row and confirmed-applied
+revision, render policy, and the original claim token plus claim-row revision.
+Missing, zero, or inconsistent context is rejected before an effect or claim
+transition is staged. TX2 loads the authoritative session and applied-target
+rows and watches the session, generation marker, applied target, claim, and
+effect identity in the same transaction. A caller-owned `stage()` is
+fail-closed: any error rolls the borrowed transaction back, so a caller must
+not commit it after a failed stage.
+
 TX2 may be retried after a definite rollback. A `RejectedConflict` or
 `StaleClaim` causes the worker to discard its local plan and rescan. `Failed`
 and `Unknown` commit outcomes are not necessarily persistable in the same
@@ -200,6 +212,15 @@ technical journal entry, and performs authoritative recovery inspection in a
 new transaction. It must not claim that a durable diagnostic exists when the
 backend could not commit it, and neither outcome is silently treated as a
 successful completion.
+
+Unknown recovery is attribution-bound. It compares the original claim token
+and pre-TX2 claim-row revision, exact logical slot, payload version, payload
+bytes, digest, desired revision, generation, session and applied-target
+evidence. `Published` requires the exact immutable effect and the expected
+post-transition claim revision; a changed/replaced claim, conflicting payload,
+later generation, or a no-op that is only `Planned` is `Inconclusive`.
+Recovery reads effects through the injected `IOutboxRepository` and never
+replays the original action callback.
 
 Claim and delivery acknowledgement may use additional short storage
 transactions. "TX1" and "TX2" name the two principal business transactions;

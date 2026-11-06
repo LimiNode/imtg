@@ -150,6 +150,27 @@ public:
         ITransaction& transaction) const override;
 };
 
+/// \brief Immutable authoritative context required before TX2 can publish.
+/// \details A plan with a default or inconsistent context is rejected before
+/// any effect or intent transition is staged. `applied_target_revision == 0`
+/// is the explicit fence for an absent applied-target row.
+struct ReconciliationContext {
+    RenderIntentId render_intent_id; ///< Owning render-intent identity.
+    ConversationKey conversation; ///< Authoritative conversation identity.
+    StorageRevision session_revision{}; ///< Session revision observed during planning.
+    StorageRevision desired_revision{}; ///< Desired revision represented by the intent.
+    std::uint64_t desired_generation{}; ///< Desired-generation value observed during planning.
+    StorageRevision desired_generation_row_revision{}; ///< Generation marker row revision.
+    std::string target_identity; ///< Stable, conversation-scoped logical target.
+    EffectKind effect_kind = EffectKind::Replace; ///< Immutable operation kind.
+    std::string effect_position; ///< Immutable logical operation slot.
+    StorageRevision applied_target_revision{}; ///< Applied-target row revision; zero means absent.
+    StorageRevision confirmed_applied_revision{}; ///< Confirmed applied revision observed during planning.
+    RenderPolicy render_policy = RenderPolicy::OnChange; ///< Policy used by planning.
+    ClaimToken claim_token{}; ///< Original TX2 claim token.
+    StorageRevision claim_row_revision{}; ///< Original TX2 claim row revision.
+};
+
 /// \brief Input to deterministic transport-neutral planning.
 struct ReconciliationInput {
     RenderIntentId render_intent_id; ///< Intent being reconciled.
@@ -166,6 +187,7 @@ struct ReconciliationInput {
     std::uint64_t desired_generation{}; ///< Desired-generation value used by planning.
     StorageRevision desired_generation_row_revision{}; ///< Generation marker revision.
     StorageRevision applied_target_revision{}; ///< Applied-target row revision observed by planning.
+    std::optional<ReconciliationContext> context; ///< Mandatory publishable TX2 context.
 };
 
 /// \brief Deterministic result of rendering and comparing one target.
@@ -184,6 +206,7 @@ struct ReconciliationPlan {
     std::uint64_t desired_generation{}; ///< Expected desired-generation value.
     StorageRevision desired_generation_row_revision{}; ///< Expected generation row revision.
     StorageRevision applied_target_revision{}; ///< Expected applied-target row revision.
+    ReconciliationContext context; ///< Mandatory immutable TX2 fencing context.
 };
 
 /// \brief Builds deterministic plans without holding a storage transaction.
@@ -231,11 +254,13 @@ public:
     /// \brief Stages TX2 in a caller-owned transaction without committing it.
     /// \param plan Immutable plan produced outside storage.
     /// \param intent_id Claimed render-intent identity.
-    /// \param token Live claim token.
-    /// \param intent_row_revision Live claim row revision.
+    /// \param token Original live claim token; must match `plan.context`.
+    /// \param intent_row_revision Original claim row revision; must match `plan.context`.
     /// \param now Current authoritative time.
     /// \param transaction Caller-owned read-write transaction.
     /// \return Staged effect, or empty for a validated no-op.
+    /// \warning On any error this method rolls back the borrowed transaction;
+    /// the caller must not commit it and must start a new transaction.
     [[nodiscard]] Result<std::optional<OutboxEffect>> stage(
         const ReconciliationPlan& plan, const RenderIntentId& intent_id,
         ClaimToken token, StorageRevision intent_row_revision,
@@ -254,7 +279,7 @@ public:
         ClockTime now) const;
 
     /// \brief Inspects authoritative intent and effect rows after Unknown.
-    /// \param plan Original immutable plan.
+    /// \param plan Original immutable plan and attempt context.
     /// \param intent_id Claimed render-intent identity.
     /// \param now Current authoritative time.
     /// \return Conservative recovery classification; no planning is retried.

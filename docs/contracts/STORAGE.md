@@ -145,6 +145,19 @@ begin UnitOfWork
 commit
 ```
 
+The publishable TX2 plan must carry the immutable intent/conversation identity,
+session revision, desired-generation value and marker revision, logical target
+and operation identity, applied-target row and confirmed-applied revision,
+render policy, and the original claim token and claim-row revision. TX2 loads
+and watches the authoritative session, generation marker, applied target,
+claim, and outbox identity before staging any effect or claim transition.
+`AtomicReconciliation::stage()` is fail-closed for borrowed transactions: an
+error rolls the transaction back and the owner must not commit it. Recovery
+after `Unknown` compares the original attempt's claim, exact immutable effect
+payload, and all fencing evidence; changed or insufficient evidence is
+`Inconclusive`, not success. No-op recovery requires `Completed` evidence, not
+merely `Planned`.
+
 A crash after transaction 1 leaves the render intent recoverable. A crash before transaction 2 commits leaves no visible effect and keeps the intent eligible. A crash after transaction 2 leaves a durable outbox row. Telegram HTTP is outside both transactions and may become `UnknownOutcome`. Independent physical databases have no cross-database atomicity guarantee.
 
 ## Mandatory versus optional services
