@@ -8,12 +8,18 @@ The M1/M2 contracts center interactive work on a `ConversationKey`, session/FSM
 state and optional render intents. A moderation bot must process a message,
 join request or flood signal without creating a screen. A shop must answer a
 payment pre-checkout update within the Telegram deadline even when a UI session
-is idle or its render queue is busy. The Telegram Bot API currently gives a
-`pre_checkout_query` response a ten-second window
+is idle or its render queue is busy. The Telegram Bot API currently requires a
+`pre_checkout_query` response within ten seconds after Telegram sends the
+query
 ([official method documentation](https://core.telegram.org/bots/api#answerprecheckoutquery));
-the adapter supplies the received deadline and a safety margin rather than
-assuming that a late response is valid. A support bot needs both dialog forms
-and background notifications.
+the bot does not receive that upstream send timestamp. A support adapter must
+therefore treat the local receipt timestamp as a monotonic accounting point,
+not as the start of the remote window. It uses a conservative configured
+admission budget that includes delivery uncertainty, queueing, validation,
+handler execution, HTTP round-trip and a safety margin; it never promises that
+meeting this local budget guarantees Telegram acceptance. Chat-join requests
+are a separate urgent class and must not inherit the pre-checkout deadline.
+A support bot needs both dialog forms and background notifications.
 
 Independent event frameworks would duplicate imtg's keyed scheduling, shutdown
 and transaction boundaries. Making every update a UI render would couple
@@ -44,13 +50,21 @@ starve. It is a scheduling policy, not a permission shortcut: filters,
 middleware, authorization and payment-state CAS still run before an urgent
 response is accepted.
 
-Each admitted item carries a receipt time, an explicit response deadline and a
-bounded handler-cost budget. The scheduler rejects an item as `DeadlineMissed`
-when its remaining budget, including the safety margin, cannot cover that
-declared cost; overload returns `QueueFull`. Both outcomes are observable and
-fail closed. In particular, a payment pre-checkout path never acknowledges a
-payment as valid unless its required verification and transactional CAS have
-completed.
+Each admitted item carries a receipt time, an explicit effective local
+deadline budget and a bounded handler-cost budget. The scheduler rejects an
+item as `DeadlineMissed` when its remaining local budget, including the
+safety margin, cannot cover that declared cost; overload returns `QueueFull`.
+Both outcomes are observable and fail closed. In particular, a payment
+pre-checkout path never acknowledges a payment as valid unless its required
+verification and transactional CAS have completed.
+
+Payment lifecycle is deliberately split. Pre-checkout validates the order,
+amount, currency, availability and authorization, and an affirmative answer
+only permits the provider to continue; it is not proof of `Paid`. A later
+`successful_payment` update is the authoritative, deduplicated payment event.
+Only after that event commits may fulfillment reserve inventory or deliver a
+digital item. A lost or ambiguous external response remains explicitly
+uncertain and never authorizes fulfillment by itself.
 
 The normal and urgent lanes share a domain-conflict gate. Updates that can
 touch the same payment/order or other domain key serialize through the same

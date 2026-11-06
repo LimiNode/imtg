@@ -71,6 +71,9 @@ effect/recovery contracts.
 - Distinct states: `PaymentPending`, `Paid`, `FulfillmentReserved`,
   `FulfillmentCommitted`, `DeliveryPlanned`, `Delivered`, `DeliveryUnknown`,
   `Refunded`/`Disputed` as applicable. `Paid` never implies `Delivered`.
+- An affirmative pre-checkout answer only permits the provider to continue; it
+  is not evidence of `Paid`. Only a deduplicated `successful_payment` update
+  authorizes the transition to `Paid` and subsequent fulfillment.
 - A unique key/file is reserved transactionally so two orders cannot receive
   the same item. Secrets never enter ordinary diagnostics or message text.
 - Telegram Stars (`XTR`) handling for digital goods follows current official
