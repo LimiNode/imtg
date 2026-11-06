@@ -219,8 +219,10 @@ bytes, digest, desired revision, generation, session and applied-target
 evidence. `Published` requires the exact immutable effect and the expected
 post-transition claim revision; a changed/replaced claim, conflicting payload,
 later generation, or a no-op that is only `Planned` is `Inconclusive`.
-Recovery reads effects through the injected `IOutboxRepository` and never
-replays the original action callback.
+Missing or changed authoritative rows are evidence gaps and therefore also
+return `Inconclusive`; backend read failures and malformed records remain
+typed `Result` errors. Recovery reads effects through the injected
+`IOutboxRepository` and never replays the original action callback.
 
 Claim and delivery acknowledgement may use additional short storage
 transactions. "TX1" and "TX2" name the two principal business transactions;
@@ -307,11 +309,19 @@ transport reconciliation), not blindly resent.
 ### Applied-revision authority
 
 The authoritative applied state is a durable `AppliedTargetState` record keyed
-by a stable target identity, for example `(conversation, target_message_id,
-target_slot)`. The key is part of the target identity; separate Telegram
-messages or UI positions never collapse into one revision. The record contains
+by the canonical versioned `LT1` target identity. `LT1` is a length-prefixed
+encoding of the complete `ConversationKey` (including bot and chat/user
+scope) plus the stable logical slot. The key is part of the target identity;
+separate bots, conversations, Telegram messages, or UI positions never
+collapse into one revision. A raw slot or legacy unscoped identity is rejected
+by the reference repositories; compatibility requires an explicit migration,
+not silent reinterpretation. The record contains
 the last confirmed `applied_revision`, the last confirmed effect identity, and
 the storage revision/fence that admitted that observation.
+
+`physical_identity` is deliberately separate from `LT1`: it may hold a
+transport-specific message identity only after a confirmed external result.
+Planning and recovery never derive or fabricate that physical mapping.
 
 TX2 planning never advances `applied_revision`. Only a confirmed external
 result may update it, in a short transaction that validates the effect's active

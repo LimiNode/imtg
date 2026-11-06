@@ -12,6 +12,7 @@ constexpr std::string_view applied_namespace = "applied_targets";
 constexpr std::size_t max_field_size = 1024 * 1024;
 constexpr std::size_t max_record_size = 4 * 1024 * 1024;
 constexpr std::size_t max_logical_slot_size = 4096;
+constexpr std::string_view logical_target_magic = "LT1";
 
 Error err(ErrorCode code, const char* message) { return Error{code, message}; }
 
@@ -105,13 +106,41 @@ Result<void> validate_effect(const OutboxEffect& e) {
         return err(ErrorCode::StorageRecordTooLarge, "logical effect identity is too large");
     if (e.payload.size() > max_field_size || e.payload_digest.size() > max_field_size)
         return err(ErrorCode::StorageRecordTooLarge, "effect payload is too large");
+    const auto target = decode_logical_target_identity(e.slot.target_identity);
+    if (!target) return target.error();
     if (e.payload_digest != digest(e.payload)) return err(ErrorCode::PayloadVersionMismatch, "payload digest mismatch");
     return {};
+}
+
+Result<std::string> encode_logical_target(const LogicalTargetIdentity& target)
+{
+    if (target.logical_slot.empty())
+        return err(ErrorCode::InvalidArgument, "logical target slot is empty");
+    if (target.logical_slot.size() > max_logical_slot_size)
+        return err(ErrorCode::StorageRecordTooLarge, "logical target slot is too large");
+    const auto conversation = target.conversation.encode();
+    if (conversation.empty() || conversation.size() > max_logical_slot_size)
+        return err(ErrorCode::StorageRecordTooLarge, "conversation identity is too large");
+    std::string encoded{logical_target_magic};
+    put_string(encoded, conversation);
+    put_string(encoded, target.logical_slot);
+    if (encoded.size() > max_logical_slot_size)
+        return err(ErrorCode::StorageRecordTooLarge, "logical target identity is too large");
+    return encoded;
 }
 
 Result<void> validate_plan_context(const ReconciliationPlan& plan)
 {
     const auto& context = plan.context;
+    const auto target = decode_logical_target_identity(context.target_identity);
+    if (!target) return target.error();
+    if (target.value().conversation != context.conversation)
+        return err(ErrorCode::ScopeMismatch, "target identity belongs to another conversation");
+    if (static_cast<unsigned>(context.effect_kind) > static_cast<unsigned>(EffectKind::Replace))
+        return err(ErrorCode::InvalidArgument, "effect kind is invalid");
+    if (static_cast<unsigned>(context.render_policy) > static_cast<unsigned>(RenderPolicy::Always)
+        || context.render_policy == RenderPolicy::Never)
+        return err(ErrorCode::InvalidArgument, "render policy cannot publish reconciliation");
     if (context.render_intent_id.value.empty() || plan.render_intent_id.value.empty()
         || context.conversation.encode().empty() || context.session_revision == 0
         || context.desired_revision == 0 || context.desired_generation == 0
@@ -169,6 +198,42 @@ std::string encode_slot(const LogicalEffectSlot& slot) {
 } // namespace
 
 std::string LogicalEffectSlot::encode() const { return encode_slot(*this); }
+
+Result<std::string> LogicalTargetIdentity::encode() const
+{
+    return encode_logical_target(*this);
+}
+
+Result<std::string> make_logical_target_identity(
+    const ConversationKey& conversation, std::string_view logical_slot)
+{
+    return LogicalTargetIdentity{conversation, std::string(logical_slot)}.encode();
+}
+
+Result<LogicalTargetIdentity> decode_logical_target_identity(std::string_view encoded)
+{
+    if (encoded.size() < logical_target_magic.size()
+        || encoded.substr(0, logical_target_magic.size()) != logical_target_magic)
+        return err(ErrorCode::UnsupportedVersion, "logical target identity version is unsupported");
+    if (encoded.size() > max_logical_slot_size)
+        return err(ErrorCode::StorageRecordTooLarge, "logical target identity is too large");
+    Reader reader(encoded.substr(logical_target_magic.size()));
+    const auto conversation = reader.str();
+    const auto slot = reader.str();
+    if (!conversation || !slot || reader.remaining() != 0)
+        return err(ErrorCode::InvalidEncoding, "logical target identity is malformed");
+    const auto parsed = parse_conversation_key(conversation.value());
+    if (!parsed) return parsed.error();
+    LogicalTargetIdentity result{parsed.value(), slot.value()};
+    if (result.logical_slot.empty())
+        return err(ErrorCode::InvalidEncoding, "logical target slot is empty");
+    const auto canonical = result.encode();
+    if (!canonical || canonical.value() != encoded)
+        return canonical ? Result<LogicalTargetIdentity>(err(ErrorCode::InvalidEncoding,
+                                                              "logical target identity is not canonical"))
+                         : Result<LogicalTargetIdentity>(canonical.error());
+    return result;
+}
 
 OutboxEffectId OutboxEffectId::from_slot(const LogicalEffectSlot& slot) {
     const auto bytes = slot.encode();
@@ -247,6 +312,8 @@ namespace {
 constexpr std::string_view applied_magic = "AT1";
 Result<StorageBytes> encode_applied(const AppliedTargetState& s) {
     if(s.target_identity.empty()) return err(ErrorCode::InvalidArgument,"target identity is empty");
+    const auto target = decode_logical_target_identity(s.target_identity);
+    if (!target) return target.error();
     if (s.target_identity.size() > max_field_size || (s.physical_identity && s.physical_identity->size() > max_field_size)
         || (s.last_confirmed_effect && s.last_confirmed_effect->value.size() > max_logical_slot_size))
         return err(ErrorCode::StorageRecordTooLarge, "applied target record is too large");
@@ -275,7 +342,7 @@ Result<AppliedTargetState> decode_applied(std::string_view b) {
 }
 }
 
-Result<std::optional<AppliedTargetState>> AppliedTargetRepository::load(std::string_view id, ITransaction& tx) const { if(id.empty()) return err(ErrorCode::InvalidArgument,"target identity is empty"); if (id.size() > max_logical_slot_size) return err(ErrorCode::StorageRecordTooLarge,"target identity is too large"); auto row=tx.read(applied_namespace,target_key(id)); if(!row) return row.error(); if(!row.value()) return std::optional<AppliedTargetState>{}; auto s=decode_applied(row.value()->value); if(!s) return s.error(); if(s.value().target_identity != id) return err(ErrorCode::StorageSerializationFailure,"target identity does not match storage key"); s.value().revision=row.value()->revision; return std::optional<AppliedTargetState>{s.value()}; }
+Result<std::optional<AppliedTargetState>> AppliedTargetRepository::load(std::string_view id, ITransaction& tx) const { if(id.empty()) return err(ErrorCode::InvalidArgument,"target identity is empty"); if (id.size() > max_logical_slot_size) return err(ErrorCode::StorageRecordTooLarge,"target identity is too large"); const auto target = decode_logical_target_identity(id); if (!target) return target.error(); auto row=tx.read(applied_namespace,target_key(id)); if(!row) return row.error(); if(!row.value()) return std::optional<AppliedTargetState>{}; auto s=decode_applied(row.value()->value); if(!s) return s.error(); if(s.value().target_identity != id) return err(ErrorCode::StorageSerializationFailure,"target identity does not match storage key"); s.value().revision=row.value()->revision; return std::optional<AppliedTargetState>{s.value()}; }
 Result<AppliedTargetState> AppliedTargetRepository::save(const AppliedTargetState& state, StorageRevision expected, ITransaction& tx) const {
     const auto current = load(state.target_identity, tx);
     if (!current) return current.error();
@@ -297,6 +364,15 @@ Result<AppliedTargetState> AppliedTargetRepository::save(const AppliedTargetStat
 Result<ReconciliationPlan> ReconciliationPlanner::build(const ReconciliationInput& in) const {
     if(in.render_intent_id.value.empty()||in.target_identity.empty()||in.effect_position.empty()||in.payload_version==0) return err(ErrorCode::InvalidArgument,"reconciliation input is incomplete");
     if (!in.context) return err(ErrorCode::InvalidArgument, "publishable reconciliation context is required");
+    if (static_cast<unsigned>(in.render_policy) > static_cast<unsigned>(RenderPolicy::Always)
+        || in.render_policy == RenderPolicy::Never)
+        return err(ErrorCode::InvalidArgument, "render policy cannot publish reconciliation");
+    if (static_cast<unsigned>(in.effect_kind) > static_cast<unsigned>(EffectKind::Replace))
+        return err(ErrorCode::InvalidArgument, "effect kind is invalid");
+    const auto target = decode_logical_target_identity(in.target_identity);
+    if (!target) return target.error();
+    if (target.value().conversation != in.context->conversation)
+        return err(ErrorCode::ScopeMismatch, "target identity belongs to another conversation");
     if (in.render_intent_id.value.size() > max_logical_slot_size || in.target_identity.size() > max_logical_slot_size
         || in.effect_position.size() > max_logical_slot_size || in.canonical_payload.size() > max_field_size)
         return err(ErrorCode::StorageRecordTooLarge, "reconciliation input is too large");
@@ -454,26 +530,26 @@ Result<ReconciliationRecovery> AtomicReconciliation::inspect_unknown(
     RenderIntentRepository intents;
     const auto intent = intents.load(intent_id, *tx);
     if (!intent) return intent.error();
-    if (!intent.value()) return err(ErrorCode::StorageNotFound, "render intent is absent during recovery");
-    if (!(intent.value()->conversation == plan.context.conversation))
-        return err(ErrorCode::StorageConflict, "render intent conversation is stale");
-    if (intent.value()->session_revision != plan.context.session_revision
-        || intent.value()->session_revision != plan.context.desired_revision)
-        return err(ErrorCode::StorageConflict, "render intent session revision is stale");
-    SessionRepository sessions;
-    const auto session = sessions.load(plan.context.conversation, *tx);
-    if (!session) return session.error();
-    if (!session.value() || session.value()->revision != plan.context.session_revision)
-        return err(ErrorCode::StorageUnknownCommit, "session evidence is unavailable or stale");
-    const auto claim = m_claims.inspect(intent_id, now, *tx);
-    if (!claim) return claim.error();
     ReconciliationRecovery recovery;
-    recovery.claim = claim.value();
     const auto inconclusive = [&recovery](const char* message) -> Result<ReconciliationRecovery> {
         recovery.outcome = ReconciliationRecoveryOutcome::Inconclusive;
         recovery.error = err(ErrorCode::StorageUnknownCommit, message);
         return recovery;
     };
+    if (!intent.value()) return inconclusive("render intent evidence is unavailable");
+    if (!(intent.value()->conversation == plan.context.conversation))
+        return inconclusive("render intent conversation evidence changed");
+    if (intent.value()->session_revision != plan.context.session_revision
+        || intent.value()->session_revision != plan.context.desired_revision)
+        return inconclusive("render intent session evidence changed");
+    SessionRepository sessions;
+    const auto session = sessions.load(plan.context.conversation, *tx);
+    if (!session) return session.error();
+    if (!session.value() || session.value()->revision != plan.context.session_revision)
+        return inconclusive("session evidence is unavailable or stale");
+    const auto claim = m_claims.inspect(intent_id, now, *tx);
+    if (!claim) return claim.error();
+    recovery.claim = claim.value();
     if (!claim.value()) return inconclusive("claim evidence is unavailable");
     if (claim.value()->claim_token != plan.context.claim_token)
         return inconclusive("claim token no longer identifies the original attempt");
@@ -483,13 +559,18 @@ Result<ReconciliationRecovery> AtomicReconciliation::inspect_unknown(
 
     DesiredGenerationRepository generations;
     const auto marker = generations.load(plan.context.conversation.encode(), *tx);
-    if (!marker || marker.value().value != plan.context.desired_generation
+    if (!marker) {
+        if (marker.error().code == ErrorCode::StorageNotFound)
+            return inconclusive("desired generation evidence is unavailable");
+        return marker.error();
+    }
+    if (marker.value().value != plan.context.desired_generation
         || marker.value().row_revision != plan.context.desired_generation_row_revision) {
         return inconclusive("desired generation evidence is unavailable or stale");
     }
     AppliedTargetRepository applied;
     const auto target = applied.load(plan.context.target_identity, *tx);
-    if (!target) return inconclusive("applied target evidence is unavailable");
+    if (!target) return target.error();
     if (target.value()) {
         if (target.value()->revision != plan.context.applied_target_revision
             || target.value()->confirmed_applied_revision != plan.context.confirmed_applied_revision) {

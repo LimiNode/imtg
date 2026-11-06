@@ -14,11 +14,44 @@ namespace imtg {
 /// \brief Kind of deterministic external operation represented by an outbox row.
 enum class EffectKind : std::uint8_t { Send = 0, Edit = 1, Delete = 2, Replace = 3 };
 
+/// \brief Canonical identity of one logical target within one conversation.
+/// \details The encoded form binds the stable logical slot to the complete
+/// \c ConversationKey. It is independent of a physical Telegram message ID.
+struct LogicalTargetIdentity {
+    ConversationKey conversation; ///< Bot/chat/session scope owning the target.
+    std::string logical_slot; ///< Stable application-defined slot before delivery.
+
+    /// \brief Encodes the target using the versioned, length-prefixed LT1 format.
+    /// \return Binary-safe canonical storage identity.
+    [[nodiscard]] Result<std::string> encode() const;
+
+    /// \brief Compares target ownership and logical slot.
+    friend bool operator==(const LogicalTargetIdentity& left,
+                           const LogicalTargetIdentity& right) noexcept
+    {
+        return left.conversation == right.conversation
+            && left.logical_slot == right.logical_slot;
+    }
+};
+
+/// \brief Builds a canonical conversation-scoped target identity.
+/// \param conversation Bot/chat/session scope owning the target.
+/// \param logical_slot Stable slot name before a physical message exists.
+/// \return Versioned LT1 identity, or a bounded-input error.
+[[nodiscard]] Result<std::string> make_logical_target_identity(
+    const ConversationKey& conversation, std::string_view logical_slot);
+
+/// \brief Decodes and validates a canonical target identity.
+/// \param encoded LT1 identity produced by make_logical_target_identity().
+/// \return Parsed owner and logical slot, or an encoding/size error.
+[[nodiscard]] Result<LogicalTargetIdentity> decode_logical_target_identity(
+    std::string_view encoded);
+
 /// \brief Stable logical slot for one externally observable operation.
 /// \details Payload bytes are deliberately not part of this identity.
 struct LogicalEffectSlot {
     RenderIntentId render_intent_id; ///< Owning render intent identity.
-    std::string target_identity; ///< Stable logical target identity.
+    std::string target_identity; ///< Canonical LT1 conversation-scoped target identity.
     EffectKind effect_kind = EffectKind::Replace; ///< Operation kind.
     std::string effect_position; ///< Stable discriminator within the target.
 
@@ -110,7 +143,7 @@ public:
 
 /// \brief Durable semantic state of a logical target, independent of transport.
 struct AppliedTargetState {
-    std::string target_identity; ///< Stable logical target identity.
+    std::string target_identity; ///< Canonical LT1 conversation-scoped target identity.
     std::optional<std::string> physical_identity; ///< Optional transport identity.
     StorageRevision desired_revision{}; ///< Latest desired revision.
     StorageRevision confirmed_applied_revision{}; ///< Last externally confirmed revision.
@@ -161,7 +194,7 @@ struct ReconciliationContext {
     StorageRevision desired_revision{}; ///< Desired revision represented by the intent.
     std::uint64_t desired_generation{}; ///< Desired-generation value observed during planning.
     StorageRevision desired_generation_row_revision{}; ///< Generation marker row revision.
-    std::string target_identity; ///< Stable, conversation-scoped logical target.
+    std::string target_identity; ///< Canonical LT1 conversation-scoped logical target.
     EffectKind effect_kind = EffectKind::Replace; ///< Immutable operation kind.
     std::string effect_position; ///< Immutable logical operation slot.
     StorageRevision applied_target_revision{}; ///< Applied-target row revision; zero means absent.
@@ -174,7 +207,7 @@ struct ReconciliationContext {
 /// \brief Input to deterministic transport-neutral planning.
 struct ReconciliationInput {
     RenderIntentId render_intent_id; ///< Intent being reconciled.
-    std::string target_identity; ///< Target being reconciled.
+    std::string target_identity; ///< Canonical LT1 conversation-scoped target identity.
     EffectKind effect_kind = EffectKind::Replace; ///< Planned operation kind.
     std::string effect_position; ///< Stable target slot.
     StorageRevision desired_revision{}; ///< Desired session revision.
@@ -195,7 +228,7 @@ struct ReconciliationPlan {
     bool no_op = false; ///< True when no external effect is required.
     OutboxEffect effect; ///< Effect to publish when not a no-op.
     RenderIntentId render_intent_id; ///< Intent identity bound to this plan.
-    std::string target_identity; ///< Target identity bound to this plan.
+    std::string target_identity; ///< Canonical LT1 target identity bound to this plan.
     EffectKind effect_kind = EffectKind::Replace; ///< Operation kind bound to this plan.
     std::string effect_position; ///< Logical slot bound to this plan.
     StorageRevision desired_revision{}; ///< Desired revision bound to this plan.

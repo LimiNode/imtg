@@ -92,7 +92,13 @@ The in-memory reference backend uses snapshot/optimistic semantics: a transactio
 The M2c render-intent, claim, fencing, applied-target and transactional outbox
 design is specified in [ADR 0005](../adr/0005-m2c-render-intent-reconciliation.md).
 The reference implementation uses schema version `OE1` for outbox effects,
-`LES1` for logical slots and `AT1` for applied targets. The logical namespaces
+`LES1` for logical slots, `LT1` for canonical logical target identities, and
+`AT1` for applied targets. `LT1` is a versioned, length-prefixed identity that
+binds the complete canonical `ConversationKey` to a stable logical slot. Every
+outbox and applied-target row must use this canonical identity; a raw slot or
+legacy unscoped identity is rejected rather than silently reused. The optional
+`physical_identity` field in `AppliedTargetState` remains separate and is only
+populated after transport confirms the mapping. The logical namespaces
 are `outbox_effects`, `applied_targets`, and the existing
 `render_intent_claims`/`render_intent_generations` side state. A future MDBX
 adapter maps them to the planned `outbox`/metadata profile without creating

@@ -23,6 +23,13 @@ ConversationKey conversation()
     return ConversationKey{BotId{7}, ChatId{42}, Chat{}};
 }
 
+std::string target_for(const ConversationKey& key, std::string_view slot = "logical-target")
+{
+    const auto encoded = make_logical_target_identity(key, slot);
+    CHECK(encoded);
+    return encoded.value();
+}
+
 RenderIntentId publish_intent(InMemoryStorageBackend& backend, const ConversationKey& key,
                               StorageRevision session_revision = 2)
 {
@@ -57,7 +64,8 @@ ReconciliationInput input_for(const ConversationKey& key, const RenderIntentId& 
                               std::uint64_t generation = 2,
                               StorageRevision generation_revision = 1)
 {
-    ReconciliationInput input{id, "logical-target", EffectKind::Edit, "body", desired, applied,
+    const auto target = target_for(key);
+    ReconciliationInput input{id, target, EffectKind::Edit, "body", desired, applied,
                               RenderPolicy::OnChange, 1, "hello"};
     input.conversation = key;
     input.session_revision = 2;
@@ -65,7 +73,7 @@ ReconciliationInput input_for(const ConversationKey& key, const RenderIntentId& 
     input.desired_generation_row_revision = generation_revision;
     input.applied_target_revision = applied_target_revision;
     input.context = ReconciliationContext{
-        id, key, 2, desired, generation, generation_revision, "logical-target",
+        id, key, 2, desired, generation, generation_revision, target,
         EffectKind::Edit, "body", applied_target_revision, applied, RenderPolicy::OnChange,
         claim.claim_token, claim.row_revision};
     return input;
@@ -135,7 +143,7 @@ void test_codec_and_replay()
     const auto key = conversation();
     create_session_watch_row(backend, key);
     const auto id = publish_intent(backend, key);
-    save_applied(backend, AppliedTargetState{"logical-target", std::nullopt, 2, 1, std::nullopt, 0}, 0);
+    save_applied(backend, AppliedTargetState{target_for(key), std::nullopt, 2, 1, std::nullopt, 0}, 0);
     const auto claim = claim_intent(backend, id, ClockTime{});
     ReconciliationPlanner planner;
     const auto input = input_for(key, id, claim, 2, 1);
@@ -146,6 +154,8 @@ void test_codec_and_replay()
     CHECK(!planner.build(incomplete));
     auto forged_context = input;
     forged_context.context->conversation = ConversationKey{BotId{8}, ChatId{42}, Chat{}};
+    forged_context.target_identity = target_for(forged_context.context->conversation);
+    forged_context.context->target_identity = forged_context.target_identity;
     CHECK(!planner.build(forged_context));
     forged_context.conversation.reset();
     auto forged_plan = planner.build(forged_context);
@@ -194,28 +204,97 @@ void test_codec_and_replay()
     CHECK(binary_round_trip && binary_round_trip.value().payload == std::string("a\0b", 3));
     CHECK(!decode_outbox_effect(std::string("OE1", 3) + std::string(4 * 1024 * 1024, 'x')));
     auto no_op = planner.build(input_for(key, id, claim, 2, 2, 0, 2, 1));
-    CHECK(no_op && no_op.value().no_op && no_op.value().target_identity == "logical-target");
+    CHECK(no_op && no_op.value().no_op && no_op.value().target_identity == target_for(key));
     auto always = input_for(key, id, claim, 2, 2, 0, 2, 1);
     always.render_policy = RenderPolicy::Always;
     always.context->render_policy = RenderPolicy::Always;
     auto always_plan = planner.build(always);
     CHECK(always_plan && !always_plan.value().no_op);
+    auto never = input;
+    never.render_policy = RenderPolicy::Never;
+    never.context->render_policy = RenderPolicy::Never;
+    CHECK(!planner.build(never));
+    auto invalid_policy = input;
+    invalid_policy.render_policy = static_cast<RenderPolicy>(99);
+    invalid_policy.context->render_policy = static_cast<RenderPolicy>(99);
+    CHECK(!planner.build(invalid_policy));
+    auto invalid_effect_kind = input;
+    invalid_effect_kind.effect_kind = static_cast<EffectKind>(99);
+    invalid_effect_kind.context->effect_kind = static_cast<EffectKind>(99);
+    CHECK(!planner.build(invalid_effect_kind));
 
     InMemoryStorageBackend applied_backend;
-    save_applied(applied_backend, AppliedTargetState{"logical-target", std::nullopt, 3, 2, std::nullopt, 0}, 0);
+    save_applied(applied_backend, AppliedTargetState{target_for(key), std::nullopt, 3, 2, std::nullopt, 0}, 0);
     auto applied_work = begin(applied_backend);
     AppliedTargetRepository applied_repository;
+    auto raw_target = begin(applied_backend, TransactionMode::ReadOnly);
+    const auto legacy_target = applied_repository.load("logical-target", *raw_target.transaction());
+    CHECK(!legacy_target);
     auto decreased = applied_repository.save(
-        AppliedTargetState{"logical-target", std::nullopt, 3, 1, std::nullopt, 1}, 1,
+        AppliedTargetState{target_for(key), std::nullopt, 3, 1, std::nullopt, 1}, 1,
         *applied_work.transaction());
     CHECK(!decreased && decreased.error().code == ErrorCode::StorageConflict);
     applied_work.rollback();
     auto desired_decreased = begin(applied_backend);
     auto desired_regression = applied_repository.save(
-        AppliedTargetState{"logical-target", std::nullopt, 2, 2, std::nullopt, 1}, 1,
+        AppliedTargetState{target_for(key), std::nullopt, 2, 2, std::nullopt, 1}, 1,
         *desired_decreased.transaction());
     CHECK(!desired_regression && desired_regression.error().code == ErrorCode::StorageConflict);
     desired_decreased.rollback();
+}
+
+void test_target_scope_isolation()
+{
+    const auto key_a = conversation();
+    const auto key_b = ConversationKey{BotId{8}, ChatId{42}, Chat{}};
+    const auto key_c = ConversationKey{BotId{7}, ChatId{43}, Chat{}};
+    const auto target_a = target_for(key_a);
+    const auto target_b = target_for(key_b);
+    const auto target_c = target_for(key_c);
+    const auto target_a_secondary = target_for(key_a, "secondary");
+    CHECK(target_a != target_b);
+    CHECK(target_a != target_c);
+    CHECK(target_a != target_a_secondary);
+    CHECK(target_b != target_c);
+
+    InMemoryStorageBackend backend;
+    save_applied(backend,
+                 AppliedTargetState{target_a, std::nullopt, 2, 2, std::nullopt, 0}, 0);
+    save_applied(backend,
+                 AppliedTargetState{target_b, std::nullopt, 2, 0, std::nullopt, 0}, 0);
+    save_applied(backend,
+                 AppliedTargetState{target_a_secondary, std::nullopt, 1, 0, std::nullopt, 0}, 0);
+
+    AppliedTargetRepository applied;
+    auto read = begin(backend, TransactionMode::ReadOnly);
+    const auto a_state = applied.load(target_a, *read.transaction());
+    const auto b_state = applied.load(target_b, *read.transaction());
+    const auto secondary_state = applied.load(target_a_secondary, *read.transaction());
+    CHECK(a_state && a_state.value() && a_state.value()->confirmed_applied_revision == 2);
+    CHECK(b_state && b_state.value() && b_state.value()->confirmed_applied_revision == 0);
+    CHECK(secondary_state && secondary_state.value());
+
+    create_session_watch_row(backend, key_a);
+    create_session_watch_row(backend, key_b);
+    const auto id_a = publish_intent(backend, key_a);
+    const auto id_b = publish_intent(backend, key_b);
+    const auto claim_a = claim_intent(backend, id_a, ClockTime{});
+    const auto claim_b = claim_intent(backend, id_b, ClockTime{});
+    ReconciliationPlanner planner;
+    auto a_plan = planner.build(input_for(key_a, id_a, claim_a, 2, 2, 1));
+    auto b_plan = planner.build(input_for(key_b, id_b, claim_b, 2, 0, 1));
+    CHECK(a_plan && a_plan.value().no_op);
+    CHECK(b_plan && !b_plan.value().no_op);
+
+    RenderIntentClaimRepository claims;
+    OutboxRepository outbox;
+    AtomicReconciliation publisher(backend, claims, outbox);
+    const auto a_result = publisher.publish(
+        a_plan.value(), id_a, claim_a.claim_token, claim_a.row_revision, ClockTime{});
+    const auto b_result = publisher.publish(
+        b_plan.value(), id_b, claim_b.claim_token, claim_b.row_revision, ClockTime{});
+    CHECK(a_result.outcome == ReconciliationOutcome::AlreadyApplied);
+    CHECK(b_result.outcome == ReconciliationOutcome::Planned);
 }
 
 void test_successful_publish_and_no_op()
@@ -224,7 +303,7 @@ void test_successful_publish_and_no_op()
     const auto key = conversation();
     create_session_watch_row(backend, key);
     const auto id = publish_intent(backend, key);
-    save_applied(backend, AppliedTargetState{"logical-target", std::nullopt, 2, 1, std::nullopt, 0}, 0);
+    save_applied(backend, AppliedTargetState{target_for(key), std::nullopt, 2, 1, std::nullopt, 0}, 0);
     const auto now = ClockTime{};
     const auto claim = claim_intent(backend, id, now);
     ReconciliationPlanner planner;
@@ -239,7 +318,7 @@ void test_successful_publish_and_no_op()
     InMemoryStorageBackend mismatch_backend;
     create_session_watch_row(mismatch_backend, key);
     const auto mismatch_id = publish_intent(mismatch_backend, key);
-    save_applied(mismatch_backend, AppliedTargetState{"logical-target", std::nullopt, 2, 1, std::nullopt, 0}, 0);
+    save_applied(mismatch_backend, AppliedTargetState{target_for(key), std::nullopt, 2, 1, std::nullopt, 0}, 0);
     const auto mismatch_claim = claim_intent(mismatch_backend, mismatch_id, now);
     auto mismatch_plan = planner.build(input_for(key, mismatch_id, mismatch_claim, 2, 1, 1));
     CHECK(mismatch_plan);
@@ -252,7 +331,7 @@ void test_successful_publish_and_no_op()
     InMemoryStorageBackend no_op_backend;
     create_session_watch_row(no_op_backend, key);
     const auto no_op_id = publish_intent(no_op_backend, key);
-    save_applied(no_op_backend, AppliedTargetState{"logical-target", std::nullopt, 2, 2, std::nullopt, 0}, 0);
+    save_applied(no_op_backend, AppliedTargetState{target_for(key), std::nullopt, 2, 2, std::nullopt, 0}, 0);
     const auto no_op_claim = claim_intent(no_op_backend, no_op_id, now);
     auto no_op_plan = planner.build(input_for(key, no_op_id, no_op_claim, 2, 2, 1, 2, 1));
     CHECK(no_op_plan && no_op_plan.value().no_op);
@@ -265,7 +344,7 @@ void test_successful_publish_and_no_op()
     create_session_watch_row(planned_no_op_backend, key);
     const auto planned_no_op_id = publish_intent(planned_no_op_backend, key);
     save_applied(planned_no_op_backend,
-                 AppliedTargetState{"logical-target", std::nullopt, 2, 2, std::nullopt, 0}, 0);
+                 AppliedTargetState{target_for(key), std::nullopt, 2, 2, std::nullopt, 0}, 0);
     const auto planned_no_op_claim = claim_intent(planned_no_op_backend, planned_no_op_id, now);
     auto planned_no_op_plan = planner.build(
         input_for(key, planned_no_op_id, planned_no_op_claim, 2, 2, 1, 2, 1));
@@ -289,7 +368,7 @@ void test_fencing_and_unknown_recovery()
     const auto key = conversation();
     create_session_watch_row(backend, key);
     const auto id = publish_intent(backend, key);
-    save_applied(backend, AppliedTargetState{"logical-target", std::nullopt, 2, 1, std::nullopt, 0}, 0);
+    save_applied(backend, AppliedTargetState{target_for(key), std::nullopt, 2, 1, std::nullopt, 0}, 0);
     const auto now = ClockTime{};
     const auto claim = claim_intent(backend, id, now);
     ReconciliationPlanner planner;
@@ -338,7 +417,7 @@ void test_fencing_and_unknown_recovery()
     create_session_watch_row(same_effect_backend, key);
     const auto same_effect_id = publish_intent(same_effect_backend, key);
     save_applied(same_effect_backend,
-                 AppliedTargetState{"logical-target", std::nullopt, 2, 1, std::nullopt, 0}, 0);
+                 AppliedTargetState{target_for(key), std::nullopt, 2, 1, std::nullopt, 0}, 0);
     const auto same_effect_claim = claim_intent(same_effect_backend, same_effect_id, now);
     auto same_effect_plan = planner.build(
         input_for(key, same_effect_id, same_effect_claim, 2, 1, 1));
@@ -372,7 +451,7 @@ void test_fencing_and_unknown_recovery()
     InMemoryStorageBackend after_backend;
     create_session_watch_row(after_backend, key);
     const auto id_after = publish_intent(after_backend, key);
-    save_applied(after_backend, AppliedTargetState{"logical-target", std::nullopt, 2, 1, std::nullopt, 0}, 0);
+    save_applied(after_backend, AppliedTargetState{target_for(key), std::nullopt, 2, 1, std::nullopt, 0}, 0);
     const auto claim_after = claim_intent(after_backend, id_after, now);
     auto plan_after = planner.build(input_for(key, id_after, claim_after, 2, 1, 1));
     CHECK(plan_after);
@@ -396,7 +475,7 @@ void test_stage_rolls_back_after_claim_failure()
     const auto key = conversation();
     create_session_watch_row(backend, key);
     const auto id = publish_intent(backend, key);
-    save_applied(backend, AppliedTargetState{"logical-target", std::nullopt, 2, 1, std::nullopt, 0}, 0);
+    save_applied(backend, AppliedTargetState{target_for(key), std::nullopt, 2, 1, std::nullopt, 0}, 0);
     const auto now = ClockTime{};
     const auto claim = claim_intent(backend, id, now);
     RenderIntentClaimRepository claims;
@@ -431,7 +510,7 @@ void test_generation_and_applied_conflicts()
     const auto key = conversation();
     create_session_watch_row(backend, key);
     const auto id = publish_intent(backend, key);
-    save_applied(backend, AppliedTargetState{"logical-target", std::nullopt, 2, 1, std::nullopt, 0}, 0);
+    save_applied(backend, AppliedTargetState{target_for(key), std::nullopt, 2, 1, std::nullopt, 0}, 0);
     const auto claim = claim_intent(backend, id, ClockTime{});
     ReconciliationPlanner planner;
     auto plan = planner.build(input_for(key, id, claim, 2, 1, 1));
@@ -461,7 +540,7 @@ void test_generation_and_applied_conflicts()
     create_session_watch_row(session_backend, key);
     const auto session_id = publish_intent(session_backend, key);
     save_applied(session_backend,
-                 AppliedTargetState{"logical-target", std::nullopt, 2, 1, std::nullopt, 0}, 0);
+                 AppliedTargetState{target_for(key), std::nullopt, 2, 1, std::nullopt, 0}, 0);
     const auto session_claim = claim_intent(session_backend, session_id, ClockTime{});
     auto session_plan = planner.build(input_for(key, session_id, session_claim, 2, 1, 1));
     CHECK(session_plan);
@@ -489,7 +568,7 @@ void test_generation_and_applied_conflicts()
     create_session_watch_row(target_backend, key);
     const auto target_id = publish_intent(target_backend, key);
     const auto target_claim = claim_intent(target_backend, target_id, ClockTime{});
-    save_applied(target_backend, AppliedTargetState{"logical-target", std::nullopt, 2, 0, std::nullopt, 0}, 0);
+    save_applied(target_backend, AppliedTargetState{target_for(key), std::nullopt, 2, 0, std::nullopt, 0}, 0);
     auto target_plan = planner.build(input_for(key, target_id, target_claim, 2, 0, 1, 2, 1));
     CHECK(target_plan);
     RenderIntentClaimRepository target_claims;
@@ -508,7 +587,7 @@ void test_generation_and_applied_conflicts()
     CHECK(target_staged && target_staged.value().has_value());
     auto target_update = begin(target_backend);
     AppliedTargetRepository applied;
-    auto changed = applied.save(AppliedTargetState{"logical-target", std::nullopt, 2, 1, std::nullopt, 1},
+    auto changed = applied.save(AppliedTargetState{target_for(key), std::nullopt, 2, 1, std::nullopt, 1},
                                 1, *target_update.transaction());
     CHECK(changed);
     const auto target_commit = target_update.commit();
@@ -522,6 +601,7 @@ void test_generation_and_applied_conflicts()
 int main()
 {
     test_codec_and_replay();
+    test_target_scope_isolation();
     test_successful_publish_and_no_op();
     test_fencing_and_unknown_recovery();
     test_stage_rolls_back_after_claim_failure();
