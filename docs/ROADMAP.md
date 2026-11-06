@@ -66,11 +66,14 @@ records, guarded FSM transitions, timeout/cancellation/terminal events,
 processed-update deduplication, optimistic revisions and atomic minimal
 render-intent publication are covered by tests.
 
-**M2c status:** claims/fencing and the initial reconciliation/outbox slice are
-implemented on the reference backend; the corrective M2c-b review and the
-delivery-acknowledgement boundary remain gates. Publishable TX2 plans must be
-fully fenced, borrowed staging is fail-closed, and Unknown recovery is
-conservative. No Telegram transport or process-crash durability is implied.
+**M2c-a status:** merged in `main`; claims, leases and fencing are implemented
+on the reference backend. **M2c-b status:** the reconciliation/outbox
+implementation and corrective work exist in open Draft PR #14, but have not
+received final approval or been merged into `main`. Its intended gates are
+fully fenced publishable TX2 plans, fail-closed borrowed staging, canonical
+target scoping and conservative Unknown recovery. **M2c-c** delivery
+acknowledgements remain pending. No Telegram transport or process-crash
+durability is implied by the Draft implementation.
 
 **M2d/M2e:** optional MDBX adapter and cross-backend conformance/recovery
 proof. They depend on the accepted transaction/recovery contracts and must not

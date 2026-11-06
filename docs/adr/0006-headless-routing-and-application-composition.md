@@ -1,6 +1,6 @@
 # ADR 0006: headless routing and application composition
 
-**Status:** accepted for roadmap planning; implementation begins in M3.
+**Status:** Proposed; implementation begins in M3 after independent review.
 
 ## Context
 
@@ -18,9 +18,10 @@ domain state to presentation and create unnecessary outbox work.
 ## Decision
 
 M3 introduces one typed `UpdateRouter` at the Telegram adapter boundary. It
-supports declarative filters, middleware, handler priority and explicit
-outcomes (`Accepted`, `Rejected`, `QueueFull`, `Closed`, `Failed`). It submits
-work to the existing per-key scheduler and bounded admission controls.
+supports declarative filters, middleware, an imtg-owned deadline policy and
+explicit outcomes (`Accepted`, `Rejected`, `QueueFull`, `DeadlineMissed`,
+`Closed`, `Failed`). It submits work to the existing scheduler and bounded
+admission controls; this is not a second generic dispatcher.
 
 Handlers declare one of two modes:
 
@@ -28,10 +29,30 @@ Handlers declare one of two modes:
 - **headless:** runs a domain command or plans a domain effect without a UI
   screen, UI tree or render intent.
 
-Urgent update classes such as payment pre-checkout and join requests may have a
-separate priority/admission budget, but they remain visible to the same
-shutdown and observability accounting. Background jobs use the planned durable
-job contract, not an unbounded callback queue.
+Urgent update classes such as payment pre-checkout and join requests use a
+bounded urgent admission lane inside that scheduler. The lane has a finite
+capacity and a finite worker/burst budget, shares the normal worker pool's
+shutdown, quiescence and failure accounting, and uses weighted fairness so
+ordinary work cannot starve. It is a scheduling policy, not a permission
+shortcut: filters, middleware, authorization and payment-state CAS still run
+before an urgent response is accepted.
+
+Each admitted item carries a receipt time and an explicit response deadline.
+The scheduler rejects an item as `DeadlineMissed` when its remaining budget is
+not sufficient to start and complete the required handler; overload returns
+`QueueFull`. Both outcomes are observable and fail closed. In particular, a
+payment pre-checkout path never acknowledges a payment as valid unless its
+required verification and transactional CAS have completed.
+
+The normal and urgent lanes share a domain-conflict gate. Updates that can
+touch the same payment/order or other domain key serialize through the same
+keyed turn and expected-revision/CAS check, so cross-lane execution cannot
+silently reorder conflicting state. An urgent item for an unrelated key may
+run while a long interactive handler occupies another key. An urgent item
+that conflicts with a currently running handler waits only within that key;
+if its deadline expires it returns `DeadlineMissed` rather than bypassing the
+handler or fabricating success. Background jobs use the planned durable job
+contract, not an unbounded callback queue.
 
 The existing M2c-b `OutboxEffect` and logical-slot identity are preserved for
 interaction effects. Moderation and commerce state changes are local
@@ -58,7 +79,9 @@ Costs and limits:
 - urgent lanes need explicit budgets so they cannot starve ordinary traffic;
 - Telegram permissions, privacy mode and payment deadlines remain adapter
   constraints, not guarantees of the framework;
-- module composition and dependency injection are additional M4 contracts.
+- module composition and dependency injection are additional M4 contracts;
+- a deadline is a bounded response budget, not a guarantee that Telegram will
+  accept a late response; transport and provider limits remain observable.
 
 ## Rejected alternatives
 
@@ -72,8 +95,18 @@ Costs and limits:
 
 ## Gates
 
-Before implementation is called complete, tests must show: deterministic
-filter/middleware/priority order; headless handling with no render intent;
-payment deadline handling; bounded overload under a message flood; permission
-checks; per-key ordering; restart/recovery; and explicit UnknownOutcome for a
-lost external response.
+Before implementation is called complete, deterministic tests must show:
+
+1. a long-running interactive handler on key A does not block an unrelated
+   urgent pre-checkout on key B;
+2. an urgent item that conflicts with an active handler on the same domain key
+   is serialized and becomes `DeadlineMissed` if its budget expires;
+3. urgent and ordinary capacities are bounded, overload returns `QueueFull`,
+   and weighted fairness lets ordinary work continue;
+4. concurrent payment updates are authorized and resolved by the same
+   revision/CAS contract, with no valid acknowledgement before verification;
+5. shutdown/quiescence accounts for both lanes and drains or reports every
+   admitted item;
+6. filters/middleware are deterministic, headless handling creates no render
+   intent, permission checks are enforced, restart/recovery is covered, and a
+   lost external response produces explicit `UnknownOutcome`.

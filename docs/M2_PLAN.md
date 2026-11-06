@@ -25,9 +25,10 @@ The proposed protocol and failure-injection matrix are defined in
 and the M2c-b reconciliation/outbox slice are implemented on the
 backend-neutral in-memory baseline. Publishable TX2 plans require complete
 intent/conversation/session/generation/target/applied and original-claim
-context; borrowed staging is fail-closed; and Unknown recovery must attribute
-the exact immutable effect to the original attempt. This does not claim
-physical process-crash durability or a Telegram adapter.
+context; borrowed staging is fail-closed; canonical target scoping is
+conversation-bound; and Unknown recovery must attribute the exact immutable
+effect to the original attempt. This does not claim physical process-crash
+durability, delivery acknowledgements, or a Telegram adapter.
 
 Use the two-transaction protocol:
 

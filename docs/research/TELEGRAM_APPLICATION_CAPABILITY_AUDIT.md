@@ -45,10 +45,10 @@ The LimiNode rows reuse the exact revisions already recorded in
 
 | Capability | Verified source behavior | imtg classification | Milestone and acceptance proof |
 |---|---|---|---|
-| Typed update routing, filters and middleware | aiogram separates routers, filters, middleware, handler priority and FSM context; PTB provides typed handler/filter composition | Shared framework capability at the Telegram boundary; one imtg router, not a second dispatcher | M3: routing tests prove deterministic priority, filter failure, middleware order and explicit overload outcomes |
+| Typed update routing, filters and middleware | aiogram separates routers, filters, middleware and FSM context; PTB provides typed handler/filter composition. The reviewed aiogram behavior is routing/filter/middleware evidence, not a generic deadline-aware priority scheduler. | Shared framework capability at the Telegram boundary; one imtg router, not a second dispatcher. Deadline/priority scheduling is an imtg architectural requirement. | M3: routing and scheduling tests prove deterministic filters, middleware order, deadline admission, fairness, filter failure and explicit overload outcomes |
 | Headless handlers | Moderation and payment examples handle message/member/payment updates without rendering a dialog | Shared runtime boundary; a handler may commit domain state or effects without a `RenderIntent` | M3: a message moderation and `pre_checkout_query` path runs with no UI session/render intent |
 | Per-key serialization and bounded admission | imtg M1 runtime already provides keyed mailboxes and bounded queues; kurlyk provides bounded HTTP admission | Already implemented foundation plus transport adapter; do not duplicate event-hub or HTTP queues | M3: flood tests show bounded memory, per-chat ordering and `QueueFull`/`Closed` outcomes |
-| Urgent payment updates | Telegram payment examples expose pre-checkout and successful-payment events; the Bot API imposes a short pre-checkout response window | Typed update class with priority/deadline policy; domain verification remains commerce module | M3: expired/deadline and duplicate payment tests; gateway never waits behind ordinary rendering work |
+| Urgent payment updates | Telegram payment examples expose pre-checkout and successful-payment events; the Bot API imposes a short pre-checkout response window | imtg-owned typed update class with bounded priority/deadline policy; domain verification remains commerce module | M3: expired/deadline and duplicate payment tests; gateway never waits behind ordinary rendering work |
 | Dialogs, forms and pagination | aiogram-dialog provides dialog stacks, widgets, navigation and examples of multi-step input | Optional `imtg_forms`/`imtg_dialogs` modules using FSM/UI contracts | M4: draft/resume, field validation and locale snapshot tests |
 | Text/moderation fast path | Shield separates message detection, control-plane dictionaries and audit; tgbot/GroupButler show rules and flood controls | Optional `imtg_moderation`; policy and evidence are application-owned | M5: bounded fast path, dry-run, reversible sanction and audit tests |
 | Join CAPTCHA and anti-raid | `telegram-antispam-bot` implements flood/profile scoring and CAPTCHA paths; Miss Rose documents operator controls | Optional guardian module; not core and not a universal ban policy | M5: configurable Normal→Elevated→Raid→Lockdown→Recovery simulation |
@@ -65,7 +65,7 @@ The LimiNode rows reuse the exact revisions already recorded in
 M3 should extend the existing runtime boundary with a typed `UpdateRouter` and
 declarative filters/middleware. It must schedule a handler on the existing
 per-`ConversationKey` boundary and expose explicit `Accepted`, `QueueFull`,
-`Closed`, `Rejected` and `Failed` outcomes. A handler is either:
+`DeadlineMissed`, `Closed`, `Rejected` and `Failed` outcomes. A handler is either:
 
 1. **interactive**, which may load a session and create a render intent; or
 2. **headless**, which performs a domain command or schedules a domain effect
@@ -73,8 +73,11 @@ per-`ConversationKey` boundary and expose explicit `Accepted`, `QueueFull`,
 
 This is an extension of the current dispatcher boundary, not a second generic
 event framework. Background events use the same bounded scheduler and durable
-job contract. Payment pre-checkout and join-request updates may use a separate
-priority lane, but still consume the same admission and shutdown accounting.
+job contract. Payment pre-checkout and join-request updates may use a bounded
+deadline-aware lane within that scheduler, but still consume the same
+admission, domain-key serialization, shutdown and quiescence accounting.
+The urgent lane and its deadline/fairness policy are imtg design, not a claim
+that aiogram supplies a generic handler-priority scheduler.
 
 ### Keep M2c-b `OutboxEffect` narrow
 
