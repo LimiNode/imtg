@@ -112,9 +112,11 @@ commerce/moderation policy.
 Add immutable catalogs, fallback/plural rules and locale snapshots; module
 composition and dependency injection; optional typed forms/dialogs,
 draft/resume storage, attachment metadata and reusable policy hooks; users,
-chats and permission contracts; and provider-neutral payment method selection
-for checkout UI. The payment provider capability audit remains the onboarding
-source of truth.
+chats and permission contracts; and provider-neutral payment method and
+commercial integration-model selection for checkout UI. The payment provider
+capability audit remains the onboarding source of truth; gateway,
+hosted-checkout, self-hosted processor, marketplace/reseller and
+Merchant-of-Record paths are not interchangeable.
 
 **Depends on:** M1; durable services depend on M2/M3. **Acceptance:**
 concurrent users render different locales without ID changes; forms validate
@@ -130,7 +132,9 @@ Add optional durable users/chats/permissions; moderation journals and
 reversible sanctions; bounded durable jobs/TTL; attachment retention/deletion;
 ticket persistence and threaded support; commerce catalog/order/payment/
 fulfillment primitives; provider adapters selected by merchant eligibility;
-payment links, hosted checkout, webhooks, refunds and reconciliation;
+payment links, hosted checkout, self-hosted crypto settlement, webhooks,
+refunds and reconciliation; separately contracted marketplace/reseller and
+Merchant-of-Record integrations;
 moderation and commerce adapters; and the `intake-bot`, `shop-bot` and
 `guardian-bot` reference applications.
 
@@ -170,10 +174,10 @@ repositories or mandatory core features:
 The dependency-aware order is: complete M2c-b/M2c-c gates; implement the safe
 gateway, headless routing and permissions; freeze the provider-neutral payment
 contract and capability audit; build one first end-to-end bot with one
-eligible provider; add forms/tickets, payment/fulfillment and moderation
-policy; add durable jobs and the three reference applications; then add
-operations and advanced integrations. Research interest is not permission to
-add speculative core code.
+eligible gateway or explicitly contracted commerce platform; add
+forms/tickets, payment/fulfillment and moderation policy; add durable jobs and
+the three reference applications; then add operations and advanced
+integrations. Research interest is not permission to add speculative core code.
 See [TELEGRAM_APPLICATION_PROFILES.md](research/TELEGRAM_APPLICATION_PROFILES.md)
 for acceptance scenarios, [PAYMENTS.md](contracts/PAYMENTS.md) for payment
 invariants, and [ADR 0006](adr/0006-headless-routing-and-application-composition.md)

@@ -40,6 +40,20 @@ tracked with `candidate`, `needs_verification`, `eligible`, `deferred`,
 `unsupported` and `rejected` states. No provider is production-eligible until
 the capability audit, merchant onboarding and common conformance suite pass.
 
+The commerce boundary distinguishes `DirectGateway`, `HostedCheckout`,
+`SelfHostedCryptoProcessor`, `MarketplaceReseller` and `MerchantOfRecord`.
+Only the first three fit the provider adapter boundary. Marketplace/reseller
+and Merchant-of-Record integrations require separate contracts for catalog,
+supplier/order ownership, fulfillment, refunds, customer support and legal
+responsibility. A public partner disclosure or a storefront is not enough to
+classify an integration as an open merchant API or Merchant of Record.
+
+Crypto support is intentionally split between custodial/hosted gateways and
+non-custodial self-hosted processors. A self-hosted option such as BTCPay
+Server still needs explicit chain/Lightning settlement, wallet backup and
+recovery policy; it does not remove the merchant's legal or operational
+obligations.
+
 For scarce inventory, the commerce module may create a short-lived,
 transactional `InventoryHold` before a positive pre-checkout decision. The
 hold is idempotent, fenced against competing orders, expires deterministically
@@ -62,6 +76,8 @@ Costs and limits:
 - fallback cannot happen after an ambiguous attempt without reconciliation proof;
 - payment contracts do not decide tax, receipt, prohibited goods or fulfillment
   policy;
+- marketplace/reseller and Merchant-of-Record contracts add legal and
+  operational responsibilities that a provider adapter cannot infer;
 - the first implementation is still bounded by provider sandbox/live behavior.
 
 ## Rejected alternatives
@@ -74,6 +90,9 @@ Costs and limits:
    identity, refund and webhook semantics and weakens recovery attribution.
 4. **Automatic provider fallback after timeout:** may charge twice when the
    first provider accepted the request but its response was lost.
+5. **Wrapping every payment page as `IPaymentProvider`:** hides seller,
+   supplier, fulfillment and legal responsibility when the integration is a
+   marketplace or Merchant of Record.
 
 ## Gates
 
@@ -88,5 +107,7 @@ Before the first production adapter:
 4. inventory holds and expiry are race-safe for unique goods;
 5. secrets, card data, replay protection, rate limits and `UnknownOutcome` are
    covered by the adapter review;
-6. Telegram policy separates Stars/digital goods from external physical-goods
+6. self-hosted crypto settlement, backup and restart recovery are tested when
+   that model is selected;
+7. Telegram policy separates Stars/digital goods from external physical-goods
    checkout.
