@@ -263,7 +263,10 @@ Every provider adapter must pass the same fake/sandbox conformance suite:
 7. scarce-inventory hold race and expiry behavior;
 8. no fulfillment before authoritative `Succeeded`;
 9. bounded payloads, redacted logs and secret handling;
-10. provider selection and deterministic fallback policy.
+10. provider selection and deterministic fallback policy;
+11. separate marketplace/reseller or Merchant-of-Record contract tests when
+    that integration model is selected, including seller-of-record, supplier,
+    fulfillment and refund responsibility.
 
 The capability matrix in
 [PAYMENT_PROVIDER_CAPABILITY_AUDIT.md](../research/PAYMENT_PROVIDER_CAPABILITY_AUDIT.md)
