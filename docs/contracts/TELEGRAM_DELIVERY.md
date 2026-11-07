@@ -17,6 +17,33 @@ The pipeline has explicit boundaries:
 
 `kurlyk` is a recommended future HTTP adapter, not a core dependency. Telegram's external API cannot provide exactly-once delivery without corresponding guarantees, and arbitrary client idempotency keys must not be assumed.
 
+## Gateway and handler modes
+
+The M3 gateway exposes one typed update router with filters, middleware,
+deterministic priority and explicit admission outcomes. It may normalize
+messages, edited messages, callback queries, chat-member changes, join requests
+and payment updates; an application enables only the classes it needs. The
+existing per-`ConversationKey` scheduler and bounded queue remain the ownership
+boundary. A flood produces an observable overload result (`QueueFull` or
+`Closed`) rather than unbounded memory growth.
+
+Handlers are either interactive or headless. Interactive handlers may use
+session/FSM state and create a render intent. Headless handlers process
+moderation, payment, background or administrative updates without creating a
+screen, UI tree or `RenderIntent`. This avoids coupling anti-spam and payment
+deadlines to UI work and does not introduce a second generic dispatcher.
+
+Payment pre-checkout is an urgent typed update with an explicit deadline and
+priority budget. It must not wait behind ordinary rendering work. The gateway
+does not treat a user-supplied payload as payment proof; the commerce module
+verifies the provider event and deduplicates the payment identity.
+
+The M2c-b `OutboxEffect` remains the interaction-effect contract during this
+migration. Moderation and commerce local state changes are transactional domain
+writes, not new `EffectKind` values. A module may add a typed domain outbox or
+adapter for its own external operation, but every category must specify its
+own idempotency and `UnknownOutcome` proof without changing old logical slots.
+
 ## Effect state machine
 
 Each durable effect has a desired revision and an explicit state: `Pending` (committed but not attempted), `InFlight`, `Applied` (response confirms success), `Failed` (non-retryable or exhausted), or `UnknownOutcome` (the request may have been accepted but the response is unavailable/ambiguous). Desired and applied UI revisions are separate; an external edit or stale worker cannot silently advance `Applied`.

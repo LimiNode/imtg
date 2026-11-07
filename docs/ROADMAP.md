@@ -1,55 +1,167 @@
 # Roadmap
 
-Milestones are dependency-gated; independent research may proceed in parallel, but acceptance evidence is required before declaring a milestone complete.
+Milestones are dependency-gated; independent research may proceed in parallel,
+but acceptance evidence is required before declaring a milestone complete.
 
 ## Dependency map
 
 ```text
-                         +--> M4 (localization/services) --+
-D0 --> M1 --> M2 -------+                                  +--> M5 --> M6
-  \       \             +--> M3 (delivery) ---------------+
+                         +--> M4 (composition/localization) -+
+D0 --> M1 --> M2 -------+                                    +--> M5 --> M6
+  \       \             +--> M3 (delivery/gateway) -----------+
    \       +--> locale contract/tests may proceed after M1
     +--> governance/contracts (gate all implementation)
 ```
 
-The graph shows implementation blockers, not a mandatory serial work queue. M4 contract/test prototyping may proceed after M1, while durable M4 services depend on M2. M3 depends on M2 for outbox/session revisions. M5 depends on storage and delivery contracts but does not block M4 localization work.
+The graph shows implementation blockers, not a mandatory serial work queue. M4
+contract/test prototyping may proceed after M1, while durable M4 services
+depend on M2. M3 depends on M2 for outbox/session revisions and may begin with
+one small Telegram example before every optional application module exists. M5
+depends on storage and delivery contracts but does not block M4 localization
+work. Application capability research is recorded in
+[TELEGRAM_APPLICATION_CAPABILITY_AUDIT.md](research/TELEGRAM_APPLICATION_CAPABILITY_AUDIT.md)
+and the three integration profiles in
+[TELEGRAM_APPLICATION_PROFILES.md](research/TELEGRAM_APPLICATION_PROFILES.md).
 
 ## D0 — Architecture & Engineering Foundation
 
-**Scope:** contracts, invariants, governance, ADR, scenarios, roadmap, and honest status. **Dependencies:** none. **Deliverables:** this documentation layer. **Acceptance:** links and terminology are consistent; examples are marked conceptual; `git diff --check` passes. **Tests:** documentation review and link/status audit. **Exit:** a new agent can identify ownership, limits, and next milestone. **D0 restrictions:** do not add production code, CMake targets, dependencies, submodules, or adapters in this milestone; keep the PR documentation-first and do not merge it without explicit approval. **Deferred:** implementation and CI.
+**Scope:** contracts, invariants, governance, ADR, scenarios, roadmap, and
+honest status. **Dependencies:** none. **Deliverables:** this documentation
+layer. **Acceptance:** links and terminology are consistent; examples are
+marked conceptual; `git diff --check` passes. **Tests:** documentation review
+and link/status audit. **Exit:** a new agent can identify ownership, limits,
+and next milestone. **D0 restrictions:** do not add production code, CMake
+targets, dependencies, submodules, or adapters in this milestone; keep the PR
+documentation-first and do not merge it without explicit approval.
 
 ## M1 — Typed UI tree, callbacks, controllers, deterministic core
 
-M1 is delivered as independently reviewable stacked PRs: **M1a** foundation and typed identities, **M1b** deterministic UI tree, **M1c** action registry/callback semantics, and **M1d** scheduler/reference runtime. Each PR must build and test against its declared base; the M1 milestone remains `partial` until all four acceptance gates pass.
+M1 is delivered as independently reviewable stacked PRs: **M1a** foundation
+and typed identities, **M1b** deterministic UI tree, **M1c** action
+registry/callback semantics, and **M1d** scheduler/reference runtime. Each PR
+must build and test against its declared base; the M1 milestone is complete
+only after all four acceptance gates pass.
 
-M1b specifically freezes the transport-neutral node vocabulary (text, heading, section, separator, row, and button), immutable render snapshots, explicit stable paths, duplicate detection, and move-only RAII grouping guards. Telegram formatting and transport concerns remain deferred.
+M1 freezes the transport-neutral node vocabulary, immutable render snapshots,
+stable paths, typed versioned routes, scoped callbacks, restart
+reconstruction, and bounded per-key scheduling. Telegram formatting,
+authentication and transport remain deferred to M3. M1 uses the accepted
+`ConversationKey` (`bot_id + chat_id + Chat` or `UserInChat`).
 
-M1c specifically provides application-level versioned routes, typed payload codecs, `ActionHandle` binding, scoped `ActionContext`, restart reconstruction, and an injectable token codec. The initial plain codec is deliberately non-authenticating; Telegram token authentication remains an adapter concern for M3.
+**Acceptance:** repeated renders are deterministic; malformed/unknown/stale
+callbacks are rejected; callbacks cannot escape scope; route handlers resolve
+after restart; per-key ordering and bounded admission are tested. **Exit:** M2
+can persist session contracts without changing UI semantics.
 
-M1d specifically provides a bounded worker pool with per-key sequential mailboxes, bounded queue rejection, synchronous command execution, fake desired/applied reconciliation, callback exception reporting, observable fail-stop handling for worker requeue failure, controlled shutdown, and the local dispatcher boundary described in ADR 0002. It does not provide durable storage, production outbox, or Telegram delivery.
+## M2 — FSM, sessions, storage, reconciliation and MDBX boundary
 
-**Scope:** Telegram-free render tree, stable IDs, `snake_case` UI API, versioned action routes, serializable payload validation, action scope, typed events, controller/model composition, deterministic scheduler and reconciler fakes. **Depends on:** D0; M1 must use the accepted `ConversationKey` (`bot_id + chat_id + Chat` or `UserInChat`). **Architectural decisions closed before implementation:** action-token lifecycle, route reconstruction after restart, callback lifetime, key equality/encoding, and per-key ordering. **May remain open:** thread/topic transport mapping, reconciler conflict policy, dispatcher implementation, and RAII grouping syntax. **Deliverables:** public headers, tests, API docs, examples. **Acceptance:** repeated renders are deterministic; malformed/unknown/stale callbacks are rejected; callbacks cannot escape scope; route handlers resolve after restart; per-key ordering is tested; reconciliation is idempotent. **Tests:** unit, property/fuzz tests for IDs/tokens, deterministic integration tests. **Exit:** M2 can persist session contracts without changing UI semantics. **Deferred:** Telegram delivery and database adapters.
+**M2a status:** implemented. `IStorageBackend`, `ITransaction`, `UnitOfWork`,
+fail-closed schema metadata, monotonic expected revisions with delete/recreate
+ABA protection, deterministic commit outcomes, and the in-memory
+snapshot/optimistic backend are available. This is a semantic baseline, not a
+physical durability guarantee.
 
-## M2 — FSM, sessions, storage contracts, first MDBX backend
+**M2b status:** implemented on the in-memory semantic baseline. Typed session
+records, guarded FSM transitions, timeout/cancellation/terminal events,
+processed-update deduplication, optimistic revisions and atomic minimal
+render-intent publication are covered by tests.
 
-**M2a status:** implemented. `IStorageBackend`, `ITransaction`, `UnitOfWork`, fail-closed schema metadata, monotonic expected revisions with delete/recreate ABA protection, deterministic commit outcomes, and the in-memory snapshot/optimistic backend are available in `imtg::core`; the fixture-based reusable conformance suite passes for that backend. The implementation is not durable and does not provide sessions, render intents, outbox claims, or MDBX.
+**M2c-a status:** merged in `main`; claims, leases and fencing are implemented
+on the reference backend. **M2c-b status:** reconciliation/outbox planning is
+merged in `main` on the backend-neutral in-memory baseline. Its gates are
+fully fenced publishable TX2 plans, fail-closed borrowed staging, canonical
+target scoping and conservative Unknown recovery. **M2c-c** delivery
+acknowledgements remain pending. M2c-b still makes no process-crash durability
+or Telegram transport claim.
 
-**M2b status:** implemented on the in-memory semantic baseline. Typed session records, guarded FSM transitions, timeout/cancellation/terminal events, processed-update deduplication, optimistic revisions, and atomic minimal render-intent publication are covered by `imtg_session_tests`. This proves backend-lifetime recovery semantics, not physical process-crash durability.
+**M2d/M2e:** optional MDBX adapter and cross-backend conformance/recovery
+proof. They depend on the accepted transaction/recovery contracts and must not
+create a DBI per user or chat.
 
-**Remaining M2 scope:** render-intent processing, durable outbox claims, recovery, migrations, and the MDBX adapter. **Depends on:** M1 and MDBX integration review. **Acceptance:** the reference backend semantics are retained while the conformance suite passes for in-memory and MDBX; crash recovery between command commit and outbox planning is tested; uncertain commit, revision conflict, and stale acknowledgment behavior are tested; no per-user DBI design. **Exit:** durable state and render intent can be committed atomically, then converted recoverably to an outbox effect. **Deferred:** Telegram calls and cross-database atomicity.
+**M2 acceptance:** in-memory and MDBX conformance covers schema compatibility,
+atomic multi-record commit, duplicate updates, revision conflicts, TX1/TX2
+crash points, stale fencing, uncertain commit, interrupted migration, bounded
+scans and shutdown with pending work. Telegram calls and cross-database
+atomicity remain deferred.
 
-## M3 — Telegram delivery and outbox
+## M3 — Telegram gateway and delivery
 
-**Scope:** kurlyk-backed adapter, polling, callback token validation, desired/applied revisions, retries, rate limiting, uncertain outcomes, and outbox workers. **Depends on:** M2 and verified Telegram API behavior. **Acceptance:** fake transport tests cover send/edit/retry/429/unknown outcomes; external delivery is explicitly at-least-once or best-effort; shutdown leaves recoverable outbox work. **Exit:** a minimal bot can run against Telegram with documented operational limits. **Deferred:** webhooks and rich UI.
+Add the verified Telegram boundary for typed message, edited-message,
+callback-query, chat-member, join-request and payment updates; declarative
+filters/middleware; headless and interactive handlers; permission checks;
+priority/deadline handling for payment pre-checkout; kurlyk-backed transport;
+desired/applied revisions; retries, rate limits, bounded admission and
+uncertain outcomes. Applications enable only the update classes they need.
 
-## M4 — Localization and core domain services
+**Depends on:** M2 and verified official Telegram API behavior.
+**Acceptance:** fake transport tests cover send/edit/delete/callback-answer,
+429/retry, authorization, duplicate updates, queue overload and
+`UnknownOutcome`; a headless moderation handler and an urgent payment handler
+run without a UI render intent; shutdown leaves recoverable outbox work.
+**Exit:** one minimal bot runs with documented operational limits.
+**Deferred:** advanced webhooks, Mini Apps and domain-specific
+commerce/moderation policy.
 
-**Scope:** immutable JSON catalogs, fallback, plural rules, templates, users, chats, settings, and locale-aware rendering. **Depends on:** M1; durable services depend on M2. **Acceptance:** concurrent users can render different locales; IDs do not change with translation; missing keys and plural categories have deterministic fallbacks. **Exit:** reference menu, settings, and registration scenarios have contract tests. **Deferred:** message history retention and advanced access control.
+## M4 — Application composition and localization
 
-## M5 — SQLite, history, access control, jobs
+Add immutable catalogs, fallback/plural rules and locale snapshots; module
+composition and dependency injection; optional typed forms/dialogs,
+draft/resume storage, attachment metadata and reusable policy hooks; users,
+chats and permission contracts.
 
-**Scope:** SQLite adapter, optional message history, roles/permissions/bans, persistent jobs, and support/approval scenarios. **Depends on:** M2–M4. **Acceptance:** storage conformance and retention/deletion tests pass; job retries are bounded and observable; access decisions are auditable. **Exit:** reference scenarios 3–5 run on fakes and at least one durable backend. **Deferred:** advanced integrations.
+**Depends on:** M1; durable services depend on M2/M3. **Acceptance:**
+concurrent users render different locales without ID changes; forms validate
+and resume after restart; a headless module and an interactive module share one
+router and bounded scheduler; missing keys and plural categories have
+deterministic fallbacks. **Exit:** `intake-bot` contract tests compose forms,
+tickets and notifications without putting ticket fields in imtg core.
+**Deferred:** domain-specific catalog, CRM and advanced history policy.
 
-## M6 — Webhooks, rich UI, operations, extensions
+## M5 — Durable domain services and reference applications
 
-**Scope:** webhook adapter, richer components, operational telemetry, backend extensions, and advanced integrations. **Depends on:** M3–M5. **Acceptance:** documented SLO/error behavior, load and recovery evidence, and compatibility review for each backend/transport. **Deferred:** features without a measured use case.
+Add optional durable users/chats/permissions; moderation journals and
+reversible sanctions; bounded durable jobs/TTL; attachment retention/deletion;
+ticket persistence and threaded support; commerce catalog/order/payment/
+fulfillment primitives; moderation and commerce adapters; and the
+`intake-bot`, `shop-bot` and `guardian-bot` reference applications.
+
+**Depends on:** M2–M4 and a verified delivery contract. **Acceptance:**
+storage conformance and restart/recovery tests pass; duplicate payment and
+unique-item allocation are safe; ticket and moderation transitions are fenced
+and audited; anti-raid simulations remain bounded; each reference application
+exercises shared routing, authorization, localization, scheduling and effect
+recovery. **Exit:** application modules remain optional and independently
+buildable. **Deferred:** provider-specific CRM, sophisticated inventory and AI
+policy.
+
+## M6 — Advanced integration and operations
+
+Add production webhooks, metrics and operational dashboards; extension
+modules; load-shedding and capacity planning; raid/flood simulations; backend
+and transport adapters; and measured Mini App/analytics integrations where
+needed.
+
+**Depends on:** M3–M5. **Acceptance:** documented SLO/error behavior, load
+and recovery evidence, bounded resource use, operational runbooks and
+compatibility review for every backend/transport. **Deferred:** features
+without a measured use case, including AI moderation unless its lower authority
+and cost limits are demonstrated.
+
+## Reference applications and ordering
+
+These names describe separately buildable integration targets, not current
+repositories or mandatory core features:
+
+- `intake-bot` — multi-step applications, approvals and support tickets;
+- `shop-bot` — catalog, verified payment, unique-item reservation and digital
+  fulfillment;
+- `guardian-bot` — moderation, bounded anti-flood and anti-raid recovery.
+
+The dependency-aware order is: complete M2c-b/M2c-c gates; implement the safe
+gateway, headless routing and permissions; build one first end-to-end bot; add
+forms/tickets, payment/fulfillment and moderation policy; add durable jobs and
+the three reference applications; then add operations and advanced
+integrations. Research interest is not permission to add speculative core code.
+See [TELEGRAM_APPLICATION_PROFILES.md](research/TELEGRAM_APPLICATION_PROFILES.md)
+for acceptance scenarios and [ADR 0006](adr/0006-headless-routing-and-application-composition.md)
+for the composition decision.
