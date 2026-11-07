@@ -81,12 +81,14 @@ cannot charge.
 
 ## Money and methods
 
-Money is an exact integer amount in a declared fiat or crypto asset and
-minor-unit scale. The contract forbids `float` and `double` for payment
-arithmetic. Currency/asset scale is part of an explicit scale policy and is
-validated before a provider request is created; a manually forged or mismatched
-scale is rejected. Rounding is explicit and never performed implicitly during
-provider fallback.
+Money is an exact signed-`int64_t` minor-unit amount in a declared fiat or
+crypto asset and scale. Valid non-negative values therefore range from zero to
+`INT64_MAX`; an 18-decimal asset uses base units directly and must not be
+multiplied into a wider implicit type. The contract forbids `float` and
+`double` for payment arithmetic. Currency/asset scale is part of an explicit
+scale policy and is validated before a provider request or refund is created;
+a manually forged or mismatched scale is rejected. Rounding is explicit and
+never performed implicitly during provider fallback.
 
 Provider-neutral methods include `Card`, `Mir`, `Sbp`, `Crypto`,
 `TelegramStars` and `Other`. A provider may expose more detail in its adapter,
@@ -190,8 +192,11 @@ they are never converted into `Succeeded` by a default branch.
 `PaymentPolicy` is evaluated per shop/order, not globally. It includes an
 explicit `allowed_providers` set, priority only within that set, allowed
 assets and methods, product/sales-surface gates, whether external checkout is
-permitted, refund rules and the fallback policy for `UnknownOutcome`. An empty
-allowlist or an unlisted provider is a rejection; priority is never permission.
+permitted, refund rules and the fallback policy for `UnknownOutcome`. Every
+non-`TelegramStars` method requires `allow_external_checkout=true`, regardless
+of the sales surface. Telegram digital goods/services remain on the separate
+explicit Stars path. An empty allowlist or an unlisted provider is a rejection;
+priority is never permission.
 
 Selection is deterministic: filter by merchant eligibility and method, then
 apply configured priority and capability requirements. A provider failure does
@@ -235,8 +240,13 @@ state; it does not fabricate fulfillment or silently allocate the item twice.
 `PaymentRepository` begins a backend-neutral payment transaction. The
 transaction persists payment, attempt, provider-event and refund records with
 optimistic expected revisions; event deduplication and the payment transition
-commit atomically. Provider HTTP is outside the transaction. A failed
-reconciliation must roll back and must not publish a partial state transition.
+commit atomically. Repeating the same event identity with the same digest is
+idempotent; the same identity with a different digest is a conflict. Commit
+uses the shared storage `CommitResult`: `Committed`, known failure/conflict or
+`Unknown`. An `Unknown` result is terminal until authoritative recovery and
+must not be blindly retried or rolled back. Provider HTTP is outside the
+transaction. A failed reconciliation must roll back while the transaction is
+known active and must not publish a partial state transition.
 
 The recovery journal must distinguish:
 

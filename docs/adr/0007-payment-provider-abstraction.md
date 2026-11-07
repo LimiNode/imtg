@@ -71,7 +71,9 @@ and is revalidated after `successful_payment` before fulfillment reservation.
 Webhook evidence is authenticated over the original bytes together with the
 request path and headers. Payment state and event deduplication are committed
 through one payment transaction with optimistic revisions; a failed
-reconciliation must roll back rather than publish a partial transition.
+reconciliation must roll back rather than publish a partial transition. The
+transaction reuses the storage `CommitResult` outcomes: an `Unknown` commit is
+terminal until authoritative recovery and is never blindly retried.
 
 ## Consequences
 

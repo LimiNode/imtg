@@ -88,13 +88,16 @@ bool is_telegram_surface(SalesSurface surface) noexcept
 const PaymentEligibilityDecision* find_decision(
     const PaymentSelectionContext& context, const ProviderId& provider)
 {
-    const auto found = std::find_if(
-        context.eligibility.begin(), context.eligibility.end(),
-        [&context, &provider](const auto& decision) {
-            return decision.provider == provider
-                && decision.merchant_account == context.merchant_account;
-        });
-    return found == context.eligibility.end() ? nullptr : &*found;
+    const PaymentEligibilityDecision* result = nullptr;
+    for (const auto& decision : context.eligibility) {
+        if (!(decision.provider == provider)
+            || !(decision.merchant_account == context.merchant_account)) {
+            continue;
+        }
+        if (result != nullptr) return nullptr;
+        result = &decision;
+    }
+    return result;
 }
 
 bool allowlisted(const PaymentPolicy& policy, const ProviderId& provider) noexcept
@@ -125,9 +128,15 @@ MoneyScalePolicy MoneyScalePolicy::standard()
 Result<std::uint8_t> MoneyScalePolicy::scale_for(const AssetId& asset) const
 {
     if (!valid_asset(asset)) return invalid("asset identity is invalid");
-    for (const auto& entry : accepted_assets) {
+    for (std::size_t index = 0; index < accepted_assets.size(); ++index) {
+        const auto& entry = accepted_assets[index];
         if (!valid_asset(entry.asset) || entry.scale > 18) {
             return invalid("asset-scale policy contains an invalid entry");
+        }
+        for (std::size_t prior = 0; prior < index; ++prior) {
+            if (accepted_assets[prior].asset == entry.asset) {
+                return invalid("asset-scale policy contains duplicate asset definitions");
+            }
         }
     }
     const auto found = std::find_if(
@@ -214,7 +223,7 @@ bool PaymentPolicy::allows(const PaymentCreateRequest& request) const noexcept
         return allow_telegram_stars && digital && is_telegram_surface(request.sales_surface);
     }
     if (digital && is_telegram_surface(request.sales_surface)) return false;
-    if (!allow_external_checkout && request.sales_surface == SalesSurface::ExternalWeb) {
+    if (request.method != PaymentMethod::TelegramStars && !allow_external_checkout) {
         return false;
     }
     return true;
@@ -279,6 +288,12 @@ Result<void> validate_payment_status_snapshot(
 
 Result<void> validate_refund_request(const RefundRequest& request)
 {
+    return validate_refund_request(request, MoneyScalePolicy::standard());
+}
+
+Result<void> validate_refund_request(
+    const RefundRequest& request, const MoneyScalePolicy& policy)
+{
     if (!non_empty(request.payment_id.value)
         || !non_empty(request.attempt_id.value)
         || !non_empty(request.merchant_account.value)) {
@@ -287,7 +302,7 @@ Result<void> validate_refund_request(const RefundRequest& request)
     if (request.amount.minor_units <= 0) {
         return invalid("refund amount must be positive");
     }
-    const auto amount = validate_money(request.amount, MoneyScalePolicy::standard());
+    const auto amount = validate_money(request.amount, policy);
     if (!amount) return amount.error();
     if (!non_empty(request.idempotency_key)) {
         return invalid("refund idempotency key is empty or too large");

@@ -3,6 +3,7 @@
 
 #include "imtg/core/clock.hpp"
 #include "imtg/core/result.hpp"
+#include "imtg/storage/storage.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -315,6 +316,9 @@ struct PaymentEventRecord {
 class PaymentTransaction {
 public:
     virtual ~PaymentTransaction() = default;
+    /// \brief Returns the current transaction state.
+    /// \return Active, committed, rolled back or unknown state.
+    [[nodiscard]] virtual TransactionState state() const noexcept = 0;
     /// \brief Loads a payment in this transaction snapshot.
     /// \param payment_id Payment identity.
     /// \return Record, absence, or error.
@@ -328,13 +332,16 @@ public:
         const PaymentRecord& record, std::uint64_t expected_revision) = 0;
     /// \brief Records an authenticated event for atomic deduplication.
     /// \param event Event identity and digest.
-    /// \return Success or duplicate/conflict error.
+    /// \return Success for a new or identical duplicate, or conflict when the
+    ///         same event identity has a different digest.
     [[nodiscard]] virtual Result<void> record_event(
         const PaymentEventRecord& event) = 0;
     /// \brief Publishes staged state and events atomically.
-    /// \return Commit success or unknown outcome.
-    [[nodiscard]] virtual Result<void> commit() = 0;
-    /// \brief Abandons all staged changes.
+    /// \return Shared storage commit outcome; `Unknown` is terminal and must
+    ///         be resolved by authoritative recovery, never blindly retried.
+    [[nodiscard]] virtual CommitResult commit() = 0;
+    /// \brief Abandons active staged changes.
+    /// \note An `Unknown` transaction must not be rolled back or replayed.
     virtual void rollback() noexcept = 0;
 };
 /// \brief Repository boundary for atomic payment transactions.
@@ -481,6 +488,12 @@ public:
 /// \return Success or invalid-argument error.
 [[nodiscard]] Result<void> validate_refund_request(
     const RefundRequest& request);
+/// \brief Validates a refund request against an explicit asset-scale policy.
+/// \param request Refund request to validate.
+/// \param policy Authoritative asset-scale policy.
+/// \return Success or invalid-argument error.
+[[nodiscard]] Result<void> validate_refund_request(
+    const RefundRequest& request, const MoneyScalePolicy& policy);
 
 } // namespace imtg::commerce
 

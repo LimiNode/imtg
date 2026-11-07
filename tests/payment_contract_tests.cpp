@@ -56,6 +56,8 @@ public:
 
 class FakePaymentTransaction final : public PaymentTransaction {
 public:
+    TransactionState state() const noexcept override { return m_state; }
+
     Result<std::optional<PaymentRecord>> load(const PaymentId&) const override
     {
         return std::optional<PaymentRecord>{};
@@ -70,22 +72,47 @@ public:
 
     Result<void> record_event(const PaymentEventRecord& event) override
     {
+        if (m_event.has_value()) {
+            if (m_event->provider == event.provider
+                && m_event->merchant_account == event.merchant_account
+                && m_event->event_id == event.event_id
+                && m_event->payload_digest == event.payload_digest) {
+                return {};
+            }
+            return Error{ErrorCode::StorageConflict,
+                         "payment event identity has a different digest"};
+        }
         m_event = event;
         return {};
     }
 
-    Result<void> commit() override
+    CommitResult commit() override
     {
+        if (m_state != TransactionState::Active) {
+            return CommitResult{CommitOutcome::Failed,
+                                Error{ErrorCode::InvalidState,
+                                      "payment transaction is not active"}};
+        }
         m_committed = true;
-        return {};
+        m_state = TransactionState::Committed;
+        return CommitResult{CommitOutcome::Committed, std::nullopt};
     }
 
-    void rollback() noexcept override { m_rolled_back = true; }
+    void rollback() noexcept override
+    {
+        if (m_state == TransactionState::Active) {
+            m_rolled_back = true;
+            m_state = TransactionState::RolledBack;
+            m_record.reset();
+            m_event.reset();
+        }
+    }
 
     std::optional<PaymentRecord> m_record;
     std::optional<PaymentEventRecord> m_event;
     bool m_committed = false;
     bool m_rolled_back = false;
+    TransactionState m_state = TransactionState::Active;
 };
 
 class FakePaymentRepository final : public PaymentRepository {
@@ -195,6 +222,13 @@ void test_money_and_validation()
     CHECK(validate_refund_request(refund));
     refund.amount.minor_units = 0;
     CHECK(!validate_refund_request(refund));
+    refund.amount = value.amount;
+    refund.amount.minor_units = 1;
+    CHECK(validate_refund_request(refund, custom));
+    MoneyScalePolicy conflicting{{
+        {{AssetKind::Crypto, "USDT", "solana"}, 6},
+        {{AssetKind::Crypto, "USDT", "solana"}, 8}}};
+    CHECK(!conflicting.scale_for(value.amount.asset));
 }
 
 void test_evidence_binding()
@@ -273,11 +307,28 @@ void test_payment_transaction_is_the_deduplication_authority()
     CHECK(transaction->record_event(PaymentEventRecord{
         ProviderId{"provider"}, MerchantAccountId{"merchant-1"},
         "event-1", "digest-1"}));
-    CHECK(transaction->commit());
+    CHECK(transaction->record_event(PaymentEventRecord{
+        ProviderId{"provider"}, MerchantAccountId{"merchant-1"},
+        "event-1", "digest-1"}));
+    CHECK(!transaction->record_event(PaymentEventRecord{
+        ProviderId{"provider"}, MerchantAccountId{"merchant-1"},
+        "event-1", "digest-2"}));
+    CHECK(transaction->commit().outcome == CommitOutcome::Committed);
     auto* fake = repository.m_transaction;
     CHECK(fake != nullptr);
     CHECK(fake->m_event.has_value());
     CHECK(fake->m_committed);
+    CHECK(fake->state() == TransactionState::Committed);
+
+    auto rollback_result = repository.begin_transaction();
+    CHECK(rollback_result);
+    auto rollback_transaction = std::move(rollback_result).value();
+    CHECK(rollback_transaction->record_event(PaymentEventRecord{
+        ProviderId{"provider"}, MerchantAccountId{"merchant-1"},
+        "event-2", "digest-2"}));
+    rollback_transaction->rollback();
+    CHECK(rollback_transaction->state() == TransactionState::RolledBack);
+    CHECK(rollback_transaction->commit().outcome == CommitOutcome::Failed);
 }
 
 void test_registry_is_account_scoped_and_allowlisted()
@@ -301,6 +352,16 @@ void test_registry_is_account_scoped_and_allowlisted()
     auto selection_policy = policy(value, eligible_id);
     const auto selected = registry.select(value, selection_policy, selection_context);
     CHECK(selected && selected.value() == eligible);
+
+    auto contradictory_context = context(
+        value, eligible_id, ClockTime{std::chrono::seconds{200}});
+    auto contradictory = contradictory_context.eligibility.front();
+    contradictory.state = PaymentEligibilityState::Rejected;
+    contradictory_context.eligibility.push_back(contradictory);
+    CHECK(!registry.select(value, selection_policy, contradictory_context));
+    std::swap(contradictory_context.eligibility.front(),
+              contradictory_context.eligibility.back());
+    CHECK(!registry.select(value, selection_policy, contradictory_context));
 
     selection_policy.allowed_providers.clear();
     CHECK(!registry.select(value, selection_policy, selection_context));
@@ -329,6 +390,22 @@ void test_telegram_policy_is_fail_closed()
     payment_policy.allow_telegram_stars = true;
     CHECK(payment_policy.allows(value));
     payment_policy.allow_telegram_stars = false;
+    CHECK(!payment_policy.allows(value));
+
+    payment_policy.allow_external_checkout = false;
+    value = request();
+    value.sales_surface = SalesSurface::TelegramBot;
+    CHECK(!payment_policy.allows(value));
+    value.sales_surface = SalesSurface::TelegramMiniApp;
+    CHECK(!payment_policy.allows(value));
+    value.sales_surface = SalesSurface::ExternalWeb;
+    CHECK(!payment_policy.allows(value));
+    payment_policy.allow_external_checkout = true;
+    CHECK(payment_policy.allows(value));
+
+    value = request();
+    value.product_category = ProductCategory::DigitalServices;
+    value.sales_surface = SalesSurface::TelegramMiniApp;
     CHECK(!payment_policy.allows(value));
 }
 
