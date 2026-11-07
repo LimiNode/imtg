@@ -25,6 +25,35 @@ goods and services. A Telegram `pre_checkout_query` approval is not a local
 `Paid` transition; only an authoritative, deduplicated `successful_payment`
 event can establish that state.
 
+## Commercial integration models
+
+Payment processing and commerce intermediation are separate boundaries. The
+roadmap recognizes five models:
+
+- `DirectGateway`: the application is the seller and the provider processes
+  the application's merchant account;
+- `HostedCheckout`: the application is the seller while the provider hosts the
+  checkout and payment-data boundary;
+- `SelfHostedCryptoProcessor`: the application operates its own processor,
+  wallet/node and recovery policy, as with a BTCPay Server deployment;
+- `MarketplaceReseller`: a platform sells or resells third-party offers and
+  owns supplier, catalog, order and fulfillment relationships;
+- `MerchantOfRecord`: a contracted third party is the seller and assumes the
+  applicable settlement, tax, receipt and consumer obligations.
+
+`IPaymentProvider` is intended for a direct gateway, hosted checkout or a
+provider-neutral self-hosted processor boundary. A marketplace/reseller or a
+Merchant of Record must not be wrapped as a provider merely because it can
+show a payment page. Those models need separate commerce-integration
+contracts for supplier terms, catalog/order ownership, fulfillment, customer
+support, refunds and legal responsibility.
+
+A public partner relationship is evidence to investigate, not a generic
+merchant-eligibility guarantee. For example, a service's disclosure that it
+uses LAVA does not prove that LAVA offers the same terms to every merchant;
+similarly, a marketplace selling VPN subscriptions does not prove an open
+merchant API or Merchant-of-Record status for an unrelated Telegram shop.
+
 ## Stable identities
 
 The following identities are separate and must not be replaced by Telegram
@@ -92,22 +121,29 @@ Rules:
 `PaymentProviderCapabilities` is declarative metadata, not a production
 approval. It describes supported methods, hosted checkout, payment links,
 direct API, webhooks, status lookup, refunds, partial refunds, sandbox and
-whether the provider can expose a payment hold/capture boundary.
+whether the provider can expose a payment hold/capture boundary. The selected
+commercial integration model and the merchant's registration/residency
+jurisdiction are separate onboarding facts and must be recorded before a
+provider is considered eligible.
 
 Eligibility is a separate policy result with the following states:
 
 `candidate`, `needs_verification`, `eligible`, `deferred`, `unsupported` and
 `rejected`.
 
-The result records merchant type, jurisdiction, KYC/KYB outcome, prohibited
-goods, reviewed evidence and expiry. A provider is selectable only when the
-configured merchant account is `eligible` for the requested method and order
-policy.
+The result records merchant type, registration/residency jurisdiction,
+commercial integration model, KYC/KYB outcome, prohibited goods, sanctions or
+cross-border constraints, reviewed evidence and expiry. A provider is
+selectable only when the configured merchant account is `eligible` for the
+requested method and order policy. A documented non-resident path, such as a
+foreign-company checkout, is not an ordinary-individual-without-IP path and
+must be evaluated separately.
 
 ## Provider-neutral interfaces
 
-The proposed public names are intentionally provider-neutral. They are
-conceptual until an implementation PR freezes their exact C++ signatures.
+The proposed public names are intentionally provider-neutral. A later
+contract implementation must freeze their exact C++ signatures; runtime
+adapters and durable implementations remain future work.
 
 ```cpp
 class IPaymentProvider;
@@ -207,9 +243,12 @@ redacted provider evidence, but not card data, private keys or full payment
 credentials.
 
 Provider adapters must enforce bounded request/response sizes, timeouts,
-replay protection, TLS verification and explicit rate limits. A provider's
-merchant eligibility, receipt rules and jurisdiction are configuration and
-onboarding inputs, not claims made by this library.
+replay protection, TLS verification and explicit rate limits. Self-hosted
+crypto processors additionally require an explicit confirmation policy for
+chain settlement, Lightning settlement, wallet/node backups and restart
+recovery. A provider's merchant eligibility, receipt rules, sanctions,
+cross-border route and jurisdiction are configuration and onboarding inputs,
+not claims made by this library.
 
 ## Conformance gates
 
