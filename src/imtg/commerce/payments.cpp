@@ -142,10 +142,15 @@ Result<std::shared_ptr<IPaymentProvider>> PaymentProviderRegistry::select(
             const auto provider = find(provider_id);
             if (eligible(provider)) return provider;
         }
-    } else {
-        for (const auto& provider : m_providers) {
-            if (eligible(provider)) return provider;
-        }
+    }
+
+    for (const auto& provider : m_providers) {
+        if (!provider) continue;
+        const auto provider_id = provider->id();
+        const auto prioritized = std::find(policy.provider_priority.begin(),
+                                          policy.provider_priority.end(), provider_id)
+            != policy.provider_priority.end();
+        if (!prioritized && eligible(provider)) return provider;
     }
     return Error{ErrorCode::HandlerUnavailable,
                  "no eligible payment provider satisfies the policy"};

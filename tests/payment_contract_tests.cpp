@@ -90,7 +90,7 @@ void test_registry_selection()
     PaymentPolicy policy;
     policy.allowed_methods = {PaymentMethod::Mir};
     policy.allowed_currencies = {"RUB"};
-    policy.provider_priority = {ProviderId{"candidate"}, ProviderId{"eligible"}};
+    policy.provider_priority = {ProviderId{"candidate"}};
     const auto selected = registry.select(request, policy);
     CHECK(selected && selected.value() == eligible);
     CHECK(eligible->create_payment(request));
