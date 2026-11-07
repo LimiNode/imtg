@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 
 namespace {
 
@@ -51,6 +52,52 @@ public:
 
     PaymentProviderCapabilities m_capabilities;
     PaymentAttemptId last_attempt;
+};
+
+class FakePaymentTransaction final : public PaymentTransaction {
+public:
+    Result<std::optional<PaymentRecord>> load(const PaymentId&) const override
+    {
+        return std::optional<PaymentRecord>{};
+    }
+
+    Result<PaymentRecord> save(const PaymentRecord& record,
+                               std::uint64_t) override
+    {
+        m_record = record;
+        return record;
+    }
+
+    Result<void> record_event(const PaymentEventRecord& event) override
+    {
+        m_event = event;
+        return {};
+    }
+
+    Result<void> commit() override
+    {
+        m_committed = true;
+        return {};
+    }
+
+    void rollback() noexcept override { m_rolled_back = true; }
+
+    std::optional<PaymentRecord> m_record;
+    std::optional<PaymentEventRecord> m_event;
+    bool m_committed = false;
+    bool m_rolled_back = false;
+};
+
+class FakePaymentRepository final : public PaymentRepository {
+public:
+    Result<std::unique_ptr<PaymentTransaction>> begin_transaction() override
+    {
+        auto transaction = std::make_unique<FakePaymentTransaction>();
+        m_transaction = transaction.get();
+        return std::unique_ptr<PaymentTransaction>(std::move(transaction));
+    }
+
+    FakePaymentTransaction* m_transaction = nullptr;
 };
 
 Money rub()
@@ -132,6 +179,10 @@ void test_money_and_validation()
     value = request();
     value.amount.scale = 0;
     CHECK(!validate_payment_request(value));
+    value = request();
+    value.method = static_cast<PaymentMethod>(255);
+    CHECK(!validate_payment_request(value));
+    value = request();
     MoneyScalePolicy custom{{{{AssetKind::Crypto, "USDT", "solana"}, 6}}};
     value.amount = Money::from_crypto_base_units("USDT", "solana", 100, custom).value();
     CHECK(validate_payment_request(value, custom));
@@ -170,6 +221,60 @@ void test_evidence_binding()
     CHECK(validate_payment_status_snapshot(snapshot, record));
     snapshot.provenance.provider = ProviderId{"other"};
     CHECK(!validate_payment_status_snapshot(snapshot, record));
+    snapshot.provenance.provider = record.provider;
+    snapshot.provenance.merchant_account = MerchantAccountId{"other"};
+    CHECK(!validate_payment_status_snapshot(snapshot, record));
+    snapshot.provenance.merchant_account = record.merchant_account;
+    snapshot.attempt_id = PaymentAttemptId{"other-attempt"};
+    CHECK(!validate_payment_status_snapshot(snapshot, record));
+    snapshot.attempt_id = record.attempt_id;
+    snapshot.provenance.authentication_context.clear();
+    CHECK(!validate_payment_status_snapshot(snapshot, record));
+}
+
+void test_selection_rejects_context_and_capability_mismatches()
+{
+    const auto value = request();
+    const auto provider_id = ProviderId{"provider"};
+    auto provider = std::make_shared<FakeProvider>(
+        provider_id, std::vector<PaymentMethod>{PaymentMethod::Mir},
+        std::vector<AssetId>{value.amount.asset});
+    PaymentProviderRegistry registry;
+    CHECK(registry.register_provider(provider));
+
+    auto selection_context = context(
+        value, provider_id, ClockTime{std::chrono::seconds{200}});
+    auto selection_policy = policy(value, provider_id);
+    selection_context.merchant_type = MerchantType::Company;
+    CHECK(!registry.select(value, selection_policy, selection_context));
+
+    selection_context = context(
+        value, provider_id, ClockTime{std::chrono::seconds{200}});
+    selection_context.jurisdiction = "US";
+    CHECK(!registry.select(value, selection_policy, selection_context));
+
+    auto usd_request = value;
+    usd_request.amount = Money::from_fiat_minor_units("USD", 1000).value();
+    auto usd_policy = policy(usd_request, provider_id);
+    auto usd_context = context(
+        usd_request, provider_id, ClockTime{std::chrono::seconds{200}});
+    CHECK(!registry.select(usd_request, usd_policy, usd_context));
+}
+
+void test_payment_transaction_is_the_deduplication_authority()
+{
+    FakePaymentRepository repository;
+    auto transaction_result = repository.begin_transaction();
+    CHECK(transaction_result);
+    auto transaction = std::move(transaction_result).value();
+    CHECK(transaction->record_event(PaymentEventRecord{
+        ProviderId{"provider"}, MerchantAccountId{"merchant-1"},
+        "event-1", "digest-1"}));
+    CHECK(transaction->commit());
+    auto* fake = repository.m_transaction;
+    CHECK(fake != nullptr);
+    CHECK(fake->m_event.has_value());
+    CHECK(fake->m_committed);
 }
 
 void test_registry_is_account_scoped_and_allowlisted()
@@ -232,5 +337,7 @@ int main()
     test_registry_is_account_scoped_and_allowlisted();
     test_telegram_policy_is_fail_closed();
     test_evidence_binding();
+    test_selection_rejects_context_and_capability_mismatches();
+    test_payment_transaction_is_the_deduplication_authority();
     return 0;
 }
