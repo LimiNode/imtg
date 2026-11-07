@@ -1,8 +1,12 @@
 # Payment contract
 
-**Semantic owner:** commerce/payment maintainers. **Status:** proposed,
-contract-only. **Implementation:** the optional `imtg_commerce` module is not
-part of `imtg_core` and is not implemented by this document.
+**Semantic owner:** commerce/payment maintainers. **Status:** contract baseline
+implemented. **Implementation:** the optional `imtg_commerce` module is kept
+separate from `imtg_core` and currently provides provider-neutral identities,
+exact money validation, capability metadata, policy checks, deterministic
+registry selection, and abstract repository/service boundaries. Durable
+persistence, provider adapters, webhook verification, reconciliation and
+refund orchestration remain future work.
 
 This contract defines a provider-neutral payment boundary for Telegram shops
 and other applications. It supports external hosted checkout, payment links,

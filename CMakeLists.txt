@@ -28,7 +28,17 @@ target_include_directories(imtg_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
-install(TARGETS imtg_core EXPORT imtgTargets)
+add_library(imtg_commerce STATIC
+    src/imtg/commerce/payments.cpp)
+add_library(imtg::commerce ALIAS imtg_commerce)
+set_target_properties(imtg_commerce PROPERTIES EXPORT_NAME commerce)
+target_compile_features(imtg_commerce PUBLIC cxx_std_17)
+target_link_libraries(imtg_commerce PUBLIC imtg::core)
+target_include_directories(imtg_commerce PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+
+install(TARGETS imtg_core imtg_commerce EXPORT imtgTargets)
 install(DIRECTORY src/imtg/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg
     FILES_MATCHING
     PATTERN "*.hpp"
