@@ -37,8 +37,17 @@ the two paths share lifecycle and recovery rules but not transport semantics.
 
 Payment acceptance and payout are separate capabilities. Provider inventory is
 tracked with `candidate`, `needs_verification`, `eligible`, `deferred`,
-`unsupported` and `rejected` states. No provider is production-eligible until
-the capability audit, merchant onboarding and common conformance suite pass.
+`unsupported` and `rejected` states. Static provider capabilities are not
+merchant onboarding eligibility. Eligibility is scoped to an exact merchant
+account, merchant type, jurisdiction, product category, method and asset; its
+evidence source and expiry are mandatory. No provider is production-eligible
+until the capability audit, merchant onboarding and common conformance suite
+pass.
+
+Selection is fail-closed: `allowed_providers` is an explicit per-shop
+allowlist, while `provider_priority` only orders providers inside that list.
+An absent or expired eligibility decision, mismatched account or jurisdiction,
+unsupported asset/method, and an unlisted provider all reject selection.
 
 The commerce boundary distinguishes `DirectGateway`, `HostedCheckout`,
 `SelfHostedCryptoProcessor`, `MarketplaceReseller` and `MerchantOfRecord`.
@@ -58,6 +67,11 @@ For scarce inventory, the commerce module may create a short-lived,
 transactional `InventoryHold` before a positive pre-checkout decision. The
 hold is idempotent, fenced against competing orders, expires deterministically
 and is revalidated after `successful_payment` before fulfillment reservation.
+
+Webhook evidence is authenticated over the original bytes together with the
+request path and headers. Payment state and event deduplication are committed
+through one payment transaction with optimistic revisions; a failed
+reconciliation must roll back rather than publish a partial transition.
 
 ## Consequences
 

@@ -63,11 +63,13 @@ callback data or a provider's mutable display number:
 - `PaymentId` — one logical payment for the order;
 - `PaymentAttemptId` — one attempt through one provider and method;
 - `ProviderPaymentId` — provider-side identity, scoped by provider;
+- `MerchantAccountId` — the exact settlement/onboarding account used by the
+  attempt;
 - `RefundId` — one refund request or provider refund;
 - `FulfillmentId` — application delivery/reservation identity.
 
-Every attempt stores its provider identity, method, amount, currency, merchant
-account scope, immutable request digest and reconciliation context. A retry of
+Every attempt stores its provider identity, method, exact asset and scale,
+merchant-account scope, immutable request digest and reconciliation context. A retry of
 the same logical attempt keeps the same idempotency key. Switching provider is
 a new attempt and is forbidden while the previous attempt is
 `UnknownOutcome` unless policy explicitly establishes that the first attempt
@@ -75,16 +77,21 @@ cannot charge.
 
 ## Money and methods
 
-Money is an exact integer amount in a declared currency/minor-unit scale. The
-contract forbids `float` and `double` for payment arithmetic. Currency scale is
-part of the currency policy and is validated before a provider request is
-created. Rounding is explicit and never performed implicitly during provider
-fallback.
+Money is an exact integer amount in a declared fiat or crypto asset and
+minor-unit scale. The contract forbids `float` and `double` for payment
+arithmetic. Currency/asset scale is part of an explicit scale policy and is
+validated before a provider request is created; a manually forged or mismatched
+scale is rejected. Rounding is explicit and never performed implicitly during
+provider fallback.
 
 Provider-neutral methods include `Card`, `Mir`, `Sbp`, `Crypto`,
 `TelegramStars` and `Other`. A provider may expose more detail in its adapter,
 but the core policy must not infer that a generic `Card` means `Mir`, or that an
 SBP payout means SBP payment acceptance.
+
+For digital goods or services on Telegram surfaces, external checkout is
+rejected by default and Telegram Stars is admitted only by an explicit policy
+decision. Stars is not a generic hosted-checkout fallback.
 
 ## Payment lifecycle
 
@@ -119,23 +126,25 @@ Rules:
 ## Provider capabilities and eligibility
 
 `PaymentProviderCapabilities` is declarative metadata, not a production
-approval. It describes supported methods, hosted checkout, payment links,
-direct API, webhooks, status lookup, refunds, partial refunds, sandbox and
-whether the provider can expose a payment hold/capture boundary. The selected
-commercial integration model and the merchant's registration/residency
-jurisdiction are separate onboarding facts and must be recorded before a
-provider is considered eligible.
+approval and never contains merchant onboarding approval. It describes
+supported methods, exact assets, hosted checkout, payment links, direct API,
+webhooks, status lookup, refunds, partial refunds, sandbox and whether the
+provider can expose a payment hold/capture boundary. The selected commercial
+integration model and the merchant's registration/residency jurisdiction are
+separate onboarding facts and must be recorded before a provider is considered
+eligible.
 
 Eligibility is a separate policy result with the following states:
 
 `candidate`, `needs_verification`, `eligible`, `deferred`, `unsupported` and
 `rejected`.
 
-The result records merchant type, registration/residency jurisdiction,
-commercial integration model, KYC/KYB outcome, prohibited goods, sanctions or
-cross-border constraints, reviewed evidence and expiry. A provider is
-selectable only when the configured merchant account is `eligible` for the
-requested method and order policy. A documented non-resident path, such as a
+The result records the exact merchant account, merchant type,
+registration/residency jurisdiction, requested method and asset, product
+category, reviewed evidence source and expiry. A provider is selectable only
+when the configured merchant account is `eligible` for the requested method,
+asset and order policy, and the evidence has not expired. A documented
+non-resident path, such as a
 foreign-company checkout, is not an ordinary-individual-without-IP path and
 must be evaluated separately.
 
@@ -174,10 +183,11 @@ they are never converted into `Succeeded` by a default branch.
 
 ## Payment policy and provider selection
 
-`PaymentPolicy` is evaluated per shop/order, not globally. It includes allowed
-currencies and methods, merchant account, maximum amount, provider priority,
-whether external checkout is permitted for the product, refund rules and the
-fallback policy for `UnknownOutcome`.
+`PaymentPolicy` is evaluated per shop/order, not globally. It includes an
+explicit `allowed_providers` set, priority only within that set, allowed
+assets and methods, product/sales-surface gates, whether external checkout is
+permitted, refund rules and the fallback policy for `UnknownOutcome`. An empty
+allowlist or an unlisted provider is a rejection; priority is never permission.
 
 Selection is deterministic: filter by merchant eligibility and method, then
 apply configured priority and capability requirements. A provider failure does
@@ -190,12 +200,13 @@ the original attempt cannot charge.
 Webhook handling has its own authentication boundary; it is not Telegram
 Update authentication. A verifier must:
 
-1. validate the provider signature over the original request bytes and the
-   provider's timestamp/replay rules;
+1. validate the provider signature over the original request bytes, path,
+   headers and the provider's timestamp/replay rules;
 2. validate merchant/account identity, payment/attempt identity, amount,
    currency and order binding;
 3. deduplicate by provider event identity and immutable payload digest;
-4. apply an atomic payment-state transition with the expected payment revision;
+4. apply an atomic payment-state transition and event deduplication with the
+   expected payment revision in one payment transaction;
 5. retain the authenticated evidence needed for later reconciliation.
 
 Events may arrive late, duplicated or out of order. An older event cannot move
@@ -217,10 +228,11 @@ state; it does not fabricate fulfillment or silently allocate the item twice.
 
 ## Repository and recovery contract
 
-`PaymentRepository` persists payment, attempt, provider-event and refund
-records behind the backend-neutral storage protocol. Writes use optimistic
-expected revisions and are atomic with the local processed-update or webhook
-deduplication record. Provider HTTP is outside the transaction.
+`PaymentRepository` begins a backend-neutral payment transaction. The
+transaction persists payment, attempt, provider-event and refund records with
+optimistic expected revisions; event deduplication and the payment transition
+commit atomically. Provider HTTP is outside the transaction. A failed
+reconciliation must roll back and must not publish a partial state transition.
 
 The recovery journal must distinguish:
 

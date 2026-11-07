@@ -64,8 +64,8 @@ and operational review.
 |---|---:|---|---|---|---|---|---|
 | FreeKassa | P0 | Merchant Checkout for individuals is advertised; exact onboarding and receipt rules must be checked | Mir and SBP methods are listed separately; confirm acceptance versus payout | Not a current requirement | Checkout/API and callback documentation are available; verify signature, status lookup and refund semantics | `claimed` | Build the first sandbox adapter only after live merchant eligibility and method tests |
 | LAVA | P1 | Individuals/self-employed are described with commercial-activity conditions; HideMy.name publicly identifies LAVA as a Russian payment partner, which is partner evidence only | Mir and SBP are advertised; confirm account and jurisdiction | Not a current priority | Hosted/API and callback details require account-level verification | `claimed` | Verify current legal entity, merchant terms, fees, limits, webhook signing and refund/status APIs |
-| TabPay | P1 | Individual and self-employed onboarding is advertised | Mir and SBP are advertised | Not a current priority | Payment links/API/webhooks require operational verification | `needs_verification` | Confirm company/account checks, settlement behavior and sandbox/live parity |
-| Paydex | P1 | Individual onboarding is advertised | Russian cards and SBP are advertised; Mir needs explicit confirmation | Not a current priority | Verify payment links, API, callbacks, status lookup and refunds | `needs_verification` | Confirm Mir acceptance and production reliability |
+| TabPay | P1 | Individual and self-employed onboarding is advertised; contractual restrictions below are unresolved | Mir and SBP are advertised | Not a current priority | Payment links/API/webhooks require operational verification | `needs_verification` | Confirm the legal entity, account model, aggregation/routing restrictions, settlement behavior and sandbox/live parity |
+| Paydex | P1 | Individual onboarding is advertised; canonical source is `paydex.pro` and operator attribution is not inferred from another domain | Russian cards and SBP are advertised; Mir needs explicit confirmation | Not a current priority | Verify payment links, API, callbacks, status lookup and refunds | `needs_verification` | Confirm legal entity, Mir acceptance and production reliability |
 | AnyPay | P1 | Individual merchants are advertised | Mir/SBP acceptance must be distinguished from other card or payout features | Not a current priority | API/payment links and callbacks are advertised; verify signature and refunds | `needs_verification` | Run a method-by-method acceptance test with an eligible account |
 | ENOT | P2 | The public API lists methods, but individual eligibility is not established here | Mir and SBP appear in API material; acceptance and merchant type need proof | Not a current priority | API/callback surface exists; verify current webhook and status contracts | `needs_verification` | Keep in inventory; do not select for P0 implementation |
 | NOWPayments | P2 | Crypto merchant onboarding | Not the Russian-card/SBP path | Crypto payments | Hosted/API, webhooks, status and refunds depend on provider policy | `claimed` | Separate crypto adapter and compliance review |
@@ -76,7 +76,7 @@ and operational review.
 | BTCPay Server | P1 for crypto | Self-hosted deployment does not require registration with a hosted provider; merchant remains responsible for legal and operational eligibility | Not the Russian-card/SBP path | Bitcoin/Lightning and other configured processors | Self-hosted API and invoice/webhook surface; verify chain confirmations, Lightning settlement and recovery | `observed` for self-hosted architecture | Define node, wallet, confirmation, backup and incident-recovery policy before adapter work |
 | CoinGate | P2 for crypto | Sole-trader onboarding may require tax documentation; anonymous personal merchant use is not assumed | Not the Russian-card/SBP path | Crypto payments | Hosted/API, callbacks and stated fee information require current account-level verification | `needs_verification` | Confirm merchant jurisdiction, KYC, refunds and payout constraints |
 | CloudPayments | P2 | Self-employed onboarding is advertised; ordinary-individual eligibility is not confirmed | Mir, Mir Pay and SBP are advertised; confirm acceptance, recurring-payment and payout conditions | Not a current priority | Hosted/API, recurring payments and callbacks require current contract verification | `needs_verification` | Confirm merchant type, receipt rules, limits, webhook signing and refunds |
-| FormaPay | P3 | Sufficient legal and operational conditions are not confirmed | Unknown | Unknown | Keep only as a research candidate until official evidence is collected | `deferred` | Do not implement or advertise support |
+| FormaPay | P3 | Sufficient legal and operational conditions are not confirmed; canonical source recorded as `formapay.io` | Unknown | Unknown | Keep only as a research candidate until official evidence is collected | `deferred` | Do not implement or advertise support |
 | Robokassa | P2 | Self-employed and other merchant paths require current onboarding review | Method availability is account and contract dependent | Not a current priority | Hosted checkout/API/callbacks are established patterns; verify current method and refund rules | `needs_verification` | Confirm individual/self-employed path and Russian method coverage |
 | YooKassa | P2 | Merchant eligibility is contract-dependent | Method availability is account and contract dependent | Not a current priority | Hosted checkout/API/webhooks/status/refunds are established integration areas | `needs_verification` | Review current eligibility, receipt and jurisdiction constraints |
 | Telegram Stars | P1 for digital Telegram goods | Telegram provider/account policy, not an external acquiring merchant | Not a Mir/SBP path | Telegram Stars | Telegram `pre_checkout_query` and `successful_payment` lifecycle | `observed` for the documented Telegram flow | Keep separate from external physical-goods checkout |
@@ -107,8 +107,8 @@ Official entry points:
 
 - [FreeKassa](https://freekassa.net/)
 - [LAVA](https://lava.ru/)
-- [TabPay](https://tabpay.io/)
-- [Paydex](https://paydex.ru/)
+- [TabPay](https://tabpay.org/terms/)
+- [Paydex](https://paydex.pro/)
 - [AnyPay](https://anypay.io/)
 - [ENOT](https://enot.io/)
 - [NOWPayments](https://nowpayments.io/)
@@ -119,7 +119,7 @@ Official entry points:
 - [BTCPay Server](https://btcpayserver.org/)
 - [CoinGate](https://coingate.com/)
 - [CloudPayments](https://cloudpayments.ru/)
-- [FormaPay](https://formapay.com/)
+- [FormaPay](https://formapay.io/)
 - [Robokassa](https://robokassa.ru/)
 - [YooKassa](https://yookassa.ru/)
 - [Telegram Stars payments](https://core.telegram.org/bots/payments-stars)
@@ -131,6 +131,36 @@ LAVA, not evidence that LAVA offers the same onboarding terms to every
 merchant. VPNPay is recorded as a marketplace/reseller research candidate; its
 public storefront does not by itself establish an open merchant API or
 Merchant-of-Record status for third-party Telegram shops.
+
+## Evidence register and unresolved provider terms
+
+The following is a source register, not a claim that a capability has been
+observed. The date is the date this audit recorded the URL (`2026-11-07`), not
+the publication date of the provider document. Homepage-only material remains
+`claimed` or `needs_verification`; it cannot establish merchant eligibility,
+Mir/SBP acceptance, webhook signatures, status lookup or settlement.
+
+| Provider | Exact source recorded | Evidence that still must be captured before `eligible` |
+|---|---|---|
+| FreeKassa | [official entry point](https://freekassa.net/) | Merchant eligibility and public offer for the exact account; separate Mir and SBP acceptance; API/webhook signature; status lookup; refund; settlement/payout. |
+| LAVA | [official entry point](https://lava.ru/); [partner disclosure](https://hide-my-name.cc/) | Current legal entity and offer; account/jurisdiction eligibility; method acceptance; API/webhook signature; status/refund; settlement. The partner disclosure is not transferable onboarding evidence. |
+| TabPay | [terms](https://tabpay.org/terms/) | Public offer and API must be checked together with the exact account. Terms appear to address payment aggregation/routing, accepting payments for third parties, third-party resources or API credentials, suspension/holds up to 180 days, and a 100% penalty with a 100,000 RUB minimum; quote and applicability require legal verification. |
+| Paydex | [canonical entry point](https://paydex.pro/) | Merchant eligibility, public offer, API, Mir/SBP acceptance, webhook/signature, status, refund and settlement evidence. `paydex.ru` is not treated as the canonical source and no common operator is assumed. |
+| AnyPay | [official entry point](https://anypay.io/) | Merchant eligibility, public offer, method-by-method Mir/SBP acceptance, API/webhook signature, status, refund and settlement evidence. |
+
+TabPay's terms also make multi-shop, multi-provider and platform use a
+`needs_verification` case. The audit must not treat a REST API or payment page
+as permission for any of the following without a provider decision:
+
+1. one merchant selling its own goods or services;
+2. one operator running several of its own shops;
+3. a platform where third-party merchants connect their own accounts;
+4. a platform collecting funds for other sellers.
+
+These scenarios have different seller-of-record, KYC/KYB, settlement,
+chargeback, tax and contractual consequences. Provider domains are recorded
+independently: `tabpay.org`, `paydex.pro` and `formapay.io` must not be
+attributed to one operator without explicit evidence.
 
 ## Capability checklist
 
