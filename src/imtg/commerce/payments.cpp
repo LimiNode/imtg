@@ -236,6 +236,9 @@ Result<void> validate_payment_request(
     }
     const auto amount = validate_money(request.amount, policy);
     if (!amount) return amount.error();
+    if (request.amount.minor_units == 0) {
+        return invalid("payment amount must be positive");
+    }
     if (!valid_method(request.method) || !valid_product(request.product_category)
         || !valid_surface(request.sales_surface)) {
         return invalid("payment method, product or surface is invalid");

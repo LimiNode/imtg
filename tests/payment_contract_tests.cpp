@@ -180,6 +180,9 @@ void test_money_and_validation()
     value.amount.scale = 0;
     CHECK(!validate_payment_request(value));
     value = request();
+    value.amount.minor_units = 0;
+    CHECK(!validate_payment_request(value));
+    value = request();
     value.method = static_cast<PaymentMethod>(255);
     CHECK(!validate_payment_request(value));
     value = request();
