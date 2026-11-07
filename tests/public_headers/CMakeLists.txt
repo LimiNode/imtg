@@ -7,7 +7,6 @@ set(IMTG_PUBLIC_HEADERS
     imtg/actions/actions.hpp
     imtg/actions/registry.hpp
     imtg/actions/token.hpp
-    imtg/commerce/payments.hpp
     imtg/core/clock.hpp
     imtg/core/core.hpp
     imtg/core/identifiers.hpp
@@ -22,6 +21,11 @@ set(IMTG_PUBLIC_HEADERS
     imtg/reconciliation/outbox.hpp
     imtg/ui/tree.hpp
     imtg/ui/ui.hpp)
+
+option(IMTG_REQUIRE_COMMERCE "Check optional commerce headers and target" OFF)
+if(IMTG_REQUIRE_COMMERCE)
+    list(APPEND IMTG_PUBLIC_HEADERS imtg/commerce/payments.hpp)
+endif()
 
 foreach(header IN LISTS IMTG_PUBLIC_HEADERS)
     string(REPLACE "/" "_" target_name "${header}")
