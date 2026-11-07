@@ -44,6 +44,11 @@ writes, not new `EffectKind` values. A module may add a typed domain outbox or
 adapter for its own external operation, but every category must specify its
 own idempotency and `UnknownOutcome` proof without changing old logical slots.
 
+Provider-neutral payment identities, webhook authentication, refunds,
+`UnknownOutcome` recovery and merchant capability checks are defined in
+[PAYMENTS.md](PAYMENTS.md). That contract is separate from Telegram update
+authentication and does not make any provider adapter part of `imtg_core`.
+
 ## Effect state machine
 
 Each durable effect has a desired revision and an explicit state: `Pending` (committed but not attempted), `InFlight`, `Applied` (response confirms success), `Failed` (non-retryable or exhausted), or `UnknownOutcome` (the request may have been accepted but the response is unavailable/ambiguous). Desired and applied UI revisions are separate; an external edit or stale worker cannot silently advance `Applied`.
