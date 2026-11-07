@@ -12,9 +12,15 @@ M1 acceptance gates are complete: deterministic rendering, typed/versioned actio
 
 The Telegram application profile work is documentation-only planning. Typed
 gateway routing, headless handlers, payment-priority handling, forms/tickets,
-commerce, moderation, durable jobs and the three reference applications are
-not implemented by this repository status; they are dependency-gated M3–M6
-work described in the research profiles and roadmap.
+commerce runtime, moderation, durable jobs and the three reference applications
+are not implemented; they are dependency-gated M3–M6 work described in the
+research profiles and roadmap. The optional `imtg_commerce` target now contains
+only the provider-neutral payment contract baseline; it does not process live
+payments or provide a production adapter. The current corrective also makes
+provider selection account- and allowlist-scoped, validates exact fiat/crypto
+asset scales, binds authenticated evidence to payment identities, and exposes
+an atomic payment/event transaction boundary. These are contract and test
+baselines, not durable storage or live provider integration.
 
 | Area | Status | Evidence / next proof |
 |---|---|---|
@@ -29,7 +35,7 @@ work described in the research profiles and roadmap.
 | Storage protocol and in-memory backend | `implemented` | [STORAGE.md](contracts/STORAGE.md); `src/imtg/storage/storage.hpp`; fixture-based `imtg_storage_tests` conformance suite with revision, ABA, schema-gate, ownership, and commit-outcome coverage |
 | Durable repositories and MDBX backend | `planned` | M2c–M2e durable claims, recovery, MDBX adapter, and process-crash proof |
 | Telegram transport / kurlyk | `planned` | M3 adapter tests against fakes and documented API limits |
-| Payment provider contracts and capability audit | `planned` | [PAYMENTS.md](contracts/PAYMENTS.md) and [PAYMENT_PROVIDER_CAPABILITY_AUDIT.md](research/PAYMENT_PROVIDER_CAPABILITY_AUDIT.md); optional `imtg_commerce` contracts and provider onboarding remain future work |
+| Payment provider contracts and capability audit | `partial` | [PAYMENTS.md](contracts/PAYMENTS.md), [PAYMENT_PROVIDER_CAPABILITY_AUDIT.md](research/PAYMENT_PROVIDER_CAPABILITY_AUDIT.md), optional `imtg_commerce` identities, account-scoped eligibility, exact asset-scale validation, evidence binding, atomic payment transactions and `imtg_payment_contract_tests`; provider adapters, durable persistence, webhooks and onboarding remain future work |
 | Render intents, reconciliation, and outbox | `partial` | M2c-a claims/fencing and M2c-b canonical `LT1` target scoping, mandatory TX2 context, authoritative session/generation/applied-target fencing, atomic outbox publication, fail-closed borrowed staging, and conservative Unknown recovery are merged; delivery-state, acknowledgements, durable adapters, and full cross-backend recovery matrix remain future work |
 | Localization | `planned` | M4 catalog, fallback, and pluralization tests |
 | Users, chats, history, access control, jobs | `planned` | M4/M5 service and retention tests |
