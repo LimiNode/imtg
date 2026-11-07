@@ -7,6 +7,7 @@ set(IMTG_PUBLIC_HEADERS
     imtg/actions/actions.hpp
     imtg/actions/registry.hpp
     imtg/actions/token.hpp
+    imtg/commerce/payments.hpp
     imtg/core/clock.hpp
     imtg/core/core.hpp
     imtg/core/identifiers.hpp
@@ -29,5 +30,9 @@ foreach(header IN LISTS IMTG_PUBLIC_HEADERS)
     file(WRITE "${source}" "#include <${header}>\nint main() { return 0; }\n")
     add_executable("${target_name}" "${source}")
     target_compile_features("${target_name}" PRIVATE cxx_std_17)
-    target_link_libraries("${target_name}" PRIVATE imtg::core)
+    if(header MATCHES "^imtg/commerce/")
+        target_link_libraries("${target_name}" PRIVATE imtg::commerce)
+    else()
+        target_link_libraries("${target_name}" PRIVATE imtg::core)
+    endif()
 endforeach()

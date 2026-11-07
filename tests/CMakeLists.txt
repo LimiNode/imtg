@@ -29,3 +29,7 @@ add_test(NAME imtg_render_intent_claim_tests COMMAND imtg_render_intent_claim_te
 add_executable(imtg_reconciliation_tests reconciliation_tests.cpp)
 target_link_libraries(imtg_reconciliation_tests PRIVATE imtg::core)
 add_test(NAME imtg_reconciliation_tests COMMAND imtg_reconciliation_tests)
+
+add_executable(imtg_payment_contract_tests payment_contract_tests.cpp)
+target_link_libraries(imtg_payment_contract_tests PRIVATE imtg::commerce)
+add_test(NAME imtg_payment_contract_tests COMMAND imtg_payment_contract_tests)
