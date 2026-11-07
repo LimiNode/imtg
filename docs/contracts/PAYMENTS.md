@@ -154,9 +154,9 @@ must be evaluated separately.
 
 ## Provider-neutral interfaces
 
-The proposed public names are intentionally provider-neutral. A later
-contract implementation must freeze their exact C++ signatures; runtime
-adapters and durable implementations remain future work.
+The proposed public names are intentionally provider-neutral. The optional
+baseline implementation freezes their exact C++ signatures; runtime adapters
+and durable implementations remain future work.
 
 ```cpp
 class IPaymentProvider;
