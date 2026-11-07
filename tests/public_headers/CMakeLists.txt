@@ -14,9 +14,11 @@ set(IMTG_PUBLIC_HEADERS
     imtg/runtime/reference_runtime.hpp
     imtg/runtime/runtime.hpp
     imtg/storage/storage.hpp
+    imtg/storage/time_encoding.hpp
     imtg/sessions/fsm.hpp
     imtg/sessions/render_intents.hpp
     imtg/sessions/session.hpp
+    imtg/reconciliation/outbox.hpp
     imtg/ui/tree.hpp
     imtg/ui/ui.hpp)
 

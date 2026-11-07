@@ -25,3 +25,7 @@ add_test(NAME imtg_session_tests COMMAND imtg_session_tests)
 add_executable(imtg_render_intent_claim_tests render_intent_claim_tests.cpp)
 target_link_libraries(imtg_render_intent_claim_tests PRIVATE imtg::core)
 add_test(NAME imtg_render_intent_claim_tests COMMAND imtg_render_intent_claim_tests)
+
+add_executable(imtg_reconciliation_tests reconciliation_tests.cpp)
+target_link_libraries(imtg_reconciliation_tests PRIVATE imtg::core)
+add_test(NAME imtg_reconciliation_tests COMMAND imtg_reconciliation_tests)

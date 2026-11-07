@@ -10,7 +10,7 @@ UI/action primitives, a bounded reference runtime, snapshot/optimistic transacti
 record generations, schema gates, explicit commit outcomes, typed session records, deterministic FSM
 transitions, processed-update deduplication, minimal atomic render intents, and reusable offline
 conformance tests. Durable process-crash persistence, MDBX, claim workers, outbox delivery, Telegram
-transport, and release artifacts remain planned. Code fragments remain conceptual unless identified as implemented in
+transport, and release artifacts remain planned. The first M2c-b reconciliation and outbox planning slice is implemented; complete recovery conformance and external delivery remain open. Code fragments remain conceptual unless identified as implemented in
 [IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
 ## Design in one minute
@@ -82,4 +82,4 @@ submodules under `external/<name>` and initialized non-recursively by default.
 
 ## Next step
 
-The next slice is M2c: render-intent processing, reconciliation, and durable outbox claims on top of the accepted M2b transaction boundary. See the roadmap for the full dependency chain.
+The next work is completing M2c-b recovery conformance on top of the accepted M2b transaction boundary, followed by delivery-state semantics. See the roadmap for the full dependency chain.

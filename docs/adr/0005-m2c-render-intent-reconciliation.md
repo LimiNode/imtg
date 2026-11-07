@@ -192,6 +192,18 @@ serving claims; page size alone is not treated as a total-work bound.
    already committed for the older revision; the delivery worker applies the
    documented coalescing policy.
 
+Every publishable TX2 plan carries an immutable reconciliation context: the
+intent and canonical conversation identities, observed session and desired
+generation values with their storage-row revisions, logical target and
+operation identity, observed applied-target row and confirmed-applied
+revision, render policy, and the original claim token plus claim-row revision.
+Missing, zero, or inconsistent context is rejected before an effect or claim
+transition is staged. TX2 loads the authoritative session and applied-target
+rows and watches the session, generation marker, applied target, claim, and
+effect identity in the same transaction. A caller-owned `stage()` is
+fail-closed: any error rolls the borrowed transaction back, so a caller must
+not commit it after a failed stage.
+
 TX2 may be retried after a definite rollback. A `RejectedConflict` or
 `StaleClaim` causes the worker to discard its local plan and rescan. `Failed`
 and `Unknown` commit outcomes are not necessarily persistable in the same
@@ -200,6 +212,17 @@ technical journal entry, and performs authoritative recovery inspection in a
 new transaction. It must not claim that a durable diagnostic exists when the
 backend could not commit it, and neither outcome is silently treated as a
 successful completion.
+
+Unknown recovery is attribution-bound. It compares the original claim token
+and pre-TX2 claim-row revision, exact logical slot, payload version, payload
+bytes, digest, desired revision, generation, session and applied-target
+evidence. `Published` requires the exact immutable effect and the expected
+post-transition claim revision; a changed/replaced claim, conflicting payload,
+later generation, or a no-op that is only `Planned` is `Inconclusive`.
+Missing or changed authoritative rows are evidence gaps and therefore also
+return `Inconclusive`; backend read failures and malformed records remain
+typed `Result` errors. Recovery reads effects through the injected
+`IOutboxRepository` and never replays the original action callback.
 
 Claim and delivery acknowledgement may use additional short storage
 transactions. "TX1" and "TX2" name the two principal business transactions;
@@ -286,11 +309,19 @@ transport reconciliation), not blindly resent.
 ### Applied-revision authority
 
 The authoritative applied state is a durable `AppliedTargetState` record keyed
-by a stable target identity, for example `(conversation, target_message_id,
-target_slot)`. The key is part of the target identity; separate Telegram
-messages or UI positions never collapse into one revision. The record contains
+by the canonical versioned `LT1` target identity. `LT1` is a length-prefixed
+encoding of the complete `ConversationKey` (including bot and chat/user
+scope) plus the stable logical slot. The key is part of the target identity;
+separate bots, conversations, Telegram messages, or UI positions never
+collapse into one revision. A raw slot or legacy unscoped identity is rejected
+by the reference repositories; compatibility requires an explicit migration,
+not silent reinterpretation. The record contains
 the last confirmed `applied_revision`, the last confirmed effect identity, and
 the storage revision/fence that admitted that observation.
+
+`physical_identity` is deliberately separate from `LT1`: it may hold a
+transport-specific message identity only after a confirmed external result.
+Planning and recovery never derive or fabricate that physical mapping.
 
 TX2 planning never advances `applied_revision`. Only a confirmed external
 result may update it, in a short transaction that validates the effect's active
@@ -298,6 +329,12 @@ claim token, expected effect revision, target identity, and monotonic revision
 rule. A late callback with a stale token or older revision returns `StaleClaim`
 and cannot overwrite newer applied state. `UnknownOutcome` leaves the applied
 revision unchanged and distinguishable from `Succeeded`.
+
+During TX2, an authoritative target whose `desired_revision` is newer than the
+plan is a stale-plan conflict and cannot be published. An `Always` plan also
+rejects a confirmed-applied revision newer than its desired revision. The
+reference `AT1` codec bounds `physical_identity` to 4096 bytes and applies the
+same bound when decoding persisted records.
 
 On restart, reconciliation reads desired intent, outbox state, and
 `AppliedTargetState` from storage; it never reconstructs applied state from the

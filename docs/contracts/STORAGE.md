@@ -1,6 +1,6 @@
 # Storage contract
 
-**Semantic owner:** persistence maintainers. **Status:** M2a protocol and deterministic in-memory reference backend are implemented in `src/imtg/storage/storage.hpp`; M2b adds typed session, processed-update, and minimal render-intent repositories. Durable claims, outbox delivery, and MDBX remain planned.
+**Semantic owner:** persistence maintainers. **Status:** M2a protocol and deterministic in-memory reference backend are implemented in `src/imtg/storage/storage.hpp`; M2b adds typed session, processed-update, and minimal render-intent repositories; M2c-a adds claims/fencing and M2c-b adds the initial reconciliation/outbox records. Complete recovery conformance, delivery semantics, and MDBX remain planned.
 
 ## Core interfaces
 
@@ -60,7 +60,8 @@ public:
         const RenderIntentId&, ITransaction&) = 0;
 };
 
-// M2c claim, fencing, outbox, and completion interfaces are planned additions.
+// M2c claim, fencing, reconciliation and outbox interfaces live under
+// src/imtg/sessions/ and src/imtg/reconciliation/.
 ```
 
 `UnitOfWork::begin()` returns a move-only owner of one transaction. The transaction borrows its
@@ -88,8 +89,25 @@ Names and value layouts may change during implementation, but these semantics ar
 
 The in-memory reference backend uses snapshot/optimistic semantics: a transaction reads a stable snapshot, sees its own writes, validates expected revisions at commit, and atomically publishes its write set. It supports multiple active optimistic writers. A backend fixture may declare that it supports only one active writer; portable conformance cases do not require parallel writers, while conflict-at-commit cases run only for capable backends. `record_if_new` returns `true` only for a new identity. Render-intent and outbox `claim_batch` return each row with an opaque, monotonically fenced `ClaimToken` and lease expiry. `complete`/`acknowledge` succeed only for the currently active token; an expired or superseded worker receives `StaleClaim` and cannot overwrite a newer owner's result.
 
-The proposed M2c render-intent, claim, fencing, applied-target and transactional
-outbox design is specified in [ADR 0005](../adr/0005-m2c-render-intent-reconciliation.md).
+The M2c render-intent, claim, fencing, applied-target and transactional outbox
+design is specified in [ADR 0005](../adr/0005-m2c-render-intent-reconciliation.md).
+The reference implementation uses schema version `OE1` for outbox effects,
+`LES1` for logical slots, `LT1` for canonical logical target identities, and
+`AT1` for applied targets. `LT1` is a versioned, length-prefixed identity that
+binds the complete canonical `ConversationKey` to a stable logical slot. Every
+outbox and applied-target row must use this canonical identity; a raw slot or
+legacy unscoped identity is rejected rather than silently reused. The optional
+`physical_identity` field in `AppliedTargetState` remains separate and is only
+populated after transport confirms the mapping. The logical namespaces
+are `outbox_effects`, `applied_targets`, and the existing
+`render_intent_claims`/`render_intent_generations` side state. A future MDBX
+adapter maps them to the planned `outbox`/metadata profile without creating
+per-conversation DBIs without changing logical identities; this in-memory
+mapping makes no durability claim. Encoders cap individual fields at 1 MiB,
+logical slot and physical-key identities at 4096 bytes, and complete records at
+4 MiB. Payload digests use the standard FNV-1a 64-bit algorithm with its
+versioned `fnv1a64:` label; they detect accidental mismatch and are not
+authentication or authorization primitives.
 
 ## Revisions, errors, and migration
 
@@ -132,6 +150,24 @@ begin UnitOfWork
   complete or supersede RenderIntent at expected intent revision
 commit
 ```
+
+The publishable TX2 plan must carry the immutable intent/conversation identity,
+session revision, desired-generation value and marker revision, logical target
+and operation identity, applied-target row and confirmed-applied revision,
+render policy, and the original claim token and claim-row revision. TX2 loads
+and watches the authoritative session, generation marker, applied target,
+claim, and outbox identity before staging any effect or claim transition.
+The authoritative applied-target `desired_revision` must not be newer than the
+plan being published; an `Always` plan also rejects a confirmed-applied
+revision newer than its desired revision. Applied-target physical identities
+are bounded to 4096 bytes in the reference format and are validated on both
+write and decode.
+`AtomicReconciliation::stage()` is fail-closed for borrowed transactions: an
+error rolls the transaction back and the owner must not commit it. Recovery
+after `Unknown` compares the original attempt's claim, exact immutable effect
+payload, and all fencing evidence; changed or insufficient evidence is
+`Inconclusive`, not success. No-op recovery requires `Completed` evidence, not
+merely `Planned`.
 
 A crash after transaction 1 leaves the render intent recoverable. A crash before transaction 2 commits leaves no visible effect and keeps the intent eligible. A crash after transaction 2 leaves a durable outbox row. Telegram HTTP is outside both transactions and may become `UnknownOutcome`. Independent physical databases have no cross-database atomicity guarantee.
 
