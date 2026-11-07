@@ -189,7 +189,7 @@ struct PaymentRecord {
 struct PaymentPolicy {
     std::vector<PaymentMethod> allowed_methods; ///< Empty means all methods.
     std::vector<std::string> allowed_currencies; ///< Empty means any valid currency.
-    std::vector<ProviderId> provider_priority; ///< Preferred provider order.
+    std::vector<ProviderId> provider_priority; ///< Preferred order; other registered providers follow deterministically.
     bool allow_external_checkout = true; ///< Non-Telegram checkout is allowed.
     bool require_webhooks = true; ///< Provider must support authenticated webhooks.
     bool require_status_lookup = true; ///< Provider must support status lookup.
@@ -231,6 +231,10 @@ public:
 };
 
 /// \brief Deterministic registry for independently configured providers.
+///
+/// The registry owns shared references to registered adapters. Registration and
+/// selection are not internally synchronized; callers must publish/configure a
+/// registry before concurrent reads or provide external synchronization.
 class PaymentProviderRegistry final {
 public:
     /// \brief Registers one provider and rejects duplicate or inconsistent IDs.
