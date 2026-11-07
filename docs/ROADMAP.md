@@ -67,13 +67,12 @@ processed-update deduplication, optimistic revisions and atomic minimal
 render-intent publication are covered by tests.
 
 **M2c-a status:** merged in `main`; claims, leases and fencing are implemented
-on the reference backend. **M2c-b status:** the reconciliation/outbox
-implementation and corrective work exist in open Draft PR #14, but have not
-received final approval or been merged into `main`. Its intended gates are
+on the reference backend. **M2c-b status:** reconciliation/outbox planning is
+merged in `main` on the backend-neutral in-memory baseline. Its gates are
 fully fenced publishable TX2 plans, fail-closed borrowed staging, canonical
 target scoping and conservative Unknown recovery. **M2c-c** delivery
-acknowledgements remain pending. No Telegram transport or process-crash
-durability is implied by the Draft implementation.
+acknowledgements remain pending. M2c-b still makes no process-crash durability
+or Telegram transport claim.
 
 **M2d/M2e:** optional MDBX adapter and cross-backend conformance/recovery
 proof. They depend on the accepted transaction/recovery contracts and must not

@@ -74,6 +74,16 @@ effect/recovery contracts.
 - An affirmative pre-checkout answer only permits the provider to continue; it
   is not evidence of `Paid`. Only a deduplicated `successful_payment` update
   authorizes the transition to `Paid` and subsequent fulfillment.
+- For scarce or single-item inventory, a positive pre-checkout response must
+  be protected by a short-lived transactional `InventoryHold` keyed by the
+  order/payment attempt. The hold has an explicit expiry, is idempotent, is
+  released on decline/cancellation/expiry, and uses the same expected-revision
+  or CAS fence as competing orders. If a hold cannot be acquired, the bot
+  rejects pre-checkout; it must not promise stock and resolve the race later.
+  A successful payment still revalidates the hold before converting it into a
+  fulfillment reservation. If the hold is unavailable after an authoritative
+  payment, the module records an explicit exception/refund or manual-recovery
+  state; it never fabricates successful fulfillment.
 - A unique key/file is reserved transactionally so two orders cannot receive
   the same item. Secrets never enter ordinary diagnostics or message text.
 - Telegram Stars (`XTR`) handling for digital goods follows current official
@@ -89,6 +99,7 @@ effect/recovery contracts.
 ```text
 Order created
   -> Payment pending
+  -> Optional short-lived inventory hold (before positive pre-checkout)
   -> Payment verified
   -> Inventory/fulfillment reserved
   -> Fulfillment committed
