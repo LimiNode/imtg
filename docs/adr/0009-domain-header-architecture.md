@@ -31,11 +31,19 @@ public-boundary clarity rather than a behavior rewrite.
 6. The migration is staged: documentation/audit first, then one domain or
    tightly coupled slice per implementation PR. Existing installed paths are
    not removed without a declared compatibility decision.
-7. The actions registry and optional commerce domain keep their current
-   semantic boundaries until their own focused changes are reviewed.
+7. The actions registry keeps its current semantic boundary until its focused
+   migration is reviewed. The optional commerce domain has its own root
+   umbrella and explicit core-only/commerce-enabled install boundary. Until
+   the `core.hpp` and `storage.hpp` umbrellas exist, commerce may use the
+   existing standalone lower-level headers as a documented transitional
+   dependency; a later migration must replace those edges with the root
+   entry points.
 
 The normative rules and current graph are maintained in
 [header-architecture.md](../guides/header-architecture.md).
+
+The commerce transition was audited against PR #17 source snapshot
+`574c448`; it does not imply that the remaining domain migrations are complete.
 
 ## Consequences
 

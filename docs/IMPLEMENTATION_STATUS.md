@@ -4,11 +4,12 @@ M2c-a and M2c-b are merged in `main`; M2c-c through M2e remain planned.
 
 The Sovetwave header-topology audit is documented in
 [header-architecture.md](guides/header-architecture.md) and ADR 0009. The
-current nested umbrella paths remain installed; root-level umbrella migration,
-an explicit install manifest, and any compatibility transition are planned
-implementation work, not claims about the current build.
+base-domain nested umbrella paths remain installed; optional commerce now has
+the root-level `imtg/commerce.hpp` when enabled. Core/storage/actions and the
+other remaining root-level umbrella migrations, explicit install manifests,
+and compatibility transitions are still planned implementation work.
 
-**As of current `main` (M2c-b merged):** the repository contains the complete
+**As of base main merge `6a0814c` (M2c-b and PR #19 merged):** the repository contains the complete
 Telegram-free M1 foundation, the M2a backend-neutral storage protocol, the M2b
 typed session/FSM semantic baseline, and the M2c-a claims/fencing plus M2c-b
 reconciliation/outbox slices. Durable process-crash persistence, delivery,
