@@ -15,12 +15,14 @@ API.
 The intended UI composition is informed by two external projects:
 
 - [ImGuiX](https://github.com/LimiNode/ImGuiX) is a candidate UI framework;
-- [mgc-platform](https://github.com/LimiNode/mgc-platform) is a reference for
-  GUI-shell lifecycle, model/controller separation and an optional local
-  engine process.
+- [mgc-platform](https://github.com/LimiNode/mgc-platform) is an optional,
+  non-normative reference for GUI-shell lifecycle, model/controller separation
+  and an optional local engine process. It may be private or unavailable to
+  public `imtg` readers.
 
 These repositories are references, not dependencies or copied application
-code. Their current APIs are not an `imtg` compatibility promise.
+code. The contract is self-contained and does not require access to the MGC
+implementation. Their current APIs are not an `imtg` compatibility promise.
 
 ## Boundary and ownership
 
@@ -149,9 +151,18 @@ turn a command into success. After reconnect, the client refreshes the
 authoritative projection and reports unresolved command outcomes by request ID
 and idempotency key.
 
-## Delivery gates
+## Offline prototype boundary
 
-Implementation of `imtg-admin` is gated on:
+An isolated UI prototype may use ImGuiX with fake models, static DTO fixtures
+and controller tests that do not require a live backend. It must not connect to
+a Telegram bot or production runtime, execute privileged or financial
+commands, or be presented as production-ready. The prototype does not weaken
+the authorization, audit, context-isolation or reconnect requirements for a
+real operator console.
+
+## Production delivery gates
+
+Production implementation of `imtg-admin` is gated on:
 
 1. an accepted operator API contract and DTO/version policy;
 2. context-isolation tests for two bots and two shops using one provider;

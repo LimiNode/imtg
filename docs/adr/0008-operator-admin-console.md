@@ -12,8 +12,11 @@ must not become a second authority for payment, order, moderation or runtime
 state, and it must not force GUI dependencies on headless deployments.
 
 ImGuiX is a candidate for the UI framework. The GUI-shell and
-model/controller/process-lifecycle organization in `mgc-platform` is a useful
-reference. Neither project is part of the current dependency graph.
+model/controller/process-lifecycle organization in `mgc-platform` is a useful,
+non-normative reference. `mgc-platform` may be private or unavailable to
+public `imtg` readers; this ADR and the operator-console contract are
+self-contained and do not depend on access to its implementation. Neither
+project is part of the current dependency graph.
 
 ## Decision
 
@@ -65,15 +68,20 @@ Costs and limits:
    survive GUI restarts as the primary operator workflow.
 4. **Sending GUI EventBus objects over the network:** couples the wire contract
    to a UI framework and loses versioned, bounded DTO semantics.
-5. **Copying all of `mgc-platform`:** imports unrelated commerce/UI
-   capabilities; only the shell and lifecycle ideas are reusable references.
+5. **Copying all of `mgc-platform`:** imports MGC-specific commerce/domain
+   logic and infrastructure dependencies; only the shell and lifecycle ideas
+   are reusable references.
 
 ## Roadmap gates
 
-The console is a later optional application track. It may be prototyped after
-the operator API, M3 gateway boundaries and M4 composition/localization
-contracts are accepted; durable screens depend on M5 services. No GUI source,
-ImGuiX dependency or operator transport is added by this ADR.
+The console is a later optional application track with two delivery stages.
+An offline UI prototype may be developed independently with ImGuiX, fake
+models, static DTO fixtures and isolated controller tests. It must not connect
+to a Telegram bot or production runtime, execute privileged commands, or be
+called production-ready. The production console remains gated on the operator
+API, M3 gateway boundaries and M4 composition/localization contracts; durable
+screens depend on M5 services. No GUI source, ImGuiX dependency or operator
+transport is added by this ADR.
 
 See [OPERATOR_CONSOLE.md](../contracts/OPERATOR_CONSOLE.md) for the normative
 contract baseline.
