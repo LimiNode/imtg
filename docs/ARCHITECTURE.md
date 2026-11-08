@@ -6,6 +6,32 @@
 
 imtg coordinates Telegram bot application state, deterministic Immediate-Mode views, typed actions/events, and durable effects. Core owns identities, scheduling contracts, UI tree semantics, controller boundaries, and storage/delivery interfaces. It does not own HTTP, JSON, Telegram credentials, a database engine, or application-specific business rules.
 
+## Header topology and dependency direction
+
+The public C++ surface follows a hierarchical domain-umbrella model. A
+complete domain owns a root-level entry point such as `<imtg/core.hpp>` and
+keeps its leaves under `src/imtg/<domain>/`. Domain dependencies form a DAG;
+umbrellas include lower-level public entry points before their own components,
+while leaves never include their own umbrella. Cross-domain includes use
+`<imtg/...>` entry points, intra-domain includes use local paths, and no `..`
+relative include is permitted. Public standalone headers are self-contained;
+private leaves are excluded from installation and may rely on a documented
+umbrella context.
+
+The audited current graph is `actions → core`, `storage → core`,
+`sessions → storage`, `reconciliation → sessions`, `ui → actions`, and
+`runtime → ui` (with direct core dependencies where required). The graph is
+acyclic, but the current `core/core.hpp`, `actions/actions.hpp`,
+`ui/ui.hpp`, and `runtime/runtime.hpp` locations are transitional. Storage,
+sessions, and reconciliation do not yet have umbrellas. The staged migration,
+install boundary, and compatibility policy are defined in
+[header-architecture.md](guides/header-architecture.md) and
+[ADR 0009](adr/0009-domain-header-architecture.md).
+
+This documentation decision does not move headers or change runtime behavior.
+Each later implementation PR must update the explicit install manifest,
+standalone/umbrella tests, and any declared compatibility mapping together.
+
 The runtime is organized as:
 
 1. an `UpdateGateway` performs stateless validation, normalizes external input, validates token syntax/integrity, and derives the `ConversationKey`;

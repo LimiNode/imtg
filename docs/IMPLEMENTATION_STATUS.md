@@ -2,6 +2,12 @@
 
 M2c-a and M2c-b are merged in `main`; M2c-c through M2e remain planned.
 
+The Sovetwave header-topology audit is documented in
+[header-architecture.md](guides/header-architecture.md) and ADR 0009. The
+current nested umbrella paths remain installed; root-level umbrella migration,
+an explicit install manifest, and any compatibility transition are planned
+implementation work, not claims about the current build.
+
 **As of current `main` (M2c-b merged):** the repository contains the complete
 Telegram-free M1 foundation, the M2a backend-neutral storage protocol, the M2b
 typed session/FSM semantic baseline, and the M2c-a claims/fencing plus M2c-b
@@ -24,6 +30,7 @@ audit contract must be accepted before a separate GUI target is implemented.
 | Area | Status | Evidence / next proof |
 |---|---|---|
 | Architecture and contracts | `contract-only` | Markdown documents in `docs/`; review links and invariants |
+| Header topology | `documented; migration planned` | [Header architecture guide](guides/header-architecture.md), [ADR 0009](adr/0009-domain-header-architecture.md); no source relocation yet |
 | CMake `imtg_core` target and C++17 baseline | `implemented` | Root CMake target configures/builds; CTest executes offline core tests |
 | Typed identities and deterministic clock | `implemented` | `src/imtg/core/`; M1a equality/encoding/hash tests |
 | Immediate-Mode UI tree | `partial` | M1b implements immutable tree nodes, stable paths, RAII scopes, duplicate detection, and offline tests; components remain intentionally small |

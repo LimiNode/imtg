@@ -81,6 +81,13 @@ or Telegram transport claim.
 proof. They depend on the accepted transaction/recovery contracts and must not
 create a DBI per user or chat.
 
+**Header architecture track:** the Sovetwave domain-umbrella audit and rules
+are documented in [header-architecture.md](guides/header-architecture.md) and
+[ADR 0009](adr/0009-domain-header-architecture.md). Root-level umbrella
+migration and explicit install-boundary changes are separate, staged
+implementation PRs; this track does not change M2 behavior or claim that the
+migration is complete.
+
 **M2 acceptance:** in-memory and MDBX conformance covers schema compatibility,
 atomic multi-record commit, duplicate updates, revision conflicts, TX1/TX2
 crash points, stale fencing, uncertain commit, interrupted migration, bounded
