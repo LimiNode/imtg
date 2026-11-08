@@ -60,6 +60,7 @@ The core owns contracts and deterministic orchestration. `kurlyk` is a planned t
 - [Implementation status](docs/IMPLEMENTATION_STATUS.md) — what exists today.
 - [Reference scenarios](docs/reference-scenarios.md) — end-to-end design examples.
 - [Sessions and FSM](docs/contracts/SESSIONS_AND_FSM.md) — typed session and transactional transition contract.
+- [Operator console](docs/contracts/OPERATOR_CONSOLE.md) — optional `imtg-admin` boundary and delivery gates.
 - [Engineering governance](docs/DOCUMENTATION_GOVERNANCE.md) — how contracts stay canonical.
 - [Coding style](docs/guides/coding-style.md) — C++17, naming, ownership, and Doxygen rules.
 - [Public API documentation](docs/guides/public-api-documentation.md) — semantic coverage and strict validation.

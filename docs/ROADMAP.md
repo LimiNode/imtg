@@ -147,6 +147,29 @@ compatibility review for every backend/transport. **Deferred:** features
 without a measured use case, including AI moderation unless its lower authority
 and cost limits are demonstrated.
 
+## Optional application track — `imtg-admin`
+
+The future `imtg-admin` operator console is a separate, optional application,
+not a core-library milestone. Its UI may use [ImGuiX](https://github.com/LimiNode/ImGuiX),
+while [mgc-platform](https://github.com/LimiNode/mgc-platform) is a reference
+for GUI-shell lifecycle and model/controller organization. Neither repository
+is a dependency of `imtg_core`, and no GUI source or transport is authorized
+by this roadmap entry.
+
+The primary integration path is an authenticated, versioned operator API to a
+remote runtime. Local bot-process supervision is an optional deployment mode.
+The console owns presentation and bounded local projections; runtime, commerce,
+storage and authorization remain backend authorities. Bot, shop and operator
+context must fence requests, drafts and late responses.
+
+Implementation is gated on the [operator console contract](contracts/OPERATOR_CONSOLE.md),
+an accepted operator API/DTO policy, authorization and audit conformance,
+context-isolation and reconnect tests, and an explicitly approved separate GUI
+target. The architecture decision and rejected alternatives are recorded in
+[ADR 0008](adr/0008-operator-admin-console.md). Until those gates are met,
+`imtg-admin` remains documentation-only and headless deployments remain
+unchanged.
+
 ## Reference applications and ordering
 
 These names describe separately buildable integration targets, not current
