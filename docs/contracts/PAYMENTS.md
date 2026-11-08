@@ -13,6 +13,21 @@ and other applications. It supports external hosted checkout, payment links,
 provider APIs, webhooks, refunds and server-side status lookup without putting
 provider SDK types or merchant policy in the core library.
 
+## Public header topology
+
+The optional commerce module has one domain entry point:
+`<imtg/commerce.hpp>`. It includes the provider-neutral value, policy, record,
+transaction, provider and service contracts in dependency order. The grouped
+standalone headers under `imtg/commerce/` are public entry points when a
+consumer needs a narrower dependency: `PaymentTypes.hpp`, `PaymentPolicy.hpp`,
+`PaymentRecords.hpp`, `PaymentTransaction.hpp`, `PaymentProvider.hpp` and
+`PaymentServices.hpp`. The pre-merge draft path
+`<imtg/commerce/payments.hpp>` is not retained as a compatibility header.
+
+The umbrella depends on core value/result contracts and the storage transaction
+contract; it does not introduce a reverse dependency from core to commerce.
+No provider SDK or transport header is installed by this module.
+
 ## Boundaries
 
 The payment module owns payment identity, provider selection, payment state,

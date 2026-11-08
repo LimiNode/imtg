@@ -24,7 +24,14 @@ set(IMTG_PUBLIC_HEADERS
 
 option(IMTG_REQUIRE_COMMERCE "Check optional commerce headers and target" OFF)
 if(IMTG_REQUIRE_COMMERCE)
-    list(APPEND IMTG_PUBLIC_HEADERS imtg/commerce/payments.hpp)
+    list(APPEND IMTG_PUBLIC_HEADERS
+        imtg/commerce.hpp
+        imtg/commerce/PaymentTypes.hpp
+        imtg/commerce/PaymentPolicy.hpp
+        imtg/commerce/PaymentRecords.hpp
+        imtg/commerce/PaymentTransaction.hpp
+        imtg/commerce/PaymentProvider.hpp
+        imtg/commerce/PaymentServices.hpp)
 endif()
 
 foreach(header IN LISTS IMTG_PUBLIC_HEADERS)

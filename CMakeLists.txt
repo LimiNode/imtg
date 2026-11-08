@@ -45,19 +45,22 @@ install(TARGETS imtg_core EXPORT imtgTargets)
 if(IMTG_BUILD_COMMERCE)
     install(TARGETS imtg_commerce EXPORT imtgTargets)
 endif()
+install(DIRECTORY src/imtg/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg
+    FILES_MATCHING
+    PATTERN "*.hpp"
+    PATTERN "*.tpp"
+    PATTERN "*.ipp"
+    PATTERN "commerce" EXCLUDE
+    PATTERN "commerce.hpp" EXCLUDE)
 if(IMTG_BUILD_COMMERCE)
-    install(DIRECTORY src/imtg/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg
+    install(FILES src/imtg/commerce.hpp
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg)
+    install(DIRECTORY src/imtg/commerce/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg/commerce
         FILES_MATCHING
         PATTERN "*.hpp"
         PATTERN "*.tpp"
         PATTERN "*.ipp")
-else()
-    install(DIRECTORY src/imtg/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg
-        FILES_MATCHING
-        PATTERN "*.hpp"
-        PATTERN "*.tpp"
-        PATTERN "*.ipp"
-        PATTERN "commerce" EXCLUDE)
 endif()
 install(EXPORT imtgTargets
     FILE imtgTargets.cmake
