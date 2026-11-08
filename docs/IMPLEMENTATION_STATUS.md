@@ -16,6 +16,11 @@ commerce, moderation, durable jobs and the three reference applications are
 not implemented by this repository status; they are dependency-gated M3–M6
 work described in the research profiles and roadmap.
 
+The optional `imtg-admin` operator console is also documentation-only. Its
+ImGuiX-based UI and the GUI-shell ideas referenced from `mgc-platform` are not
+dependencies of `imtg_core`; an authenticated operator API, authorization and
+audit contract must be accepted before a separate GUI target is implemented.
+
 | Area | Status | Evidence / next proof |
 |---|---|---|
 | Architecture and contracts | `contract-only` | Markdown documents in `docs/`; review links and invariants |
@@ -33,5 +38,6 @@ work described in the research profiles and roadmap.
 | Localization | `planned` | M4 catalog, fallback, and pluralization tests |
 | Users, chats, history, access control, jobs | `planned` | M4/M5 service and retention tests |
 | Build targets, releases, CI | `implemented` | CMake install/export package, Debug/Release CTest, and CI matrix |
+| Operator console (`imtg-admin`) | `planned` | [Operator console contract](contracts/OPERATOR_CONSOLE.md) and [ADR 0008](adr/0008-operator-admin-console.md); no GUI source, transport, or dependency is present |
 
 README sketches and this design do not imply a working build. This table must be updated whenever a later PR changes implementation coverage.
