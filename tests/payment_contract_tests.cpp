@@ -4,6 +4,7 @@
 #include <chrono>
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace {
 
@@ -66,23 +67,32 @@ public:
     Result<PaymentRecord> save(const PaymentRecord& record,
                                std::uint64_t) override
     {
+        if (m_state != TransactionState::Active) {
+            return Error{ErrorCode::InvalidState,
+                         "payment transaction is not active"};
+        }
         m_record = record;
         return record;
     }
 
     Result<void> record_event(const PaymentEventRecord& event) override
     {
-        if (m_event.has_value()) {
-            if (m_event->provider == event.provider
-                && m_event->merchant_account == event.merchant_account
-                && m_event->event_id == event.event_id
-                && m_event->payload_digest == event.payload_digest) {
-                return {};
-            }
-            return Error{ErrorCode::StorageConflict,
-                         "payment event identity has a different digest"};
+        if (m_state != TransactionState::Active) {
+            return Error{ErrorCode::InvalidState,
+                         "payment transaction is not active"};
         }
-        m_event = event;
+        for (const auto& existing : m_events) {
+            if (existing.provider == event.provider
+                && existing.merchant_account == event.merchant_account
+                && existing.event_id == event.event_id) {
+                if (existing.payload_digest == event.payload_digest) {
+                    return {};
+                }
+                return Error{ErrorCode::StorageConflict,
+                             "payment event identity has a different digest"};
+            }
+        }
+        m_events.push_back(event);
         return {};
     }
 
@@ -93,6 +103,14 @@ public:
                                 Error{ErrorCode::InvalidState,
                                       "payment transaction is not active"}};
         }
+        if (m_inject_unknown_commit) {
+            m_state = TransactionState::Unknown;
+            return CommitResult{CommitOutcome::Unknown,
+                                Error{ErrorCode::StorageUnknownCommit,
+                                      "payment commit outcome is unknown"}};
+        }
+        m_published_record = m_record;
+        m_published_events = m_events;
         m_committed = true;
         m_state = TransactionState::Committed;
         return CommitResult{CommitOutcome::Committed, std::nullopt};
@@ -104,12 +122,20 @@ public:
             m_rolled_back = true;
             m_state = TransactionState::RolledBack;
             m_record.reset();
-            m_event.reset();
+            m_events.clear();
         }
     }
 
+    [[nodiscard]] std::size_t published_event_count() const noexcept
+    {
+        return m_published_events.size();
+    }
+
     std::optional<PaymentRecord> m_record;
-    std::optional<PaymentEventRecord> m_event;
+    std::optional<PaymentRecord> m_published_record;
+    std::vector<PaymentEventRecord> m_events;
+    std::vector<PaymentEventRecord> m_published_events;
+    bool m_inject_unknown_commit = false;
     bool m_committed = false;
     bool m_rolled_back = false;
     TransactionState m_state = TransactionState::Active;
@@ -300,6 +326,8 @@ void test_selection_rejects_context_and_capability_mismatches()
 
 void test_payment_transaction_is_the_deduplication_authority()
 {
+    // This fake checks interface-level staging and terminal semantics only;
+    // durable atomicity and crash recovery require a backend conformance suite.
     FakePaymentRepository repository;
     auto transaction_result = repository.begin_transaction();
     CHECK(transaction_result);
@@ -313,22 +341,62 @@ void test_payment_transaction_is_the_deduplication_authority()
     CHECK(!transaction->record_event(PaymentEventRecord{
         ProviderId{"provider"}, MerchantAccountId{"merchant-1"},
         "event-1", "digest-2"}));
-    CHECK(transaction->commit().outcome == CommitOutcome::Committed);
+    CHECK(transaction->record_event(PaymentEventRecord{
+        ProviderId{"provider"}, MerchantAccountId{"merchant-1"},
+        "event-2", "digest-2"}));
+    CHECK(transaction->record_event(PaymentEventRecord{
+        ProviderId{"provider"}, MerchantAccountId{"merchant-2"},
+        "event-1", "digest-1"}));
+    CHECK(transaction->record_event(PaymentEventRecord{
+        ProviderId{"other-provider"}, MerchantAccountId{"merchant-1"},
+        "event-1", "digest-1"}));
     auto* fake = repository.m_transaction;
     CHECK(fake != nullptr);
-    CHECK(fake->m_event.has_value());
+    CHECK(fake->published_event_count() == 0);
+    CHECK(transaction->commit().outcome == CommitOutcome::Committed);
+    CHECK(fake->published_event_count() == 4);
     CHECK(fake->m_committed);
     CHECK(fake->state() == TransactionState::Committed);
 
     auto rollback_result = repository.begin_transaction();
     CHECK(rollback_result);
     auto rollback_transaction = std::move(rollback_result).value();
+    auto* rollback_fake = repository.m_transaction;
     CHECK(rollback_transaction->record_event(PaymentEventRecord{
         ProviderId{"provider"}, MerchantAccountId{"merchant-1"},
         "event-2", "digest-2"}));
     rollback_transaction->rollback();
     CHECK(rollback_transaction->state() == TransactionState::RolledBack);
+    CHECK(rollback_fake->m_events.empty());
+    CHECK(rollback_fake->published_event_count() == 0);
     CHECK(rollback_transaction->commit().outcome == CommitOutcome::Failed);
+}
+
+void test_payment_transaction_unknown_commit_is_terminal()
+{
+    FakePaymentRepository repository;
+    auto transaction_result = repository.begin_transaction();
+    CHECK(transaction_result);
+    auto transaction = std::move(transaction_result).value();
+    auto* fake = repository.m_transaction;
+    CHECK(fake != nullptr);
+
+    PaymentRecord record;
+    record.payment_id = PaymentId{"payment-unknown"};
+    CHECK(transaction->save(record, 0));
+    CHECK(transaction->record_event(PaymentEventRecord{
+        ProviderId{"provider"}, MerchantAccountId{"merchant-1"},
+        "event-unknown", "digest-unknown"}));
+    fake->m_inject_unknown_commit = true;
+
+    const auto first = transaction->commit();
+    CHECK(first.outcome == CommitOutcome::Unknown);
+    CHECK(first.error.has_value());
+    CHECK(first.error->code == ErrorCode::StorageUnknownCommit);
+    CHECK(transaction->state() == TransactionState::Unknown);
+    CHECK(transaction->commit().outcome == CommitOutcome::Failed);
+    transaction->rollback();
+    CHECK(transaction->state() == TransactionState::Unknown);
 }
 
 void test_registry_is_account_scoped_and_allowlisted()
@@ -419,5 +487,6 @@ int main()
     test_evidence_binding();
     test_selection_rejects_context_and_capability_mismatches();
     test_payment_transaction_is_the_deduplication_authority();
+    test_payment_transaction_unknown_commit_is_terminal();
     return 0;
 }

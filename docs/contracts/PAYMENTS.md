@@ -160,6 +160,11 @@ The proposed public names are intentionally provider-neutral. The optional
 baseline implementation freezes their exact C++ signatures; runtime adapters
 and durable implementations remain future work.
 
+The deterministic payment-contract fakes exercise interface-level staging,
+deduplication and terminal commit outcomes only. They are not evidence of
+durable atomicity or process-crash recovery; those guarantees require the
+backend conformance and recovery suites described below.
+
 ```cpp
 class IPaymentProvider;
 class PaymentProviderRegistry;
