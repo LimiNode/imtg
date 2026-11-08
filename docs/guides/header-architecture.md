@@ -152,6 +152,11 @@ The intended mapping is:
 | `imtg/ui/ui.hpp` | `imtg/ui.hpp` | relocate umbrella |
 | `imtg/runtime/runtime.hpp` | `imtg/runtime.hpp` | relocate umbrella |
 
+Component leaf paths such as `imtg/core/identifiers.hpp` and
+`imtg/sessions/session.hpp` remain the owning public paths in the target model;
+the migration changes domain entry points, not the location of a leaf unless a
+separate ownership review explicitly says otherwise.
+
 The old nested paths remain available until an implementation PR makes an
 explicit compatibility decision. That PR must identify which paths were
 promised to consumers, choose a versioned removal or a time-bounded forwarding
