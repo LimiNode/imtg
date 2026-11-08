@@ -28,6 +28,10 @@ install boundary, and compatibility policy are defined in
 [header-architecture.md](guides/header-architecture.md) and
 [ADR 0009](adr/0009-domain-header-architecture.md).
 
+The Actions implementation snapshot `8a2315d` now provides the root
+`<imtg/actions.hpp>` entry point and responsibility-based standalone headers;
+the old nested Actions paths remain compatibility shims during migration.
+
 This documentation decision does not move headers or change runtime behavior.
 Each later implementation PR must update the explicit install manifest,
 standalone/umbrella tests, and any declared compatibility mapping together.
