@@ -17,6 +17,23 @@ Avoid comments that merely restate a declaration. Public fields should explain t
 invariant. Every parameter and non-void return value must be documented. Internal implementation
 details stay in ordinary comments unless they form part of a public contract.
 
+## Header entry points
+
+Each complete domain has one documented umbrella entry point at
+`<imtg/<domain>.hpp>`. An umbrella documents the domain boundary and re-exports
+owned public components; it does not duplicate declarations. Public standalone
+headers are also valid first includes and must carry the documentation needed
+to use their exposed types and operations. A private leaf may depend on the
+umbrella context only when the architecture guide says so and the install
+manifest excludes it.
+
+The public-header test must compile every installed umbrella and every declared
+standalone header as the first include. It must also prove that private leaves
+are not installed. Include order, cross-domain entry points, and compatibility
+shims are architectural contracts, not merely build conveniences. See
+[header architecture](header-architecture.md) for the inventory and staged
+migration policy.
+
 ## Validation
 
 Doxygen remains optional for normal C++ configuration and builds. To run the strict public API

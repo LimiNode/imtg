@@ -28,6 +28,24 @@ Detailed rules are in [coding-style](docs/guides/coding-style.md), [agent workfl
 Public API documentation requirements and validation commands are in
 [public API documentation](docs/guides/public-api-documentation.md).
 
+## Header architecture
+
+- Complete domains expose a root-level umbrella at `src/imtg/<domain>.hpp`;
+  domain leaves remain under `src/imtg/<domain>/`.
+- Domain dependencies form a DAG. Umbrellas include lower-level public entry
+  points and their own components in a deterministic order; leaves never
+  include their own umbrella.
+- Public standalone headers are self-contained. Private leaves may rely on a
+  documented umbrella context, but are not installed or tested as public API.
+- Cross-domain includes use `<imtg/...>` entry points; intra-domain includes
+  use local paths; `..` relative includes are forbidden.
+- The install manifest names supported public entry points explicitly. Update
+  the topology audit and header tests when a domain or public boundary changes.
+
+The current inventory, target graph, and migration policy are normative in
+[header architecture](docs/guides/header-architecture.md) and
+[ADR 0009](docs/adr/0009-domain-header-architecture.md).
+
 ## Repository structure
 
 - Non-template `.cpp` implementations live beside their owning `.hpp` under `src/imtg/<domain>/`.

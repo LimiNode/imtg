@@ -9,10 +9,25 @@
 - Keep lines approximately 100–120 columns. Do not use `using namespace` in headers or source files.
 - Do not use lambda default captures `[&]` or `[=]`; enumerate captures explicitly.
 - Prefer RAII, value semantics, const-correctness, explicit ownership, and bounded allocation. Document lifetime and thread safety.
-- Use `.hpp` for public declarations, `.cpp` for non-template implementation, `.tpp` for template implementation, and `.ipp` for header-visible helpers. One primary type per `CamelCase.hpp`; utility/umbrella headers use `snake_case.hpp`.
+- Use `.hpp` for public declarations, `.cpp` for non-template implementation, `.tpp` for template implementation, and `.ipp` for header-visible helpers. One meaningful primary type per `CamelCase.hpp`; utility and domain umbrella headers use `snake_case.hpp`.
 - Co-locate public headers and non-template implementations under `src/imtg/<domain>/`. Consumers
   continue to include `<imtg/...>`; the physical source layout must not leak into public includes.
-- Public headers use an `IMTG_..._HPP` include guard (or an equivalent project-approved mechanism) and include only what they require. The header that defines a public type owns its declaration; umbrella headers re-export owned headers but do not create duplicate declarations. Dependency direction follows architecture: core contracts do not include adapter headers.
+- Each complete domain owns a root-level umbrella at `src/imtg/<domain>.hpp`.
+  Public headers use an `IMTG_..._HPP` include guard (or an equivalent
+  project-approved mechanism) and include only what they require. The header
+  that defines a public type owns its declaration; umbrella headers re-export
+  owned headers but do not create duplicate declarations. Domain dependencies
+  form a DAG: lower-level public entry points may be included by higher-level
+  umbrellas, but leaves never include their own umbrella. Core contracts do
+  not include adapter headers.
+- Cross-domain includes use `<imtg/...>` entry points; intra-domain includes
+  use local paths. `..` relative includes and dependencies on consumer include
+  order are forbidden. A public standalone header compiles as the first include
+  in a translation unit. Private leaves may rely on a documented umbrella
+  context only when they are excluded from the installed public manifest.
+- The complete inventory and staged migration rules are maintained in
+  [header architecture](header-architecture.md); do not perform a mechanical
+  repository-wide relocation without a reviewed implementation PR.
 - Do not rename third-party APIs. Naming exceptions require an ADR.
 
 Every new public type and nontrivial public operation uses Doxygen in English in the same PR
