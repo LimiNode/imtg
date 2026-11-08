@@ -1,4 +1,4 @@
-#include "imtg/actions/registry.hpp"
+#include <imtg/actions/ActionRegistry.hpp>
 
 namespace imtg {
 

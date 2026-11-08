@@ -1,7 +1,7 @@
 #ifndef IMTG_RUNTIME_REFERENCE_RUNTIME_HPP
 #define IMTG_RUNTIME_REFERENCE_RUNTIME_HPP
 
-#include "imtg/actions/registry.hpp"
+#include <imtg/actions/ActionRegistry.hpp>
 #include "imtg/core/identifiers.hpp"
 #include "imtg/ui/tree.hpp"
 

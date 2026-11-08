@@ -1,4 +1,4 @@
-#include "imtg/actions/actions.hpp"
+#include <imtg/actions.hpp>
 #include "imtg/ui/ui.hpp"
 #include "test_support.hpp"
 

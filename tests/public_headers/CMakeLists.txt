@@ -4,7 +4,13 @@ project(imtg_public_headers LANGUAGES CXX)
 find_package(imtg CONFIG REQUIRED)
 
 set(IMTG_PUBLIC_HEADERS
+    imtg/actions.hpp
     imtg/actions/actions.hpp
+    imtg/actions/ActionCommand.hpp
+    imtg/actions/ActionContext.hpp
+    imtg/actions/ActionHandle.hpp
+    imtg/actions/ActionRegistry.hpp
+    imtg/actions/PayloadCodec.hpp
     imtg/actions/registry.hpp
     imtg/actions/token.hpp
     imtg/core/clock.hpp
