@@ -47,7 +47,7 @@ The base-domain inventory below is measured against the immutable PR #19 merge
 against the restacked PR #17 source snapshot `574c448` (the same commerce
 source that was reviewed at `fb5754d1a081ad8a4bc184a4bd26043137126c39`). The
 Actions implementation addendum is measured against source snapshot
-`8a2315d2213a5f489068035b9f8b494327572566`. These snapshots are explicit so
+`7918e9459940f15cf738f1d350b014cc1b62959b`. These snapshots are explicit so
 the audit does not silently change with a future `main`.
 
 ## Audit of the current tree
