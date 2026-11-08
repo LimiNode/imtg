@@ -83,6 +83,11 @@ adapter for its external effects; no speculative `EffectKind` values are added
 to core. Every external category defines its own idempotency, retry and
 `UnknownOutcome` proof.
 
+Payment-provider identities, capability checks and webhook/reconciliation
+invariants are owned by the provider-neutral payment contract in
+[`PAYMENTS.md`](../contracts/PAYMENTS.md); this routing ADR does not choose a
+vendor or make commerce adapters part of the Telegram gateway.
+
 ## Consequences
 
 Positive:
