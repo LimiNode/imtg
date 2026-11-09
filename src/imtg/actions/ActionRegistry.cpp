@@ -2,6 +2,30 @@
 
 namespace imtg {
 
+Result<void> ActionRegistry::validate_handle_state(
+    const ActionId& action_id,
+    std::uint32_t payload_version,
+    std::uint64_t generation,
+    const std::weak_ptr<const void>& registry_identity) const
+{
+    if (registry_identity.expired() || registry_identity.lock() != m_identity) {
+        return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
+    }
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    const auto found = m_entries.find(action_id.value);
+    if (found == m_entries.end()) {
+        return Error{ErrorCode::UnknownAction, "action route is not registered"};
+    }
+    if (found->second->generation != generation) {
+        return Error{ErrorCode::InvalidArgument, "action handle is stale"};
+    }
+    if (found->second->payload_version != payload_version) {
+        return Error{ErrorCode::PayloadVersionMismatch,
+                     "action payload version is incompatible"};
+    }
+    return Result<void>();
+}
+
 Result<void> ActionRegistry::invoke(std::string_view token,
                                     ActionContext::DispatchSink sink) const
 {

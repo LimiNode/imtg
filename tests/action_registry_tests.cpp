@@ -64,6 +64,7 @@ int main()
     CHECK(handle_result);
     const auto handle = handle_result.value();
     CHECK(handle.is_valid());
+    CHECK(handle.validate());
 
     const auto token_result = registry.make_token(handle, DeleteItem{42});
     CHECK(token_result);
@@ -94,10 +95,13 @@ int main()
     }));
 
     CHECK(registry.unregister_action(imtg::ActionId{"delete.v1"}));
+    CHECK(!handle.validate());
     const auto replacement_same_registry = registry.register_action<DeleteItem>(
         imtg::ActionId{"delete.v1"}, delete_codec(1),
         [](imtg::ActionContext&, const DeleteItem&) { return imtg::Result<void>(); });
     CHECK(replacement_same_registry);
+    CHECK(!handle.validate());
+    CHECK(replacement_same_registry.value().validate());
     CHECK(!registry.make_token(handle, DeleteItem{8}));
     CHECK(registry.make_token(replacement_same_registry.value(), DeleteItem{8}));
 

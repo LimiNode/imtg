@@ -55,7 +55,13 @@ public:
 
     /// \brief Validates ownership, generation and payload version against the registry.
     /// \return Success only while the original registration remains current.
-    [[nodiscard]] Result<void> validate() const;
+    [[nodiscard]] Result<void> validate() const
+    {
+        if (m_owner == nullptr || m_registry_identity.expired() || !m_validate) {
+            return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
+        }
+        return m_validate();
+    }
 
 private:
     friend class ActionRegistry;
@@ -66,6 +72,7 @@ private:
     const ActionRegistry* m_owner = nullptr;
     std::weak_ptr<const void> m_registry_identity;
     std::function<Result<std::string>(const Payload&)> m_encode;
+    std::function<Result<void>()> m_validate;
 };
 
 } // namespace imtg

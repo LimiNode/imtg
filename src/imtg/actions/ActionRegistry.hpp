@@ -86,6 +86,13 @@ public:
         handle.m_owner = this;
         handle.m_registry_identity = m_identity;
         handle.m_encode = std::move(encode);
+        const auto validation_identity = handle.m_registry_identity;
+        const auto validation_action_id = handle.m_action_id;
+        handle.m_validate = [this, validation_identity, validation_action_id,
+                             payload_version, generation] {
+            return validate_handle_state(validation_action_id, payload_version, generation,
+                                         validation_identity);
+        };
         return handle;
     }
 
@@ -139,22 +146,11 @@ public:
     /// \return Success or an ownership, stale-generation or version error.
     [[nodiscard]] Result<void> validate_handle(const ActionHandle<Payload>& handle) const
     {
-        if (!handle.is_valid() || handle.m_owner != this
-            || handle.m_registry_identity.lock() != m_identity) {
+        if (!handle.is_valid() || handle.m_owner != this) {
             return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
         }
-        std::shared_lock<std::shared_mutex> lock(m_mutex);
-        const auto found = m_entries.find(handle.action_id().value);
-        if (found == m_entries.end()) {
-            return Error{ErrorCode::UnknownAction, "action route is not registered"};
-        }
-        if (found->second->generation != handle.m_generation) {
-            return Error{ErrorCode::InvalidArgument, "action handle is stale"};
-        }
-        if (found->second->payload_version != handle.payload_version()) {
-            return Error{ErrorCode::PayloadVersionMismatch, "action payload version is incompatible"};
-        }
-        return Result<void>();
+        return validate_handle_state(handle.action_id(), handle.payload_version(),
+                                     handle.m_generation, handle.m_registry_identity);
     }
 
 private:
@@ -180,6 +176,12 @@ private:
         std::function<Result<void>(ActionContext&, std::string_view)> invoke;
     };
 
+    [[nodiscard]] Result<void> validate_handle_state(
+        const ActionId& action_id,
+        std::uint32_t payload_version,
+        std::uint64_t generation,
+        const std::weak_ptr<const void>& registry_identity) const;
+
     const ITokenCodec& m_token_codec;
     const IClock& m_clock;
     mutable std::shared_mutex m_mutex;
@@ -187,15 +189,6 @@ private:
     std::uint64_t m_next_generation = 1;
     std::shared_ptr<const void> m_identity;
 };
-
-template <typename Payload>
-Result<void> ActionHandle<Payload>::validate() const
-{
-    if (m_owner == nullptr || m_registry_identity.expired()) {
-        return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
-    }
-    return m_owner->validate_handle(*this);
-}
 
 } // namespace imtg
 
