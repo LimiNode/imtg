@@ -11,7 +11,7 @@ paths. Core/storage and the other remaining root-level umbrella migrations,
 explicit install manifests, and compatibility transitions are still planned
 implementation work.
 
-**As of base main merge `6a0814c` (M2c-b and PR #19 merged):** the repository contains the complete
+**As of main merge `b89c5f7` (M2c-b, PR #19, and PR #17 merged):** the repository contains the complete
 Telegram-free M1 foundation, the M2a backend-neutral storage protocol, the M2b
 typed session/FSM semantic baseline, and the M2c-a claims/fencing plus M2c-b
 reconciliation/outbox slices. Durable process-crash persistence, delivery,
