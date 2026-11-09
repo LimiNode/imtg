@@ -22,6 +22,18 @@ set(IMTG_PUBLIC_HEADERS
     imtg/ui/tree.hpp
     imtg/ui/ui.hpp)
 
+option(IMTG_REQUIRE_COMMERCE "Check optional commerce headers and target" OFF)
+if(IMTG_REQUIRE_COMMERCE)
+    list(APPEND IMTG_PUBLIC_HEADERS
+        imtg/commerce.hpp
+        imtg/commerce/PaymentTypes.hpp
+        imtg/commerce/PaymentPolicy.hpp
+        imtg/commerce/PaymentRecords.hpp
+        imtg/commerce/PaymentTransaction.hpp
+        imtg/commerce/PaymentProvider.hpp
+        imtg/commerce/PaymentServices.hpp)
+endif()
+
 foreach(header IN LISTS IMTG_PUBLIC_HEADERS)
     string(REPLACE "/" "_" target_name "${header}")
     string(REPLACE "." "_" target_name "${target_name}")
@@ -29,5 +41,9 @@ foreach(header IN LISTS IMTG_PUBLIC_HEADERS)
     file(WRITE "${source}" "#include <${header}>\nint main() { return 0; }\n")
     add_executable("${target_name}" "${source}")
     target_compile_features("${target_name}" PRIVATE cxx_std_17)
-    target_link_libraries("${target_name}" PRIVATE imtg::core)
+    if(header MATCHES "^imtg/commerce/")
+        target_link_libraries("${target_name}" PRIVATE imtg::commerce)
+    else()
+        target_link_libraries("${target_name}" PRIVATE imtg::core)
+    endif()
 endforeach()

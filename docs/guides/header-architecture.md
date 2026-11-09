@@ -1,9 +1,8 @@
 # Header architecture and dependency audit
 
 **Status:** normative for new work; staged implementation migration is planned.
-**Scope:** `core`, `actions`, `storage`, `sessions`, `reconciliation`, `ui`, and
-`runtime`. The optional commerce domain is governed by its own change and is
-not modified by this audit.
+**Scope:** `core`, `actions`, `storage`, `sessions`, `reconciliation`, `ui`,
+`runtime`, and the optional `commerce` addendum.
 
 This guide records the current include topology and the target hierarchical
 umbrella model adopted from the Sovetwave C++ engineering guidance. It is a
@@ -41,9 +40,18 @@ implementation PRs.
    `.tpp`/`.ipp` file. Non-template `.cpp` files remain beside their owning
    header.
 
+## Audit snapshots
+
+The base-domain inventory below is measured against the immutable PR #19 merge
+`6a0814c8107a14d60cafcbdf44f1711eec446b2c`. The commerce addendum is measured
+against the restacked PR #17 source snapshot `574c448` (the same commerce
+source that was reviewed at `fb5754d1a081ad8a4bc184a4bd26043137126c39`).
+These snapshots are explicit so the audit does not silently change with a
+future `main`.
+
 ## Audit of the current tree
 
-The current `main` predates the umbrella migration. The existing nested
+The PR #19 base snapshot predates the umbrella migration. The existing nested
 `<imtg>/<domain>/...` paths are installed and therefore are current public
 paths. No path is removed by this documentation change.
 
@@ -84,6 +92,34 @@ There are therefore no classified private header leaves in the current tree:
 the `.cpp` files are implementation units, while every `.hpp` is installed.
 Future implementation PRs must classify a leaf as public standalone or private
 before changing the explicit install manifest.
+
+### Commerce addendum
+
+At the commerce snapshot, the optional domain has the following public
+surface:
+
+| Domain | Current umbrella | Current public component headers | Direct domain dependencies |
+| --- | --- | --- | --- |
+| `commerce` | `imtg/commerce.hpp` (optional) | `PaymentTypes.hpp`, `PaymentPolicy.hpp`, `PaymentRecords.hpp`, `PaymentTransaction.hpp`, `PaymentProvider.hpp`, `PaymentServices.hpp` | `core`, `storage` |
+
+The six component headers are ordered by the umbrella as value types, policy,
+records, transaction, provider, and services. `payments.cpp` is an
+implementation unit and is not installed. The concrete include edges are:
+
+```text
+commerce/PaymentTypes.hpp       -> core component headers
+commerce/PaymentTransaction.hpp -> storage/storage.hpp
+```
+
+Until `core.hpp` and `storage.hpp` exist, these direct includes of the
+standalone lower-level headers are an explicitly allowed transitional
+dependency. A later core/storage migration must replace them with the root
+entry points and re-run the commerce boundary tests.
+
+The commerce install boundary is configuration-dependent: a core-only install
+excludes `imtg/commerce.hpp` and `imtg/commerce/`; a commerce-enabled install
+adds the umbrella and the six documented component headers. The removed
+`imtg/commerce/payments.hpp` is not a compatibility API.
 
 ## Target topology
 
@@ -132,6 +168,7 @@ own declared public components. The proposed include sets are:
 | `reconciliation.hpp` | `<imtg/core.hpp>`, `<imtg/sessions.hpp>` | `reconciliation/outbox.hpp` |
 | `ui.hpp` | `<imtg/core.hpp>`, `<imtg/actions.hpp>` | `ui/tree.hpp` |
 | `runtime.hpp` | `<imtg/core.hpp>`, `<imtg/actions.hpp>`, `<imtg/ui.hpp>` | `runtime/reference_runtime.hpp` |
+| `commerce.hpp` (optional) | `<imtg/core.hpp>`, `<imtg/storage.hpp>` after those umbrellas land | `commerce/PaymentTypes.hpp`, `PaymentPolicy.hpp`, `PaymentRecords.hpp`, `PaymentTransaction.hpp`, `PaymentProvider.hpp`, `PaymentServices.hpp` |
 
 The exact component order is part of each implementation PR and must be stable,
 acyclic, and tested. A component that is intentionally standalone may include
@@ -151,6 +188,7 @@ The intended mapping is:
 | no domain umbrella | `imtg/reconciliation.hpp` | add after outbox boundary is confirmed |
 | `imtg/ui/ui.hpp` | `imtg/ui.hpp` | relocate umbrella |
 | `imtg/runtime/runtime.hpp` | `imtg/runtime.hpp` | relocate umbrella |
+| `imtg/commerce.hpp` (optional) | `imtg/commerce.hpp` | already at the target root; keep excluded from core-only installs |
 
 Component leaf paths such as `imtg/core/identifiers.hpp` and
 `imtg/sessions/session.hpp` remain the owning public paths in the target model;
@@ -169,9 +207,10 @@ currently contains several related public contracts; any split into
 separate dependency and API review that preserves lifetime, generation fencing,
 stale-handle, route-validation, and synchronization semantics.
 
-The optional `commerce` domain is outside this migration. Its umbrella and
-standalone headers are reviewed in the payment-contract change and must remain
-independently optional from the core-only build.
+The optional `commerce` domain has already adopted its root umbrella in the
+payment-contract change. It is not part of the Actions/core migration, and its
+transitional lower-level includes remain explicitly documented above until the
+corresponding core/storage umbrellas land.
 
 ## Verification contract
 

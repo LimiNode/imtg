@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 project(imtg VERSION 0.1.0 LANGUAGES CXX)
 
 option(IMTG_BUILD_DOCUMENTATION "Build the optional Doxygen documentation check" OFF)
+option(IMTG_BUILD_COMMERCE "Build and install the optional imtg_commerce module" OFF)
 
 include(GNUInstallDirs)
 include(CTest)
@@ -28,12 +29,39 @@ target_include_directories(imtg_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
+if(IMTG_BUILD_COMMERCE)
+    add_library(imtg_commerce STATIC
+        src/imtg/commerce/payments.cpp)
+    add_library(imtg::commerce ALIAS imtg_commerce)
+    set_target_properties(imtg_commerce PROPERTIES EXPORT_NAME commerce)
+    target_compile_features(imtg_commerce PUBLIC cxx_std_17)
+    target_link_libraries(imtg_commerce PUBLIC imtg::core)
+    target_include_directories(imtg_commerce PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+endif()
+
 install(TARGETS imtg_core EXPORT imtgTargets)
+if(IMTG_BUILD_COMMERCE)
+    install(TARGETS imtg_commerce EXPORT imtgTargets)
+endif()
 install(DIRECTORY src/imtg/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg
     FILES_MATCHING
     PATTERN "*.hpp"
     PATTERN "*.tpp"
-    PATTERN "*.ipp")
+    PATTERN "*.ipp"
+    PATTERN "commerce" EXCLUDE
+    PATTERN "commerce.hpp" EXCLUDE)
+if(IMTG_BUILD_COMMERCE)
+    install(FILES src/imtg/commerce.hpp
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg)
+    install(DIRECTORY src/imtg/commerce/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg/commerce
+        FILES_MATCHING
+        PATTERN "*.hpp"
+        PATTERN "*.tpp"
+        PATTERN "*.ipp")
+endif()
 install(EXPORT imtgTargets
     FILE imtgTargets.cmake
     NAMESPACE imtg::

@@ -4,11 +4,12 @@ M2c-a and M2c-b are merged in `main`; M2c-c through M2e remain planned.
 
 The Sovetwave header-topology audit is documented in
 [header-architecture.md](guides/header-architecture.md) and ADR 0009. The
-current nested umbrella paths remain installed; root-level umbrella migration,
-an explicit install manifest, and any compatibility transition are planned
-implementation work, not claims about the current build.
+base-domain nested umbrella paths remain installed; optional commerce now has
+the root-level `imtg/commerce.hpp` when enabled. Core/storage/actions and the
+other remaining root-level umbrella migrations, explicit install manifests,
+and compatibility transitions are still planned implementation work.
 
-**As of current `main` (M2c-b merged):** the repository contains the complete
+**As of base main merge `6a0814c` (M2c-b and PR #19 merged):** the repository contains the complete
 Telegram-free M1 foundation, the M2a backend-neutral storage protocol, the M2b
 typed session/FSM semantic baseline, and the M2c-a claims/fencing plus M2c-b
 reconciliation/outbox slices. Durable process-crash persistence, delivery,
@@ -18,9 +19,15 @@ M1 acceptance gates are complete: deterministic rendering, typed/versioned actio
 
 The Telegram application profile work is documentation-only planning. Typed
 gateway routing, headless handlers, payment-priority handling, forms/tickets,
-commerce, moderation, durable jobs and the three reference applications are
-not implemented by this repository status; they are dependency-gated M3–M6
-work described in the research profiles and roadmap.
+commerce runtime, moderation, durable jobs and the three reference applications
+are not implemented; they are dependency-gated M3–M6 work described in the
+research profiles and roadmap. The optional `imtg_commerce` target now contains
+only the provider-neutral payment contract baseline; it does not process live
+payments or provide a production adapter. The current corrective also makes
+provider selection account- and allowlist-scoped, validates exact fiat/crypto
+asset scales, binds authenticated evidence to payment identities, and exposes
+an atomic payment/event transaction boundary. These are contract and test
+baselines, not durable storage or live provider integration.
 
 The optional `imtg-admin` operator console is also documentation-only. Its
 ImGuiX-based UI and the GUI-shell ideas referenced from `mgc-platform` are not
@@ -41,7 +48,7 @@ audit contract must be accepted before a separate GUI target is implemented.
 | Storage protocol and in-memory backend | `implemented` | [STORAGE.md](contracts/STORAGE.md); `src/imtg/storage/storage.hpp`; fixture-based `imtg_storage_tests` conformance suite with revision, ABA, schema-gate, ownership, and commit-outcome coverage |
 | Durable repositories and MDBX backend | `planned` | M2c–M2e durable claims, recovery, MDBX adapter, and process-crash proof |
 | Telegram transport / kurlyk | `planned` | M3 adapter tests against fakes and documented API limits |
-| Payment provider contracts and capability audit | `planned` | [PAYMENTS.md](contracts/PAYMENTS.md) and [PAYMENT_PROVIDER_CAPABILITY_AUDIT.md](research/PAYMENT_PROVIDER_CAPABILITY_AUDIT.md); optional `imtg_commerce` contracts and provider onboarding remain future work |
+| Payment provider contracts and capability audit | `partial` | [PAYMENTS.md](contracts/PAYMENTS.md), [PAYMENT_PROVIDER_CAPABILITY_AUDIT.md](research/PAYMENT_PROVIDER_CAPABILITY_AUDIT.md), optional `imtg_commerce` identities, account-scoped eligibility, exact asset-scale validation, evidence binding, shared `CommitResult` payment transactions, explicit refund policies and `imtg_payment_contract_tests`; provider adapters, durable persistence, webhooks and onboarding remain future work |
 | Render intents, reconciliation, and outbox | `partial` | M2c-a claims/fencing and M2c-b canonical `LT1` target scoping, mandatory TX2 context, authoritative session/generation/applied-target fencing, atomic outbox publication, fail-closed borrowed staging, and conservative Unknown recovery are merged; delivery-state, acknowledgements, durable adapters, and full cross-backend recovery matrix remain future work |
 | Localization | `planned` | M4 catalog, fallback, and pluralization tests |
 | Users, chats, history, access control, jobs | `planned` | M4/M5 service and retention tests |

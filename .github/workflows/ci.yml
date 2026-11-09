@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build/ci-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_TESTING=ON
+        run: cmake -S . -B build/ci-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON
       - name: Build
         run: cmake --build build/ci-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
       - name: Test
@@ -23,13 +23,17 @@ jobs:
       - name: Install
         run: cmake --install build/ci-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --prefix build/install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Configure public-header checks
-        run: cmake -S tests/public_headers -B build/headers-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
+        run: cmake -S tests/public_headers -B build/headers-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DIMTG_REQUIRE_COMMERCE=ON -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build public-header checks
         run: cmake --build build/headers-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
       - name: Configure installed consumer
         run: cmake -S tests/install_consumer -B build/consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build installed consumer
         run: cmake --build build/consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
+      - name: Configure installed commerce consumer
+        run: cmake -S tests/install_commerce_consumer -B build/commerce-consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
+      - name: Build installed commerce consumer
+        run: cmake --build build/commerce-consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
 
   sanitizers:
     runs-on: ubuntu-latest
@@ -39,12 +43,30 @@ jobs:
         run: >-
           cmake -S . -B build/asan-ubsan -DBUILD_TESTING=ON
           -DCMAKE_BUILD_TYPE=Debug
+          -DIMTG_BUILD_COMMERCE=ON
           -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
       - name: Build
         run: cmake --build build/asan-ubsan --parallel
       - name: Test
         run: ctest --test-dir build/asan-ubsan --output-on-failure
+
+  core-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure core-only build
+        run: cmake -S . -B build/core-only -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=OFF
+      - name: Build core-only target
+        run: cmake --build build/core-only --parallel
+      - name: Test core-only target
+        run: ctest --test-dir build/core-only --output-on-failure
+      - name: Install core-only package
+        run: cmake --install build/core-only --prefix build/install-core-only
+      - name: Configure core-only consumer
+        run: cmake -S tests/install_consumer -B build/core-only-consumer -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-core-only
+      - name: Build core-only consumer
+        run: cmake --build build/core-only-consumer --parallel
 
   documentation:
     runs-on: ubuntu-latest
