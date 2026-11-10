@@ -2,6 +2,24 @@
 
 namespace imtg {
 
+namespace detail {
+
+Result<void> validate_action_handle(
+    const ActionRegistry* owner,
+    const ActionId& action_id,
+    std::uint32_t payload_version,
+    std::uint64_t generation,
+    const std::weak_ptr<const void>& registry_identity)
+{
+    if (owner == nullptr) {
+        return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
+    }
+    return owner->validate_handle_state(action_id, payload_version, generation,
+                                        registry_identity);
+}
+
+} // namespace detail
+
 Result<void> ActionRegistry::validate_handle_state(
     const ActionId& action_id,
     std::uint32_t payload_version,

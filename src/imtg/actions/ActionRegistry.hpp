@@ -77,22 +77,19 @@ public:
         }
         const auto generation = m_next_generation++;
         entry->generation = generation;
-        m_entries.emplace(action_id.value, std::move(entry));
 
         ActionHandle<Payload> handle;
-        handle.m_action_id = std::move(action_id);
+        handle.m_action_id = action_id;
         handle.m_payload_version = payload_version;
         handle.m_generation = generation;
         handle.m_owner = this;
         handle.m_registry_identity = m_identity;
         handle.m_encode = std::move(encode);
-        const auto validation_identity = handle.m_registry_identity;
-        const auto validation_action_id = handle.m_action_id;
-        handle.m_validate = [this, validation_identity, validation_action_id,
-                             payload_version, generation] {
-            return validate_handle_state(validation_action_id, payload_version, generation,
-                                         validation_identity);
-        };
+        handle.m_validate = &detail::validate_action_handle;
+
+        // Publish only after all handle state is prepared. The remaining
+        // operation is the map insertion itself; failures leave no route.
+        m_entries.emplace(action_id.value, std::move(entry));
         return handle;
     }
 
@@ -154,6 +151,13 @@ public:
     }
 
 private:
+    friend Result<void> detail::validate_action_handle(
+        const ActionRegistry*,
+        const ActionId&,
+        std::uint32_t,
+        std::uint64_t,
+        const std::weak_ptr<const void>&);
+
     static bool is_canonical_route(std::string_view route) noexcept
     {
         const auto marker = route.rfind(".v");

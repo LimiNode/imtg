@@ -12,6 +12,25 @@ namespace imtg {
 
 class ActionRegistry;
 
+namespace detail {
+
+using ActionHandleValidator = Result<void> (*)(
+    const ActionRegistry*,
+    const ActionId&,
+    std::uint32_t,
+    std::uint64_t,
+    const std::weak_ptr<const void>&);
+
+/// \brief Validates one opaque handle state through the owning registry seam.
+[[nodiscard]] Result<void> validate_action_handle(
+    const ActionRegistry*,
+    const ActionId&,
+    std::uint32_t,
+    std::uint64_t,
+    const std::weak_ptr<const void>&);
+
+} // namespace detail
+
 template <typename Payload>
 /// \brief Registry-owned typed capability for binding and encoding an action.
 /// \details A handle becomes stale after unregistration/re-registration and must not
@@ -60,7 +79,8 @@ public:
         if (m_owner == nullptr || m_registry_identity.expired() || !m_validate) {
             return Error{ErrorCode::InvalidArgument, "action handle is invalid"};
         }
-        return m_validate();
+        return m_validate(m_owner, m_action_id, m_payload_version, m_generation,
+                          m_registry_identity);
     }
 
 private:
@@ -72,7 +92,7 @@ private:
     const ActionRegistry* m_owner = nullptr;
     std::weak_ptr<const void> m_registry_identity;
     std::function<Result<std::string>(const Payload&)> m_encode;
-    std::function<Result<void>()> m_validate;
+    detail::ActionHandleValidator m_validate = nullptr;
 };
 
 } // namespace imtg

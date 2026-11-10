@@ -65,6 +65,10 @@ int main()
     const auto handle = handle_result.value();
     CHECK(handle.is_valid());
     CHECK(handle.validate());
+    const auto copied_handle = handle;
+    CHECK(copied_handle.validate());
+    auto moved_handle = std::move(copied_handle);
+    CHECK(moved_handle.validate());
 
     const auto token_result = registry.make_token(handle, DeleteItem{42});
     CHECK(token_result);
@@ -170,6 +174,18 @@ int main()
     for (auto& worker : workers) {
         worker.join();
     }
+
+    imtg::ActionHandle<DeleteItem> post_registry_handle;
+    {
+        imtg::ActionRegistry scoped_registry(token_codec, clock);
+        const auto scoped = scoped_registry.register_action<DeleteItem>(
+            imtg::ActionId{"scoped.v1"}, delete_codec(1),
+            [](imtg::ActionContext&, const DeleteItem&) { return imtg::Result<void>(); });
+        CHECK(scoped);
+        post_registry_handle = scoped.value();
+        CHECK(post_registry_handle.validate());
+    }
+    CHECK(!post_registry_handle.validate());
 
     return 0;
 }
