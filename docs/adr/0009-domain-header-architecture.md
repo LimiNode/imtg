@@ -47,7 +47,7 @@ The normative rules and current graph are maintained in
 
 The commerce transition was audited against PR #17 source snapshot
 `574c448`, and the Actions transition against implementation snapshot
-`7918e945`; neither implies that the remaining domain migrations are complete.
+`5dca497`; neither implies that the remaining domain migrations are complete.
 
 ## Consequences
 
