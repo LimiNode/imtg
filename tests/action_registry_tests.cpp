@@ -5,6 +5,7 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <string>
 #include <thread>
 #include <vector>
@@ -69,6 +70,23 @@ int main()
     CHECK(copied_handle.validate());
     auto moved_handle = std::move(copied_handle);
     CHECK(moved_handle.validate());
+
+    bool publication_threw = false;
+    imtg::detail::fail_next_action_registry_publish_for_test();
+    try {
+        (void)registry.register_action<DeleteItem>(
+            imtg::ActionId{"publication-failure.v1"}, delete_codec(1),
+            [](imtg::ActionContext&, const DeleteItem&) { return imtg::Result<void>(); });
+    } catch (const std::bad_alloc&) {
+        publication_threw = true;
+    }
+    CHECK(publication_threw);
+    const auto publication_retry = registry.register_action<DeleteItem>(
+        imtg::ActionId{"publication-failure.v1"}, delete_codec(1),
+        [](imtg::ActionContext&, const DeleteItem&) { return imtg::Result<void>(); });
+    CHECK(publication_retry);
+    CHECK(publication_retry.value().validate());
+    CHECK(handle.validate());
 
     const auto token_result = registry.make_token(handle, DeleteItem{42});
     CHECK(token_result);
