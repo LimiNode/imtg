@@ -5,7 +5,6 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
-#include <new>
 #include <string>
 #include <thread>
 #include <vector>
@@ -17,6 +16,26 @@ namespace {
 struct DeleteItem {
     std::uint64_t item_id{};
 };
+
+struct ThrowingEncoder {
+    static bool throw_on_copy;
+
+    ThrowingEncoder() = default;
+    ThrowingEncoder(const ThrowingEncoder&)
+    {
+        if (throw_on_copy) {
+            throw std::runtime_error("encoder copy failed");
+        }
+    }
+    ThrowingEncoder& operator=(const ThrowingEncoder&) = default;
+
+    imtg::Result<std::string> operator()(const DeleteItem& item) const
+    {
+        return std::to_string(item.item_id);
+    }
+};
+
+bool ThrowingEncoder::throw_on_copy = false;
 
 imtg::PayloadCodec<DeleteItem> delete_codec(std::uint32_t version)
 {
@@ -71,21 +90,34 @@ int main()
     auto moved_handle = std::move(copied_handle);
     CHECK(moved_handle.validate());
 
-    bool publication_threw = false;
-    imtg::detail::fail_next_action_registry_publish_for_test();
+    imtg::PayloadCodec<DeleteItem> throwing_codec{
+        1,
+        ThrowingEncoder{},
+        [](std::string_view encoded) -> imtg::Result<DeleteItem> {
+            try {
+                return DeleteItem{static_cast<std::uint64_t>(
+                    std::stoull(std::string(encoded)))};
+            } catch (...) {
+                return imtg::Error{
+                    imtg::ErrorCode::MalformedAction, "delete payload is malformed"};
+            }
+        }};
+    ThrowingEncoder::throw_on_copy = true;
+    bool preparation_threw = false;
     try {
         (void)registry.register_action<DeleteItem>(
-            imtg::ActionId{"publication-failure.v1"}, delete_codec(1),
+            imtg::ActionId{"preparation-failure.v1"}, std::move(throwing_codec),
             [](imtg::ActionContext&, const DeleteItem&) { return imtg::Result<void>(); });
-    } catch (const std::bad_alloc&) {
-        publication_threw = true;
+    } catch (const std::runtime_error&) {
+        preparation_threw = true;
     }
-    CHECK(publication_threw);
-    const auto publication_retry = registry.register_action<DeleteItem>(
-        imtg::ActionId{"publication-failure.v1"}, delete_codec(1),
+    ThrowingEncoder::throw_on_copy = false;
+    CHECK(preparation_threw);
+    const auto preparation_retry = registry.register_action<DeleteItem>(
+        imtg::ActionId{"preparation-failure.v1"}, delete_codec(1),
         [](imtg::ActionContext&, const DeleteItem&) { return imtg::Result<void>(); });
-    CHECK(publication_retry);
-    CHECK(publication_retry.value().validate());
+    CHECK(preparation_retry);
+    CHECK(preparation_retry.value().validate());
     CHECK(handle.validate());
 
     const auto token_result = registry.make_token(handle, DeleteItem{42});

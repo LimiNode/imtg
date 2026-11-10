@@ -12,7 +12,6 @@
 #include <limits>
 #include <memory>
 #include <mutex>
-#include <new>
 #include <optional>
 #include <shared_mutex>
 #include <string>
@@ -21,29 +20,6 @@
 #include <utility>
 
 namespace imtg {
-
-#ifdef IMTG_ACTIONS_TESTING
-namespace detail {
-
-inline thread_local bool action_registry_fail_next_publish = false;
-
-/// rief Arms one deterministic publication-boundary failure for tests.
-inline void fail_next_action_registry_publish_for_test() noexcept
-{
-    action_registry_fail_next_publish = true;
-}
-
-/// rief Throws the armed deterministic publication-boundary failure for tests.
-inline void maybe_throw_action_registry_publish_for_test()
-{
-    if (action_registry_fail_next_publish) {
-        action_registry_fail_next_publish = false;
-        throw std::bad_alloc{};
-    }
-}
-
-} // namespace detail
-#endif
 
 /// \brief Application-level registry for restart-safe, typed action routes.
 class ActionRegistry {
@@ -113,9 +89,6 @@ public:
 
         // Publish only after all handle state is prepared. The remaining
         // operation is the map insertion itself; failures leave no route.
-#ifdef IMTG_ACTIONS_TESTING
-        detail::maybe_throw_action_registry_publish_for_test();
-#endif
         m_entries.emplace(action_id.value, std::move(entry));
         return handle;
     }
