@@ -73,9 +73,12 @@ render-intent publication are covered by tests.
 on the reference backend. **M2c-b status:** reconciliation/outbox planning is
 merged in `main` on the backend-neutral in-memory baseline. Its gates are
 fully fenced publishable TX2 plans, fail-closed borrowed staging, canonical
-target scoping and conservative Unknown recovery. **M2c-c** delivery
-acknowledgements remain pending. M2c-b still makes no process-crash durability
-or Telegram transport claim.
+target scoping and conservative Unknown recovery. **M2c-c status:** the current
+Draft implementation adds bounded outbox delivery claims, the committed
+`DispatchAdmitted` boundary, fenced success/failure/Unknown transitions,
+monotonic applied-target acknowledgements, and explicit supersession. It remains
+an in-memory semantic baseline and makes no process-crash durability or Telegram
+transport claim. Independent review and merge of this slice are still pending.
 
 **M2d/M2e:** optional MDBX adapter and cross-backend conformance/recovery
 proof. They depend on the accepted transaction/recovery contracts and must not

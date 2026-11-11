@@ -1,18 +1,24 @@
 #include "imtg/reconciliation/outbox.hpp"
 #include "imtg/storage/time_encoding.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <iomanip>
+#include <limits>
 #include <sstream>
+#include <utility>
 
 namespace imtg {
 namespace {
 constexpr std::string_view outbox_namespace = "outbox_effects";
 constexpr std::string_view applied_namespace = "applied_targets";
+constexpr std::string_view dispatch_namespace = "outbox_dispatch_targets";
 constexpr std::size_t max_field_size = 1024 * 1024;
 constexpr std::size_t max_record_size = 4 * 1024 * 1024;
 constexpr std::size_t max_logical_slot_size = 4096;
 constexpr std::string_view logical_target_magic = "LT1";
+constexpr std::string_view outbox_cursor_magic = "OBC1";
 
 Error err(ErrorCode code, const char* message) { return Error{code, message}; }
 
@@ -83,6 +89,55 @@ Result<std::int64_t> time_millis(ClockTime value) {
     return encode_storage_timestamp(value);
 }
 
+Result<ClockTime> add_lease(ClockTime now, std::chrono::milliseconds lease)
+{
+    if (lease.count() <= 0) return err(ErrorCode::InvalidArgument, "lease must be positive");
+    using Duration = ClockTime::duration;
+    const long double requested_ticks = static_cast<long double>(lease.count())
+        * static_cast<long double>(std::milli::num)
+        * static_cast<long double>(Duration::period::den)
+        / static_cast<long double>(std::milli::den)
+        / static_cast<long double>(Duration::period::num);
+    if (!std::isfinite(requested_ticks)
+        || requested_ticks >= static_cast<long double>(std::numeric_limits<Duration::rep>::max()))
+        return err(ErrorCode::InvalidArgument, "lease exceeds clock range");
+    const auto delta = static_cast<Duration::rep>(std::ceil(requested_ticks));
+    if (delta <= 0 || now.time_since_epoch().count()
+                         > std::numeric_limits<Duration::rep>::max() - delta)
+        return err(ErrorCode::InvalidArgument, "lease exceeds clock range");
+    const auto result = ClockTime{Duration{now.time_since_epoch().count() + delta}};
+    const auto persisted = time_millis(result);
+    if (!persisted) return persisted.error();
+    return decode_storage_timestamp(static_cast<std::uint64_t>(persisted.value()));
+}
+
+std::string encode_cursor(std::string_view key)
+{
+    std::string result{outbox_cursor_magic};
+    put_string(result, key);
+    return result;
+}
+
+Result<std::string> decode_cursor(std::string_view encoded)
+{
+    if (encoded.empty()) return std::string{};
+    if (encoded.size() < outbox_cursor_magic.size()
+        || encoded.substr(0, outbox_cursor_magic.size()) != outbox_cursor_magic)
+        return err(ErrorCode::UnsupportedVersion, "outbox continuation version is unsupported");
+    Reader reader(encoded.substr(outbox_cursor_magic.size()));
+    const auto key = reader.str();
+    if (!key || key.value().empty() || reader.remaining() != 0)
+        return err(ErrorCode::InvalidEncoding, "outbox continuation is malformed");
+    return key.value();
+}
+
+bool live_claim(const OutboxEffect& effect, ClockTime now) noexcept
+{
+    return (effect.state == OutboxEffectState::ClaimedBeforeDispatch
+            || effect.state == OutboxEffectState::DispatchAdmitted)
+        && now < effect.lease_until;
+}
+
 void put_i64(std::string& s, std::int64_t value) {
     std::uint64_t bits{};
     std::memcpy(&bits, &value, sizeof(bits));
@@ -91,7 +146,7 @@ void put_i64(std::string& s, std::int64_t value) {
 
 Result<void> validate_effect(const OutboxEffect& e) {
     if (e.id.value.empty() || e.slot.render_intent_id.value.empty() || e.slot.target_identity.empty()
-        || e.slot.effect_position.empty() || e.payload_version == 0)
+        || e.slot.effect_position.empty() || e.payload_version == 0 || e.desired_revision == 0)
         return err(ErrorCode::InvalidArgument, "effect identity or payload is invalid");
     if (e.slot.render_intent_id.value.size() > max_logical_slot_size
         || e.slot.target_identity.size() > max_logical_slot_size
@@ -102,6 +157,19 @@ Result<void> validate_effect(const OutboxEffect& e) {
     if (static_cast<unsigned>(e.slot.effect_kind) > static_cast<unsigned>(EffectKind::Replace)
         || static_cast<unsigned>(e.state) > static_cast<unsigned>(OutboxEffectState::Superseded))
         return err(ErrorCode::InvalidArgument, "effect enum value is invalid");
+    if ((e.state == OutboxEffectState::ClaimedBeforeDispatch
+         || e.state == OutboxEffectState::DispatchAdmitted
+         || e.state == OutboxEffectState::UnknownOutcome
+         || e.state == OutboxEffectState::Succeeded)
+        && e.claim_token.value == 0)
+        return err(ErrorCode::InvalidState, "active effect has no fencing token");
+    if (e.state == OutboxEffectState::Superseded
+        && (!e.superseded_by || e.superseded_by->value.empty()))
+        return err(ErrorCode::InvalidState, "superseded effect has no successor");
+    if (e.state != OutboxEffectState::Superseded && e.superseded_by)
+        return err(ErrorCode::InvalidState, "non-superseded effect has a successor");
+    if (e.superseded_by && e.superseded_by->value.size() > max_logical_slot_size)
+        return err(ErrorCode::StorageRecordTooLarge, "successor effect identity is too large");
     if (e.slot.encode().size() > max_logical_slot_size || e.id.value.size() > max_logical_slot_size)
         return err(ErrorCode::StorageRecordTooLarge, "logical effect identity is too large");
     if (e.payload.size() > max_field_size || e.payload_digest.size() > max_field_size)
@@ -249,7 +317,7 @@ OutboxEffectId OutboxEffectId::from_slot(const LogicalEffectSlot& slot) {
 
 Result<StorageBytes> encode_outbox_effect(const OutboxEffect& e) {
     const auto valid = validate_effect(e); if (!valid) return valid.error();
-    std::string s{"OE1"};
+    std::string s{"OE2"};
     put_string(s,e.id.value); put_string(s,e.slot.render_intent_id.value); put_string(s,e.slot.target_identity);
     s.push_back(static_cast<char>(e.slot.effect_kind)); put_string(s,e.slot.effect_position);
     put_u32(s,e.payload_version); put_string(s,e.payload); put_string(s,e.payload_digest); put_u64(s,e.desired_revision);
@@ -260,12 +328,16 @@ Result<StorageBytes> encode_outbox_effect(const OutboxEffect& e) {
     put_i64(s, lease.value());
     put_i64(s, next.value());
     put_u32(s,e.attempt_count);
+    s.push_back(e.superseded_by ? '\x01' : '\x00');
+    if (e.superseded_by) put_string(s, e.superseded_by->value);
     if (s.size() > max_record_size) return err(ErrorCode::StorageRecordTooLarge, "effect record is too large");
     return s;
 }
 
 Result<OutboxEffect> decode_outbox_effect(std::string_view bytes) {
-    if (bytes.size()<3 || bytes.substr(0,3)!="OE1") return err(ErrorCode::UnsupportedVersion,"effect encoding version is unsupported");
+    if (bytes.size() < 3
+        || (bytes.substr(0, 3) != "OE1" && bytes.substr(0, 3) != "OE2"))
+        return err(ErrorCode::UnsupportedVersion,"effect encoding version is unsupported");
     if (bytes.size() > max_record_size) return err(ErrorCode::StorageRecordTooLarge,"effect record is too large");
     Reader r(bytes.substr(3)); OutboxEffect e;
     auto id=r.str(); auto ri=r.str(); auto target=r.str(); auto kind=r.byte(); auto pos=r.str(); auto pv=r.u32(); auto payload=r.str(); auto dg=r.str(); auto desired=r.u64();
@@ -274,12 +346,24 @@ Result<OutboxEffect> decode_outbox_effect(std::string_view bytes) {
     auto st=r.byte();
     if (!st) return st.error();
     e.state=static_cast<OutboxEffectState>(st.value()); auto token=r.u64(); auto lease=r.i64(); auto next=r.i64(); auto attempts=r.u32();
-    if(!token||!lease||!next||!attempts||r.remaining()!=0) return err(ErrorCode::InvalidEncoding,"effect encoding is malformed");
+    if(!token||!lease||!next||!attempts) return err(ErrorCode::InvalidEncoding,"effect encoding is malformed");
     e.claim_token={token.value()};
     std::uint64_t lease_bits{}, next_bits{};
     std::memcpy(&lease_bits, &lease.value(), sizeof(lease_bits));
     std::memcpy(&next_bits, &next.value(), sizeof(next_bits));
     auto lt=millis_time(lease_bits); auto nt=millis_time(next_bits); if(!lt||!nt) return err(ErrorCode::InvalidEncoding,"effect timestamp is invalid"); e.lease_until=lt.value(); e.next_eligible_at=nt.value(); e.attempt_count=attempts.value();
+    if (bytes.substr(0, 3) == "OE2") {
+        const auto has_successor = r.byte();
+        if (!has_successor || has_successor.value() > 1)
+            return err(ErrorCode::InvalidEncoding, "successor effect marker is malformed");
+        if (has_successor.value() != 0) {
+            const auto successor = r.str();
+            if (!successor || successor.value().empty())
+                return err(ErrorCode::InvalidEncoding, "successor effect identity is malformed");
+            e.superseded_by = OutboxEffectId{successor.value()};
+        }
+    }
+    if (r.remaining() != 0) return err(ErrorCode::InvalidEncoding,"effect encoding is malformed");
     if (e.slot.encode().size() > max_logical_slot_size || e.id.value.size() > max_logical_slot_size)
         return err(ErrorCode::StorageRecordTooLarge, "logical effect identity is too large");
     const auto valid=validate_effect(e); if(!valid) return valid.error(); return e;
@@ -299,7 +383,7 @@ Result<std::optional<OutboxEffect>> OutboxRepository::load(const OutboxEffectId&
 Result<OutboxEffect> OutboxRepository::create_or_validate(const OutboxEffect& effect, ITransaction& tx) const {
     const auto valid=validate_effect(effect); if(!valid) return valid.error();
     if (effect.state != OutboxEffectState::Pending || effect.claim_token.value != 0
-        || effect.attempt_count != 0)
+        || effect.attempt_count != 0 || effect.lease_until != ClockTime{})
         return err(ErrorCode::InvalidState, "new outbox effect is not in its initial state");
     auto existing=load(effect.id,tx); if(!existing) return existing.error();
     if(existing.value()) {
@@ -310,6 +394,520 @@ Result<OutboxEffect> OutboxRepository::create_or_validate(const OutboxEffect& ef
         return err(ErrorCode::StorageConflict,"logical effect slot already contains a different payload");
     }
     auto encoded=encode_outbox_effect(effect); if(!encoded) return encoded.error(); auto rev=tx.create_if_absent(outbox_namespace,effect.id.value,encoded.value()); if(!rev) return rev.error(); auto result=effect; result.revision=rev.value(); return result;
+}
+
+namespace {
+
+Result<OutboxEffect> load_required_effect(const OutboxEffectId& id, ITransaction& transaction)
+{
+    if (id.value.empty()) return err(ErrorCode::InvalidArgument, "effect id is empty");
+    if (id.value.size() > max_logical_slot_size)
+        return err(ErrorCode::StorageRecordTooLarge, "effect id is too large");
+    const auto row = transaction.read(outbox_namespace, id.value);
+    if (!row) return row.error();
+    if (!row.value()) return err(ErrorCode::StorageNotFound, "outbox effect is absent");
+    const auto decoded = decode_outbox_effect(row.value()->value);
+    if (!decoded) return decoded.error();
+    if (decoded.value().id.value != id.value)
+        return err(ErrorCode::StorageSerializationFailure,
+                   "effect identity does not match storage key");
+    auto result = decoded.value();
+    result.revision = row.value()->revision;
+    return result;
+}
+
+Result<void> watch_delivery_target(const OutboxEffect& effect, ITransaction& transaction,
+                                   bool require_current)
+{
+    AppliedTargetRepository applied;
+    const auto target = applied.load(effect.slot.target_identity, transaction);
+    if (!target) return target.error();
+    if (require_current && target.value()
+        && (target.value()->desired_revision > effect.desired_revision
+            || target.value()->confirmed_applied_revision > effect.desired_revision))
+        return err(ErrorCode::StorageStaleClaim, "effect is older than authoritative target state");
+    return transaction.watch(applied_namespace, effect.slot.target_identity,
+                             target.value() ? target.value()->revision : 0);
+}
+
+// The target slot survives lease expiry: an admitted/unknown operation may still
+// execute remotely. Only a definite outcome or explicit resolution releases it.
+enum class DispatchOwnership { Acquire, Release, Watch };
+
+Result<void> change_dispatch_owner(const OutboxEffect& effect, ITransaction& transaction,
+                                   DispatchOwnership operation)
+{
+    const auto row = transaction.read(dispatch_namespace, effect.slot.target_identity);
+    if (!row) return row.error();
+    std::string owner;
+    ClaimToken token;
+    if (row.value()) {
+        if (row.value()->value.substr(0, 3) != "DT1")
+            return err(ErrorCode::UnsupportedVersion, "dispatch target version is unsupported");
+        Reader reader(std::string_view(row.value()->value).substr(3));
+        const auto id = reader.str();
+        const auto stored_token = reader.u64();
+        if (!id || !stored_token || reader.remaining() != 0
+            || id.value().size() > max_logical_slot_size
+            || (id.value().empty() != (stored_token.value() == 0)))
+            return err(ErrorCode::InvalidEncoding, "dispatch target owner is malformed");
+        owner = id.value();
+        token = ClaimToken{stored_token.value()};
+    }
+    const bool acquire = operation == DispatchOwnership::Acquire;
+    if (acquire ? !owner.empty() : (owner != effect.id.value || token != effect.claim_token))
+        return err(ErrorCode::StorageConflict, "dispatch target belongs to another attempt");
+    if (operation == DispatchOwnership::Watch)
+        return transaction.watch(dispatch_namespace, effect.slot.target_identity, row.value()->revision);
+    std::string encoded{"DT1"};
+    put_string(encoded, acquire ? effect.id.value : std::string{});
+    put_u64(encoded, acquire ? effect.claim_token.value : 0);
+    const auto written = row.value()
+        ? transaction.write(dispatch_namespace, effect.slot.target_identity,
+                             encoded, row.value()->revision)
+        : transaction.create_if_absent(dispatch_namespace, effect.slot.target_identity, encoded);
+    if (!written) return written.error();
+    return {};
+}
+
+Result<OutboxEffect> write_effect(OutboxEffect effect, ITransaction& transaction)
+{
+    const auto reject = [&transaction](Error error) -> Result<OutboxEffect> {
+        transaction.rollback();
+        return error;
+    };
+    const auto watched = watch_delivery_target(effect, transaction,
+        effect.state == OutboxEffectState::ClaimedBeforeDispatch
+        || effect.state == OutboxEffectState::DispatchAdmitted
+        || effect.state == OutboxEffectState::Succeeded);
+    if (!watched) return reject(watched.error());
+    if (effect.state == OutboxEffectState::DispatchAdmitted
+        || effect.state == OutboxEffectState::UnknownOutcome) {
+        const auto owner = change_dispatch_owner(effect, transaction, DispatchOwnership::Watch);
+        if (!owner) return reject(owner.error());
+    }
+    const auto valid = validate_effect(effect);
+    if (!valid) return reject(valid.error());
+    const auto encoded = encode_outbox_effect(effect);
+    if (!encoded) return reject(encoded.error());
+    const auto written = transaction.write(outbox_namespace, effect.id.value,
+                                           encoded.value(), effect.revision);
+    if (!written) return reject(written.error());
+    effect.revision = written.value();
+    return effect;
+}
+
+Result<OutboxEffect> rollback_effect(ITransaction& transaction, Error error)
+{
+    transaction.rollback();
+    return error;
+}
+
+Result<OutboxEffect> require_live_claim(const OutboxEffect& effect, ClaimToken token,
+                                        StorageRevision expected_revision, ClockTime now)
+{
+    if (effect.revision != expected_revision || effect.claim_token != token
+        || !live_claim(effect, now))
+        return err(ErrorCode::StorageStaleClaim, "effect claim token or lease is stale");
+    return effect;
+}
+
+Result<OutboxEffect> require_token(const OutboxEffect& effect, ClaimToken token,
+                                   StorageRevision expected_revision)
+{
+    if (effect.revision != expected_revision || effect.claim_token != token)
+        return err(ErrorCode::StorageStaleClaim, "effect claim token or revision is stale");
+    return effect;
+}
+
+Result<void> validate_retry_time(ClockTime now, ClockTime next_eligible_at)
+{
+    if (next_eligible_at < now)
+        return err(ErrorCode::InvalidArgument, "retry time must not be in the past");
+    if (!time_millis(next_eligible_at)) return time_millis(next_eligible_at).error();
+    return {};
+}
+
+} // namespace
+
+Result<OutboxEffectPage> OutboxRepository::claim_outbox_effects(
+    std::size_t limit, ClockTime now, std::chrono::milliseconds lease_duration,
+    std::string_view continuation, ITransaction& transaction) const
+{
+    if (transaction.mode() != TransactionMode::ReadWrite) {
+        transaction.rollback();
+        return err(ErrorCode::StorageReadOnly, "outbox claim requires a read-write transaction");
+    }
+    if (limit == 0 || limit > 4096 || lease_duration.count() <= 0
+        || m_page_size == 0 || m_page_size > 4096 || m_examination_budget == 0
+        || m_max_attempts == 0) {
+        transaction.rollback();
+        return err(ErrorCode::InvalidArgument, "outbox claim bounds are invalid");
+    }
+    const auto decoded_cursor = decode_cursor(continuation);
+    if (!decoded_cursor) {
+        transaction.rollback();
+        return decoded_cursor.error();
+    }
+
+    OutboxEffectPage page;
+    std::string cursor = decoded_cursor.value();
+    while (page.effects.size() < limit && page.examined < m_examination_budget) {
+        const auto remaining = m_examination_budget - page.examined;
+        const auto page_limit = std::min(m_page_size, remaining);
+        const auto scanned = transaction.scan(outbox_namespace, cursor, page_limit);
+        if (!scanned) {
+            transaction.rollback();
+            return scanned.error();
+        }
+        if (scanned.value().empty()) {
+            page.continuation.reset();
+            break;
+        }
+        std::size_t consumed = 0;
+        for (const auto& entry : scanned.value()) {
+            cursor = entry.key;
+            page.continuation = encode_cursor(cursor);
+            ++page.examined;
+            ++consumed;
+
+            const auto decoded = decode_outbox_effect(entry.record.value);
+            if (!decoded) {
+                transaction.rollback();
+                return decoded.error();
+            }
+            auto current = decoded.value();
+            current.revision = entry.record.revision;
+            if (current.id.value != entry.key) {
+                transaction.rollback();
+                return err(ErrorCode::StorageSerializationFailure,
+                           "effect identity does not match storage key");
+            }
+            if (current.state == OutboxEffectState::Succeeded
+                || current.state == OutboxEffectState::Failed
+                || current.state == OutboxEffectState::Superseded
+                || current.state == OutboxEffectState::UnknownOutcome)
+                continue;
+            if (current.next_eligible_at > now) continue;
+            if (current.state == OutboxEffectState::ClaimedBeforeDispatch
+                && now < current.lease_until)
+                continue;
+            if (current.state == OutboxEffectState::DispatchAdmitted) {
+                if (now < current.lease_until) continue;
+                current.state = OutboxEffectState::UnknownOutcome;
+                current.lease_until = ClockTime{};
+                current.next_eligible_at = now;
+                const auto recovered = write_effect(current, transaction);
+                if (!recovered) {
+                    transaction.rollback();
+                    return recovered.error();
+                }
+                continue;
+            }
+
+            const auto current_target = watch_delivery_target(current, transaction, true);
+            if (!current_target && current_target.error().code != ErrorCode::StorageStaleClaim) {
+                transaction.rollback();
+                return current_target.error();
+            }
+            if (!current_target || current.attempt_count >= m_max_attempts) {
+                current.state = OutboxEffectState::Failed;
+                current.lease_until = ClockTime{};
+                const auto failed = write_effect(current, transaction);
+                if (!failed) return failed.error();
+                continue;
+            }
+            const auto next_token = next_storage_revision(current.claim_token.value);
+            if (!next_token) {
+                transaction.rollback();
+                return next_token.error();
+            }
+            if (current.attempt_count == std::numeric_limits<std::uint32_t>::max()) {
+                transaction.rollback();
+                return err(ErrorCode::StorageRevisionExhausted,
+                           "outbox attempt counter is exhausted");
+            }
+            const auto lease_until = add_lease(now, lease_duration);
+            if (!lease_until) {
+                transaction.rollback();
+                return lease_until.error();
+            }
+            current.state = OutboxEffectState::ClaimedBeforeDispatch;
+            current.claim_token = ClaimToken{next_token.value()};
+            current.lease_until = lease_until.value();
+            current.next_eligible_at = now;
+            ++current.attempt_count;
+            current.superseded_by.reset();
+            const auto claimed = write_effect(current, transaction);
+            if (!claimed) {
+                transaction.rollback();
+                return claimed.error();
+            }
+            page.effects.push_back(claimed.value());
+            if (page.effects.size() == limit || page.examined == m_examination_budget) break;
+        }
+        if (consumed == scanned.value().size() && scanned.value().size() < page_limit) {
+            page.continuation.reset();
+            break;
+        }
+    }
+    return page;
+}
+
+Result<OutboxEffect> OutboxRepository::renew_outbox_effect(
+    const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+    ClockTime now, ClockTime lease_until, ITransaction& transaction) const
+{
+    if (transaction.mode() != TransactionMode::ReadWrite)
+        return rollback_effect(transaction, err(ErrorCode::StorageReadOnly,
+                                                "outbox renewal requires a read-write transaction"));
+    if (lease_until <= now || !time_millis(lease_until))
+        return rollback_effect(transaction, err(ErrorCode::InvalidArgument,
+                                                "effect lease expiry must be in the future"));
+    const auto loaded = load_required_effect(id, transaction);
+    if (!loaded) return rollback_effect(transaction, loaded.error());
+    const auto live = require_live_claim(loaded.value(), token, expected_revision, now);
+    if (!live) return rollback_effect(transaction, live.error());
+    auto next = loaded.value();
+    next.lease_until = lease_until;
+    return write_effect(next, transaction);
+}
+
+Result<OutboxEffect> OutboxRepository::mark_dispatch_admitted(
+    const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+    ClockTime now, ITransaction& transaction) const
+{
+    if (transaction.mode() != TransactionMode::ReadWrite)
+        return rollback_effect(transaction, err(ErrorCode::StorageReadOnly,
+                                                "dispatch admission requires a read-write transaction"));
+    const auto loaded = load_required_effect(id, transaction);
+    if (!loaded) return rollback_effect(transaction, loaded.error());
+    const auto live = require_live_claim(loaded.value(), token, expected_revision, now);
+    if (!live || loaded.value().state != OutboxEffectState::ClaimedBeforeDispatch)
+        return rollback_effect(transaction, live ? Error{ErrorCode::InvalidState,
+                                                         "effect is not before dispatch admission"}
+                                                  : live.error());
+    auto next = loaded.value();
+    next.state = OutboxEffectState::DispatchAdmitted;
+    const auto acquired = change_dispatch_owner(next, transaction, DispatchOwnership::Acquire);
+    if (!acquired) return rollback_effect(transaction, acquired.error());
+    return write_effect(next, transaction);
+}
+
+Result<OutboxEffect> OutboxRepository::acknowledge_success(
+    const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+    ClockTime now, std::optional<std::string> physical_identity,
+    IAppliedTargetRepository& applied, ITransaction& transaction) const
+{
+    if (transaction.mode() != TransactionMode::ReadWrite)
+        return rollback_effect(transaction, err(ErrorCode::StorageReadOnly,
+                                                "acknowledgement requires a read-write transaction"));
+    const auto loaded = load_required_effect(id, transaction);
+    if (!loaded) return rollback_effect(transaction, loaded.error());
+    const auto token_match = require_token(loaded.value(), token, expected_revision);
+    if (!token_match) return rollback_effect(transaction, token_match.error());
+    if (loaded.value().state == OutboxEffectState::Succeeded) return loaded.value();
+    const auto live = require_live_claim(loaded.value(), token, expected_revision, now);
+    if (!live || loaded.value().state != OutboxEffectState::DispatchAdmitted)
+        return rollback_effect(transaction, live ? Error{ErrorCode::InvalidState,
+                                                         "effect is not admitted for acknowledgement"}
+                                                  : live.error());
+    if (physical_identity && physical_identity->size() > max_logical_slot_size)
+        return rollback_effect(transaction, err(ErrorCode::StorageRecordTooLarge,
+                                                "physical identity is too large"));
+
+    const auto current = applied.load(loaded.value().slot.target_identity, transaction);
+    if (!current) return rollback_effect(transaction, current.error());
+    AppliedTargetState next;
+    if (current.value()) {
+        if (current.value()->desired_revision > loaded.value().desired_revision
+            || current.value()->confirmed_applied_revision > loaded.value().desired_revision)
+            return rollback_effect(transaction, err(ErrorCode::StorageStaleClaim,
+                                                    "acknowledgement is older than target state"));
+        next = *current.value();
+        next.desired_revision = std::max(next.desired_revision, loaded.value().desired_revision);
+        next.confirmed_applied_revision = loaded.value().desired_revision;
+        if (loaded.value().slot.effect_kind == EffectKind::Delete)
+            next.physical_identity.reset();
+        else if (physical_identity)
+            next.physical_identity = std::move(physical_identity);
+        next.last_confirmed_effect = loaded.value().id;
+    } else {
+        if (loaded.value().slot.effect_kind == EffectKind::Delete) physical_identity.reset();
+        next = AppliedTargetState{loaded.value().slot.target_identity,
+                                  std::move(physical_identity), loaded.value().desired_revision,
+                                  loaded.value().desired_revision, loaded.value().id, 0};
+    }
+    const auto saved = applied.save(next, current.value() ? current.value()->revision : 0,
+                                    transaction);
+    if (!saved) return rollback_effect(transaction, saved.error());
+    const auto released = change_dispatch_owner(loaded.value(), transaction, DispatchOwnership::Release);
+    if (!released) return rollback_effect(transaction, released.error());
+    auto acknowledged = loaded.value();
+    acknowledged.state = OutboxEffectState::Succeeded;
+    acknowledged.lease_until = ClockTime{};
+    acknowledged.next_eligible_at = now;
+    const auto written = write_effect(acknowledged, transaction);
+    if (!written) return rollback_effect(transaction, written.error());
+    return written;
+}
+
+Result<OutboxEffect> OutboxRepository::record_retryable_failure(
+    const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+    ClockTime now, ClockTime next_eligible_at, ITransaction& transaction) const
+{
+    if (transaction.mode() != TransactionMode::ReadWrite)
+        return rollback_effect(transaction, err(ErrorCode::StorageReadOnly,
+                                                "retry transition requires a read-write transaction"));
+    const auto time = validate_retry_time(now, next_eligible_at);
+    if (!time) return rollback_effect(transaction, time.error());
+    const auto loaded = load_required_effect(id, transaction);
+    if (!loaded) return rollback_effect(transaction, loaded.error());
+    const auto live = require_live_claim(loaded.value(), token, expected_revision, now);
+    if (!live || (loaded.value().state != OutboxEffectState::ClaimedBeforeDispatch
+                  && loaded.value().state != OutboxEffectState::DispatchAdmitted))
+        return rollback_effect(transaction, live ? Error{ErrorCode::InvalidState,
+                                                         "effect is not retryable"}
+                                                  : live.error());
+    auto next = loaded.value();
+    if (next.state == OutboxEffectState::DispatchAdmitted) {
+        const auto released = change_dispatch_owner(next, transaction, DispatchOwnership::Release);
+        if (!released) return rollback_effect(transaction, released.error());
+    }
+    next.state = next.attempt_count >= m_max_attempts
+        ? OutboxEffectState::Failed : OutboxEffectState::RetryableFailure;
+    next.lease_until = ClockTime{};
+    next.next_eligible_at = next_eligible_at;
+    return write_effect(next, transaction);
+}
+
+Result<OutboxEffect> OutboxRepository::record_unknown_outcome(
+    const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+    ClockTime now, ITransaction& transaction) const
+{
+    if (transaction.mode() != TransactionMode::ReadWrite)
+        return rollback_effect(transaction, err(ErrorCode::StorageReadOnly,
+                                                "unknown transition requires a read-write transaction"));
+    const auto loaded = load_required_effect(id, transaction);
+    if (!loaded) return rollback_effect(transaction, loaded.error());
+    const auto live = require_live_claim(loaded.value(), token, expected_revision, now);
+    if (!live || loaded.value().state != OutboxEffectState::DispatchAdmitted)
+        return rollback_effect(transaction, live ? Error{ErrorCode::InvalidState,
+                                                         "effect has no dispatch admission marker"}
+                                                  : live.error());
+    auto next = loaded.value();
+    next.state = OutboxEffectState::UnknownOutcome;
+    next.lease_until = ClockTime{};
+    next.next_eligible_at = now;
+    return write_effect(next, transaction);
+}
+
+Result<OutboxEffect> OutboxRepository::record_failed(
+    const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+    ClockTime now, ITransaction& transaction) const
+{
+    if (transaction.mode() != TransactionMode::ReadWrite)
+        return rollback_effect(transaction, err(ErrorCode::StorageReadOnly,
+                                                "failure transition requires a read-write transaction"));
+    const auto loaded = load_required_effect(id, transaction);
+    if (!loaded) return rollback_effect(transaction, loaded.error());
+    const auto token_match = require_token(loaded.value(), token, expected_revision);
+    if (!token_match) return rollback_effect(transaction, token_match.error());
+    if (loaded.value().state == OutboxEffectState::Succeeded
+        || loaded.value().state == OutboxEffectState::Failed
+        || loaded.value().state == OutboxEffectState::Superseded)
+        return rollback_effect(transaction, err(ErrorCode::InvalidState,
+                                                "effect is already terminal"));
+    if (loaded.value().state != OutboxEffectState::UnknownOutcome
+        && !live_claim(loaded.value(), now))
+        return rollback_effect(transaction, err(ErrorCode::StorageStaleClaim,
+                                                "effect claim lease is stale"));
+    auto next = loaded.value();
+    if (next.state == OutboxEffectState::DispatchAdmitted
+        || next.state == OutboxEffectState::UnknownOutcome) {
+        const auto released = change_dispatch_owner(next, transaction, DispatchOwnership::Release);
+        if (!released) return rollback_effect(transaction, released.error());
+    }
+    next.state = OutboxEffectState::Failed;
+    next.lease_until = ClockTime{};
+    next.next_eligible_at = now;
+    return write_effect(next, transaction);
+}
+
+Result<OutboxEffect> OutboxRepository::retry_unknown_effect(
+    const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+    ClockTime now, bool safe_repeat_proof, ClockTime next_eligible_at,
+    ITransaction& transaction) const
+{
+    if (transaction.mode() != TransactionMode::ReadWrite)
+        return rollback_effect(transaction, err(ErrorCode::StorageReadOnly,
+                                                "unknown recovery requires a read-write transaction"));
+    if (!safe_repeat_proof)
+        return rollback_effect(transaction, err(ErrorCode::InvalidState,
+                                                "unknown effect lacks a safe-repeat proof"));
+    const auto time = validate_retry_time(now, next_eligible_at);
+    if (!time) return rollback_effect(transaction, time.error());
+    const auto loaded = load_required_effect(id, transaction);
+    if (!loaded) return rollback_effect(transaction, loaded.error());
+    const auto token_match = require_token(loaded.value(), token, expected_revision);
+    if (!token_match) return rollback_effect(transaction, token_match.error());
+    if (loaded.value().state != OutboxEffectState::UnknownOutcome)
+        return rollback_effect(transaction, err(ErrorCode::InvalidState,
+                                                "effect is not unknown"));
+    auto next = loaded.value();
+    const auto released = change_dispatch_owner(next, transaction, DispatchOwnership::Release);
+    if (!released) return rollback_effect(transaction, released.error());
+    next.state = next.attempt_count >= m_max_attempts
+        ? OutboxEffectState::Failed : OutboxEffectState::RetryableFailure;
+    next.next_eligible_at = next_eligible_at;
+    return write_effect(next, transaction);
+}
+
+Result<OutboxEffect> OutboxRepository::supersede_effect(
+    const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+    ClockTime now, const OutboxEffectId& newer_effect_id, ITransaction& transaction) const
+{
+    if (transaction.mode() != TransactionMode::ReadWrite)
+        return rollback_effect(transaction, err(ErrorCode::StorageReadOnly,
+                                                "supersession requires a read-write transaction"));
+    if (newer_effect_id.value.empty() || newer_effect_id == id)
+        return rollback_effect(transaction, err(ErrorCode::InvalidArgument,
+                                                "successor effect identity is invalid"));
+    const auto loaded = load_required_effect(id, transaction);
+    if (!loaded) return rollback_effect(transaction, loaded.error());
+    const auto token_match = require_token(loaded.value(), token, expected_revision);
+    if (!token_match) return rollback_effect(transaction, token_match.error());
+    if (loaded.value().state == OutboxEffectState::Succeeded
+        || loaded.value().state == OutboxEffectState::Failed
+        || loaded.value().state == OutboxEffectState::Superseded)
+        return rollback_effect(transaction, err(ErrorCode::InvalidState,
+                                                "effect cannot be superseded"));
+    if (loaded.value().state != OutboxEffectState::UnknownOutcome
+        && !live_claim(loaded.value(), now))
+        return rollback_effect(transaction, err(ErrorCode::StorageStaleClaim,
+                                                "effect claim lease is stale"));
+    const auto newer = load_required_effect(newer_effect_id, transaction);
+    if (!newer) return rollback_effect(transaction, newer.error());
+    if (newer.value().slot.target_identity != loaded.value().slot.target_identity
+        || newer.value().desired_revision <= loaded.value().desired_revision
+        || newer.value().state == OutboxEffectState::Failed
+        || newer.value().state == OutboxEffectState::Superseded)
+        return rollback_effect(transaction, err(ErrorCode::StorageConflict,
+                                                "successor effect is not newer for the same target"));
+    const auto watched_newer = transaction.watch(outbox_namespace, newer_effect_id.value,
+                                                  newer.value().revision);
+    if (!watched_newer) return rollback_effect(transaction, watched_newer.error());
+    auto next = loaded.value();
+    if (next.state == OutboxEffectState::DispatchAdmitted
+        || next.state == OutboxEffectState::UnknownOutcome) {
+        const auto released = change_dispatch_owner(next, transaction, DispatchOwnership::Release);
+        if (!released) return rollback_effect(transaction, released.error());
+    }
+    next.state = OutboxEffectState::Superseded;
+    next.lease_until = ClockTime{};
+    next.next_eligible_at = now;
+    next.superseded_by = newer_effect_id;
+    return write_effect(next, transaction);
 }
 
 namespace {

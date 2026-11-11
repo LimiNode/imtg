@@ -5,9 +5,11 @@
 #include "imtg/sessions/render_intents.hpp"
 
 #include <cstdint>
+#include <chrono>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace imtg {
 
@@ -78,15 +80,16 @@ struct OutboxEffectId {
     }
 };
 
+/// \brief Durable lifecycle state of one externally observable effect.
 enum class OutboxEffectState : std::uint8_t {
-    Pending,
-    ClaimedBeforeDispatch,
-    DispatchAdmitted,
-    Succeeded,
-    RetryableFailure,
-    UnknownOutcome,
-    Failed,
-    Superseded,
+    Pending, ///< No active delivery claim exists.
+    ClaimedBeforeDispatch, ///< A worker owns a live claim before transport admission.
+    DispatchAdmitted, ///< The pre-dispatch boundary was committed before transport.
+    Succeeded, ///< External success was confirmed and applied state was advanced.
+    RetryableFailure, ///< The adapter proved that the request was not accepted.
+    UnknownOutcome, ///< The external result is ambiguous; blind retry is forbidden.
+    Failed, ///< A terminal non-retryable outcome was recorded.
+    Superseded, ///< A newer effect replaced this effect under an explicit policy.
 };
 
 /// \brief Durable, transport-neutral effect payload and lifecycle metadata.
@@ -101,8 +104,16 @@ struct OutboxEffect {
     ClaimToken claim_token{}; ///< Delivery fencing token.
     ClockTime lease_until{}; ///< Delivery lease expiry.
     ClockTime next_eligible_at{}; ///< Earliest retry time.
-    std::uint32_t attempt_count{}; ///< Number of delivery attempts.
+    std::uint32_t attempt_count{}; ///< Number of claims, including pre-dispatch lease recovery.
     StorageRevision revision{}; ///< Backend row revision.
+    std::optional<OutboxEffectId> superseded_by; ///< Newer effect retained for audit.
+};
+
+/// \brief Bounded page returned by an outbox claim scan.
+struct OutboxEffectPage {
+    std::vector<OutboxEffect> effects; ///< Effects claimed by this transaction.
+    std::optional<std::string> continuation; ///< Opaque cursor; absent means end of scan.
+    std::size_t examined{}; ///< Number of effect rows examined by this operation.
 };
 
 /// \brief Encodes an effect in a bounded versioned format.
@@ -110,7 +121,16 @@ struct OutboxEffect {
 /// \brief Decodes and validates an effect envelope.
 [[nodiscard]] Result<OutboxEffect> decode_outbox_effect(std::string_view encoded);
 
-/// \brief Storage contract for idempotent logical effect insertion.
+class IAppliedTargetRepository;
+
+/// \brief Storage contract for idempotent effects and fenced delivery lifecycle.
+/// \details Mutations borrow a thread-affine transaction and never commit it.
+/// Returned revisions are candidates until commit reports Committed. A worker
+/// must confirm both claim and admission commits before calling its transport.
+/// Unknown requires a new authoritative read; it never authorizes dispatch.
+/// Every delivery mutation returning an error rolls the transaction back.
+/// Allocation exceptions propagate; the owner must roll back during unwinding.
+/// \thread_safety Instances are immutable and may be shared; transactions may not.
 class IOutboxRepository {
 public:
     virtual ~IOutboxRepository() = default;
@@ -128,17 +148,193 @@ public:
     /// different payload occupying the same logical slot.
     [[nodiscard]] virtual Result<OutboxEffect> create_or_validate(
         const OutboxEffect& effect, ITransaction& transaction) const = 0;
+
+    /// \brief Claims a bounded page of eligible effects with a fencing token.
+    /// \param limit Maximum number of effects to claim.
+    /// \param now Authoritative current time.
+    /// \param lease_duration Positive lease duration.
+    /// \param continuation Opaque cursor returned by a previous scan.
+    /// \param transaction Caller-owned read-write transaction.
+    /// \return Claimed effects and bounded-scan progress.
+    /// \note An expired pre-dispatch claim may be reclaimed. An expired
+    /// `DispatchAdmitted` row is conservatively changed to `UnknownOutcome`.
+    /// Exhausted or obsolete unadmitted work becomes Failed without dispatch.
+    [[nodiscard]] virtual Result<OutboxEffectPage> claim_outbox_effects(
+        std::size_t limit, ClockTime now, std::chrono::milliseconds lease_duration,
+        std::string_view continuation, ITransaction& transaction) const = 0;
+
+    /// \brief Renews a live delivery lease without changing its token.
+    /// \param id Canonical effect identity, including its LT1 target.
+    /// \param token Current delivery claim token.
+    /// \param expected_revision Transaction-visible effect revision.
+    /// \param now Authoritative time used to reject expired claims.
+    /// \param lease_until New future expiry in the storage clock domain.
+    /// \param transaction Borrowed read-write transaction.
+    /// \return Candidate renewed effect, or a stale-claim/storage error.
+    [[nodiscard]] virtual Result<OutboxEffect> renew_outbox_effect(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ClockTime lease_until, ITransaction& transaction) const = 0;
+
+    /// \brief Stages the conservative boundary immediately before external dispatch.
+    /// \param id Canonical effect identity, including its LT1 target.
+    /// \param token Live delivery claim token.
+    /// \param expected_revision Transaction-visible effect revision.
+    /// \param now Authoritative time used to validate the live lease.
+    /// \param transaction Borrowed read-write transaction; the owner must confirm commit.
+    /// \return Candidate admitted effect, or a stale-claim/target-conflict error.
+    /// \details Atomically reserves the target against other admitted effects.
+    /// An unresolved UnknownOutcome keeps that reservation even after lease expiry.
+    [[nodiscard]] virtual Result<OutboxEffect> mark_dispatch_admitted(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ITransaction& transaction) const = 0;
+
+    /// \brief Records confirmed success and atomically advances applied target state.
+    /// \param id Canonical identity of the admitted effect.
+    /// \param token Live delivery claim token.
+    /// \param expected_revision Observed effect revision; re-read after a duplicate completion.
+    /// \param now Authoritative time used to reject stale callbacks.
+    /// \param applied Repository used to persist authoritative target evidence.
+    /// \param physical_identity Optional transport identity confirmed by the adapter.
+    /// \param transaction Borrowed read-write transaction containing both writes.
+    /// \return Candidate succeeded effect; a same-token Succeeded row is unchanged.
+    /// \warning Errors roll back the borrowed transaction; callers must not commit it.
+    [[nodiscard]] virtual Result<OutboxEffect> acknowledge_success(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, std::optional<std::string> physical_identity,
+        IAppliedTargetRepository& applied, ITransaction& transaction) const = 0;
+
+    /// \brief Records proven non-acceptance with bounded retry time and attempt budget.
+    /// \param id Canonical identity of the claimed or admitted effect.
+    /// \param token Live delivery claim token.
+    /// \param expected_revision Observed effect revision.
+    /// \param now Authoritative current time.
+    /// \param next_eligible_at Adapter-selected retry time, not earlier than now.
+    /// \param transaction Borrowed read-write transaction.
+    /// \return Candidate RetryableFailure, or Failed when its attempt budget is exhausted.
+    /// \pre The adapter proved the external operation was not accepted; response loss is not proof.
+    [[nodiscard]] virtual Result<OutboxEffect> record_retryable_failure(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ClockTime next_eligible_at, ITransaction& transaction) const = 0;
+
+    /// \brief Records an ambiguous external outcome without making it eligible again.
+    /// \param id Canonical identity of the admitted effect.
+    /// \param token Live delivery claim token.
+    /// \param expected_revision Observed effect revision.
+    /// \param now Authoritative current time.
+    /// \param transaction Borrowed read-write transaction.
+    /// \return Candidate UnknownOutcome retaining target ownership, or a stale-claim error.
+    [[nodiscard]] virtual Result<OutboxEffect> record_unknown_outcome(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ITransaction& transaction) const = 0;
+
+    /// \brief Records a terminal failure under the current fencing token.
+    /// \param id Canonical effect identity.
+    /// \param token Current token; non-unknown work also requires a live lease.
+    /// \param expected_revision Observed effect revision.
+    /// \param now Authoritative current time.
+    /// \param transaction Borrowed read-write transaction.
+    /// \return Candidate Failed effect without advancing applied state.
+    /// \pre For admitted/unknown work the caller has selected an explicit terminal
+    /// resolution policy; this does not prove that the remote effect never occurred.
+    [[nodiscard]] virtual Result<OutboxEffect> record_failed(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ITransaction& transaction) const = 0;
+
+    /// \brief Re-queues an unknown effect only with an explicit safe-repeat proof.
+    /// \param id Canonical identity of the unknown effect.
+    /// \param token Token of the unresolved attempt.
+    /// \param expected_revision Observed unknown effect revision.
+    /// \param now Authoritative current time.
+    /// \param safe_repeat_proof Caller assertion of method-specific idempotency or authoritative
+    /// lookup proof; the repository cannot validate external evidence.
+    /// \param next_eligible_at Retry time, not earlier than now.
+    /// \param transaction Borrowed read-write transaction.
+    /// \return Candidate RetryableFailure, Failed if exhausted, or an error when proof is absent.
+    [[nodiscard]] virtual Result<OutboxEffect> retry_unknown_effect(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, bool safe_repeat_proof, ClockTime next_eligible_at,
+        ITransaction& transaction) const = 0;
+
+    /// \brief Records explicit supersession by a newer effect in the same target.
+    /// \param id Canonical identity of the effect being abandoned.
+    /// \param token Current token; non-unknown work also requires a live lease.
+    /// \param expected_revision Observed effect revision.
+    /// \param now Authoritative current time.
+    /// \param newer_effect_id Existing successor with a strictly greater desired revision.
+    /// \param transaction Borrowed read-write transaction fencing both effect rows.
+    /// \return Candidate Superseded effect preserving its immutable payload and successor.
+    /// \pre Superseding an admitted/unknown effect is an explicit policy choice accepting
+    /// possible late remote execution; it never asserts external cancellation.
+    [[nodiscard]] virtual Result<OutboxEffect> supersede_effect(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, const OutboxEffectId& newer_effect_id,
+        ITransaction& transaction) const = 0;
 };
 
 /// \brief In-memory reference implementation backed by the generic storage API.
 class OutboxRepository final : public IOutboxRepository {
 public:
+    /// \brief Creates a reference repository with bounded scan controls.
+    /// \param page_size Storage scan page bound, from one to 4096.
+    /// \param examination_budget Maximum rows examined by one claim operation.
+    /// \param max_attempts Maximum claims before definite unadmitted work becomes Failed.
+    explicit OutboxRepository(std::size_t page_size = 64,
+                              std::size_t examination_budget = 1024,
+                              std::uint32_t max_attempts = 8) noexcept
+        : m_page_size(page_size), m_examination_budget(examination_budget),
+          m_max_attempts(max_attempts) {}
+
     /// \copydoc IOutboxRepository::load
     [[nodiscard]] Result<std::optional<OutboxEffect>> load(
         const OutboxEffectId& id, ITransaction& transaction) const override;
     /// \copydoc IOutboxRepository::create_or_validate
     [[nodiscard]] Result<OutboxEffect> create_or_validate(
         const OutboxEffect& effect, ITransaction& transaction) const override;
+
+    /// \copydoc IOutboxRepository::claim_outbox_effects
+    [[nodiscard]] Result<OutboxEffectPage> claim_outbox_effects(
+        std::size_t limit, ClockTime now, std::chrono::milliseconds lease_duration,
+        std::string_view continuation, ITransaction& transaction) const override;
+    /// \copydoc IOutboxRepository::renew_outbox_effect
+    [[nodiscard]] Result<OutboxEffect> renew_outbox_effect(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ClockTime lease_until, ITransaction& transaction) const override;
+    /// \copydoc IOutboxRepository::mark_dispatch_admitted
+    [[nodiscard]] Result<OutboxEffect> mark_dispatch_admitted(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ITransaction& transaction) const override;
+    /// \copydoc IOutboxRepository::acknowledge_success
+    [[nodiscard]] Result<OutboxEffect> acknowledge_success(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, std::optional<std::string> physical_identity,
+        IAppliedTargetRepository& applied, ITransaction& transaction) const override;
+    /// \copydoc IOutboxRepository::record_retryable_failure
+    [[nodiscard]] Result<OutboxEffect> record_retryable_failure(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ClockTime next_eligible_at, ITransaction& transaction) const override;
+    /// \copydoc IOutboxRepository::record_unknown_outcome
+    [[nodiscard]] Result<OutboxEffect> record_unknown_outcome(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ITransaction& transaction) const override;
+    /// \copydoc IOutboxRepository::record_failed
+    [[nodiscard]] Result<OutboxEffect> record_failed(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ITransaction& transaction) const override;
+    /// \copydoc IOutboxRepository::retry_unknown_effect
+    [[nodiscard]] Result<OutboxEffect> retry_unknown_effect(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, bool safe_repeat_proof, ClockTime next_eligible_at,
+        ITransaction& transaction) const override;
+    /// \copydoc IOutboxRepository::supersede_effect
+    [[nodiscard]] Result<OutboxEffect> supersede_effect(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, const OutboxEffectId& newer_effect_id,
+        ITransaction& transaction) const override;
+
+private:
+    std::size_t m_page_size;
+    std::size_t m_examination_budget;
+    std::uint32_t m_max_attempts;
 };
 
 /// \brief Durable semantic state of a logical target, independent of transport.

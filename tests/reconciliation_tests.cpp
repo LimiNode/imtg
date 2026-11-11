@@ -6,6 +6,7 @@
 #include <chrono>
 #include <limits>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -129,6 +130,82 @@ public:
         const OutboxEffect& effect, ITransaction& transaction) const override
     {
         return m_delegate.create_or_validate(effect, transaction);
+    }
+
+    Result<OutboxEffectPage> claim_outbox_effects(
+        std::size_t limit, ClockTime now, std::chrono::milliseconds lease_duration,
+        std::string_view continuation, ITransaction& transaction) const override
+    {
+        return m_delegate.claim_outbox_effects(limit, now, lease_duration,
+                                                continuation, transaction);
+    }
+
+    Result<OutboxEffect> renew_outbox_effect(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ClockTime lease_until, ITransaction& transaction) const override
+    {
+        return m_delegate.renew_outbox_effect(id, token, expected_revision, now,
+                                               lease_until, transaction);
+    }
+
+    Result<OutboxEffect> mark_dispatch_admitted(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ITransaction& transaction) const override
+    {
+        return m_delegate.mark_dispatch_admitted(id, token, expected_revision, now,
+                                                  transaction);
+    }
+
+    Result<OutboxEffect> acknowledge_success(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, std::optional<std::string> physical_identity,
+        IAppliedTargetRepository& applied, ITransaction& transaction) const override
+    {
+        return m_delegate.acknowledge_success(id, token, expected_revision, now,
+                                               std::move(physical_identity), applied,
+                                               transaction);
+    }
+
+    Result<OutboxEffect> record_retryable_failure(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ClockTime next_eligible_at, ITransaction& transaction) const override
+    {
+        return m_delegate.record_retryable_failure(id, token, expected_revision, now,
+                                                    next_eligible_at, transaction);
+    }
+
+    Result<OutboxEffect> record_unknown_outcome(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ITransaction& transaction) const override
+    {
+        return m_delegate.record_unknown_outcome(id, token, expected_revision, now,
+                                                 transaction);
+    }
+
+    Result<OutboxEffect> record_failed(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ITransaction& transaction) const override
+    {
+        return m_delegate.record_failed(id, token, expected_revision, now, transaction);
+    }
+
+    Result<OutboxEffect> retry_unknown_effect(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, bool safe_repeat_proof, ClockTime next_eligible_at,
+        ITransaction& transaction) const override
+    {
+        return m_delegate.retry_unknown_effect(id, token, expected_revision, now,
+                                               safe_repeat_proof, next_eligible_at,
+                                               transaction);
+    }
+
+    Result<OutboxEffect> supersede_effect(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, const OutboxEffectId& newer_effect_id,
+        ITransaction& transaction) const override
+    {
+        return m_delegate.supersede_effect(id, token, expected_revision, now,
+                                            newer_effect_id, transaction);
     }
 
     mutable std::size_t load_calls{};

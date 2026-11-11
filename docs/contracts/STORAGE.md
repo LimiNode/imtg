@@ -1,11 +1,12 @@
 # Storage contract
 
-**Semantic owner:** persistence maintainers. **Status:** M2a protocol and deterministic in-memory reference backend are implemented in `src/imtg/storage/storage.hpp`; M2b adds typed session, processed-update, and minimal render-intent repositories; M2c-a adds claims/fencing and M2c-b adds the initial reconciliation/outbox records. Complete recovery conformance, delivery semantics, and MDBX remain planned.
+**Semantic owner:** persistence maintainers. **Status:** M2a protocol and deterministic in-memory reference backend are implemented in `src/imtg/storage/storage.hpp`; M2b adds typed session, processed-update, and minimal render-intent repositories; M2c-a adds claims/fencing, M2c-b adds reconciliation/outbox publication, and the current M2c-c Draft adds the backend-neutral delivery lifecycle and acknowledgement boundary. Complete recovery conformance and MDBX remain planned.
 
 ## Core interfaces
 
 ```cpp
-// M2a/M2b API excerpt; claim and delivery interfaces remain planned.
+// M2a/M2b API excerpt; M2c claim/delivery interfaces live under
+// src/imtg/sessions/ and src/imtg/reconciliation/.
 enum class CommitOutcome { Committed, RejectedConflict, Failed, Unknown };
 struct CommitResult {
     CommitOutcome outcome;
@@ -91,9 +92,13 @@ The in-memory reference backend uses snapshot/optimistic semantics: a transactio
 
 The M2c render-intent, claim, fencing, applied-target and transactional outbox
 design is specified in [ADR 0005](../adr/0005-m2c-render-intent-reconciliation.md).
-The reference implementation uses schema version `OE1` for outbox effects,
+The reference implementation writes schema version `OE2` for outbox effects and
+continues to decode legacy `OE1` rows. It uses
 `LES1` for logical slots, `LT1` for canonical logical target identities, and
-`AT1` for applied targets. `LT1` is a versioned, length-prefixed identity that
+`AT1` for applied targets. Internal `DT1` rows in `outbox_dispatch_targets`
+reserve a canonical target for an admitted attempt; acquisition/release and
+effect transitions are one transaction. These are logical outbox metadata,
+not an additional per-chat DBI. `LT1` is a versioned, length-prefixed identity that
 binds the complete canonical `ConversationKey` to a stable logical slot. Every
 outbox and applied-target row must use this canonical identity; a raw slot or
 legacy unscoped identity is rejected rather than silently reused. The optional
@@ -108,6 +113,17 @@ logical slot and physical-key identities at 4096 bytes, and complete records at
 4 MiB. Payload digests use the standard FNV-1a 64-bit algorithm with its
 versioned `fnv1a64:` label; they detect accidental mismatch and are not
 authentication or authorization primitives.
+
+The M2c-c delivery repository claims bounded pages with a monotonic token and
+lease, stages `DispatchAdmitted` for confirmed commit before an external call,
+and rejects stale renewal or acknowledgement attempts. A confirmed success updates the effect
+and `AppliedTargetState` in one caller-owned transaction; desired and confirmed
+applied revisions never decrease, and a physical transport identity is written
+only with that confirmation. `UnknownOutcome` is not claimable by default: it
+can return to retryable work only when the caller supplies an explicit
+safe-repeat proof. This reference behavior is logical in-memory semantics, not
+process-crash durability. The normative state/commit/retry rules and reference
+failure-injection evidence are in [TELEGRAM_DELIVERY.md](TELEGRAM_DELIVERY.md).
 
 ## Revisions, errors, and migration
 
@@ -189,6 +205,8 @@ allocation-free no-op commits, and deterministic known/unknown failure injection
 cases are capability-gated for
 future single-writer backends. M2b additionally covers typed session encoding/recovery within backend
 lifetime, optimistic session saves, processed-update deduplication, and atomic TX1 publication of a
-session transition plus minimal render intent. The two-transaction render-intent claim/reconciliation chain,
-migrations beyond schema metadata, bounded queries, DBI-budget calculation, lease expiry/fencing,
-and late-ack rejection remain M2c–M2e work. **Dependencies:** none in core; MDBX adapter is M2d.
+session transition plus minimal render intent. M2c-a/b cover bounded intent claims and TX2
+reconciliation; the current M2c-c Draft adds bounded delivery claims, lease fencing,
+late-ack rejection, target ownership and acknowledgement failure injection. Migrations beyond
+schema metadata, durable due-index queries, DBI-budget calculation and cross-backend recovery
+remain M2d/M2e work. **Dependencies:** none in core; MDBX adapter is M2d.
