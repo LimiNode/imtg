@@ -13,7 +13,7 @@ add_library(imtg_core STATIC
     src/imtg/core/identifiers.cpp
     src/imtg/ui/tree.cpp
     src/imtg/actions/token.cpp
-    src/imtg/actions/registry.cpp
+    src/imtg/actions/ActionRegistry.cpp
     src/imtg/runtime/reference_runtime.cpp
     src/imtg/storage/storage.cpp
     src/imtg/storage/time_encoding.cpp

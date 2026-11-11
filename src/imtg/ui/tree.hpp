@@ -2,7 +2,7 @@
 #define IMTG_UI_TREE_HPP
 
 #include "imtg/core/result.hpp"
-#include "imtg/actions/registry.hpp"
+#include <imtg/actions/ActionRegistry.hpp>
 
 #include <cstddef>
 #include <cstdint>

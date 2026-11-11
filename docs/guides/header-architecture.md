@@ -45,9 +45,12 @@ implementation PRs.
 The base-domain inventory below is measured against the immutable PR #19 merge
 `6a0814c8107a14d60cafcbdf44f1711eec446b2c`. The commerce addendum is measured
 against the restacked PR #17 source snapshot `574c448` (the same commerce
-source that was reviewed at `fb5754d1a081ad8a4bc184a4bd26043137126c39`).
-These snapshots are explicit so the audit does not silently change with a
-future `main`.
+source that was reviewed at `fb5754d1a081ad8a4bc184a4bd26043137126c39`). The
+Actions implementation addendum is measured against source snapshot
+`5dca4977adcbe82d1d897f95fae793c058c9322c`; this snapshot includes the
+standalone validation and registration publication-order correctives. These
+snapshots are explicit so the audit does not silently change with a future
+`main`.
 
 ## Audit of the current tree
 
@@ -121,6 +124,33 @@ excludes `imtg/commerce.hpp` and `imtg/commerce/`; a commerce-enabled install
 adds the umbrella and the six documented component headers. The removed
 `imtg/commerce/payments.hpp` is not a compatibility API.
 
+### Actions implementation addendum
+
+The Actions migration now provides the root umbrella `imtg/actions.hpp` and
+these standalone public contracts:
+
+| Header | Ownership |
+| --- | --- |
+| `imtg/actions/ActionCommand.hpp` | command value emitted by handlers |
+| `imtg/actions/ActionContext.hpp` | invocation-scoped dispatch capability |
+| `imtg/actions/PayloadCodec.hpp` | typed payload encode/decode contract |
+| `imtg/actions/ActionHandle.hpp` | generation-bound typed capability |
+| `imtg/actions/ActionRegistry.hpp` | registration, validation, token creation, invocation |
+| `imtg/actions/token.hpp` | external token identities and codecs |
+
+The split is by responsibility rather than by every DTO. Registration,
+generation fencing, stale-handle behavior, callback lifetime, route validation,
+and synchronization are unchanged. `ActionRegistry.cpp` is beside its owning
+header. The root umbrella still includes the existing
+`<imtg/core/core.hpp>` transitional lower-level umbrella because
+`<imtg/core.hpp>` does not exist yet.
+
+The installed nested paths `imtg/actions/actions.hpp` and
+`imtg/actions/registry.hpp` remain thin compatibility shims for consumers of
+the current package. They are not additional API surfaces; removal requires a
+declared compatibility-breaking release and migration note, so the shims are
+not an indefinite parallel implementation.
+
 ## Target topology
 
 The target entry points are root-level umbrellas:
@@ -182,7 +212,7 @@ The intended mapping is:
 | Current installed path | Target entry point | Migration note |
 | --- | --- | --- |
 | `imtg/core/core.hpp` | `imtg/core.hpp` | relocate umbrella after dependency audit |
-| `imtg/actions/actions.hpp` | `imtg/actions.hpp` | relocate umbrella; review registry split separately |
+| `imtg/actions/actions.hpp` | `imtg/actions.hpp` | root umbrella implemented; nested path is a compatibility shim |
 | no domain umbrella | `imtg/storage.hpp` | add only if storage remains a meaningful public boundary |
 | no domain umbrella | `imtg/sessions.hpp` | add after session/render-intent ownership is confirmed |
 | no domain umbrella | `imtg/reconciliation.hpp` | add after outbox boundary is confirmed |

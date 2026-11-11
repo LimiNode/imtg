@@ -1,4 +1,4 @@
-#include <imtg/actions/actions.hpp>
+#include <imtg/actions.hpp>
 #include <imtg/core/core.hpp>
 #include <imtg/runtime/runtime.hpp>
 #include <imtg/storage/storage.hpp>
