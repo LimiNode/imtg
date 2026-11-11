@@ -75,7 +75,7 @@ and operational review.
 | Plisio | P1 for crypto | Personal wallet access is advertised; commercial API eligibility for an ordinary individual needs confirmation | Not the Russian-card/SBP path | Crypto payments | Gateway/API and callbacks are advertised; verify refund and settlement semantics | `needs_verification` | Confirm merchant eligibility, KYC and sandbox/live behavior |
 | BTCPay Server | P1 for crypto | Self-hosted deployment does not require registration with a hosted provider; merchant remains responsible for legal and operational eligibility | Not the Russian-card/SBP path | Bitcoin/Lightning and other configured processors | Self-hosted API and invoice/webhook surface; verify chain confirmations, Lightning settlement and recovery | `observed` for self-hosted architecture | Define node, wallet, confirmation, backup and incident-recovery policy before adapter work |
 | CoinGate | P2 for crypto | Sole-trader onboarding may require tax documentation; anonymous personal merchant use is not assumed | Not the Russian-card/SBP path | Crypto payments | Hosted/API, callbacks and stated fee information require current account-level verification | `needs_verification` | Confirm merchant jurisdiction, KYC, refunds and payout constraints |
-| Trybit (formerly CryptoCloud) | P1 for crypto | Public requirements describe connection for an individual without an IP; account moderation and production eligibility remain to be confirmed | Not the Russian-card/SBP path | Bitcoin, USDT, TON, Ethereum, Solana and other supported crypto assets | API V2 invoice creation, hosted checkout, signed POSTBACK and status lookup are documented; a standard refund API is not confirmed | `claimed` | Verify current API/authentication, POSTBACK signature, amount/network checks, invoice expiry, refund, AML/KYT, payout and multi-shop terms |
+| Trybit (formerly CryptoCloud) | P1 research / P2 implementation | Public requirements describe connection for an individual without an IP; account moderation and production eligibility remain to be confirmed | Not the Russian-card/SBP path | Bitcoin, USDT, TON, Ethereum, Solana and other supported crypto assets | API V2 invoice creation, hosted checkout, signed POSTBACK and status lookup are documented; a standard refund API is not confirmed | `claimed` | Verify current API/authentication, POSTBACK signature, amount/network checks, invoice expiry, refund, AML/KYT, payout and multi-shop terms before the post-Mir/SBP adapter milestone |
 | CloudPayments | P2 | Self-employed onboarding is advertised; ordinary-individual eligibility is not confirmed | Mir, Mir Pay and SBP are advertised; confirm acceptance, recurring-payment and payout conditions | Not a current priority | Hosted/API, recurring payments and callbacks require current contract verification | `needs_verification` | Confirm merchant type, receipt rules, limits, webhook signing and refunds |
 | FormaPay | P3 | Sufficient legal and operational conditions are not confirmed; canonical source recorded as `formapay.io` | Unknown | Unknown | Keep only as a research candidate until official evidence is collected | `deferred` | Do not implement or advertise support |
 | Robokassa | P2 | Self-employed and other merchant paths require current onboarding review | Method availability is account and contract dependent | Not a current priority | Hosted checkout/API/callbacks are established patterns; verify current method and refund rules | `needs_verification` | Confirm individual/self-employed path and Russian method coverage |
@@ -205,16 +205,17 @@ confirmed in a sandbox and with an approved merchant account.
 
 LAVA, TabPay, Paydex and AnyPay are independent P1 candidates. They must not be
 treated as interchangeable: each needs its own capability record and onboarding
-decision. Plisio, BTCPay Server and Trybit are parallel P1 crypto candidates
-with different custody and operating models; CoinGate, CloudPayments and the
-other crypto providers remain P2 or verification work. Trybit is a
-hosted/custodial crypto processor, not a replacement for Mir or SBP, and its
-advertised individual onboarding does not prove that it may collect funds for
-multiple independent shops. None of these candidates changes the core payment
-lifecycle or the Russian-card/SBP priority. Trybit's Telegram-bot API does not
-override Telegram Stars requirements for digital goods or services sold inside
-Telegram; treat it as an external crypto processor for permitted physical goods
-or services until the applicable policy and merchant terms are verified.
+decision. Plisio, BTCPay Server and Trybit are P1 crypto research candidates
+with different custody and operating models; their adapters remain P2 work after
+the main Mir/SBP path. CoinGate, CloudPayments and the other crypto providers
+remain P2 or verification work. Trybit is a hosted/custodial crypto processor,
+not a replacement for Mir or SBP, and its advertised individual onboarding does
+not prove that it may collect funds for multiple independent shops. None of
+these candidates changes the core payment lifecycle or the Russian-card/SBP
+priority. Trybit's Telegram-bot API does not override Telegram Stars
+requirements for digital goods or services sold inside Telegram; treat it as an
+external crypto processor for permitted physical goods or services until the
+applicable policy and merchant terms are verified.
 
 YooKassa's documented non-resident path is a separate company-and-contract
 scenario, not a substitute for the ordinary-individual-without-IP target. It
