@@ -13,5 +13,19 @@
 9. **Bounded work:** queues, retries, callback data, and rendered payloads have explicit limits.
 10. **Locale isolation:** a user render uses an immutable locale/catalog snapshot; no global mutable language context exists.
 11. **Honest status:** conceptual examples are not represented as implemented functionality.
+12. **One domain authority:** bot, Mini App and operator surfaces use the same
+    authoritative business services and storage; they do not maintain separate
+    carts, orders, payment rules or permissions.
+13. **State separation:** a user-facing Application API may request a domain
+    command but cannot directly mutate bot `SessionRecord`, FSM or render-intent
+    state. Conversation state remains fenced by `ConversationKey` and runtime
+    ownership.
+14. **Surface authentication:** signed Telegram Mini App launch data is
+    verified server-side and bound to bot/user/shop scope. `initDataUnsafe`,
+    client IDs, redirects and browser callbacks are not authentication or
+    payment evidence. Operator access has a separate privileged boundary.
+15. **Cross-surface consistency:** commands carry idempotency and revision
+    expectations; stale, duplicate, conflicting and unknown outcomes remain
+    explicit. Notifications never replace the authoritative transaction.
 
 Contract tests should name the invariant they protect. Exceptions require an ADR and an explicit impact analysis.

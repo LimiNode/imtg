@@ -55,6 +55,14 @@ The UI tree owns immutable render data and stable component IDs for one render. 
 
 `ctx.dispatch()` is a synchronous transactional command path: successful update processing cannot be recorded until its required state changes and durable render intent commit. EventBus publication is a separate notification mechanism; an asynchronous or non-persistent event may not be the sole carrier of a required transition or effect. Events are domain messages, not Telegram requests. C++ callbacks, pointers, references, and closures are never serialized.
 
+An application may expose the same domain layer through a Telegram bot, a
+Telegram Mini App HTTPS Application API, and an optional ImGuiX/operator API.
+These are separate security and presentation boundaries over shared business
+state; they do not duplicate domain rules or grant a Mini App direct access to
+bot FSM/session records. The normative boundary is [the multi-surface
+application contract](contracts/MULTI_SURFACE_APPLICATION.md), with the
+decision recorded in [ADR 0010](adr/0010-multi-surface-application-runtime.md).
+
 ## Concurrency and shutdown
 
 Updates for the same logical `ConversationKey` are processed in order. Different keys may run concurrently if their storage and services are safe. Shutdown stops intake, drains or cancels bounded work according to policy, commits recoverable state, and leaves unsent effects in the outbox. No new callback may start after its action/subscription scope closes; already-running callbacks are allowed to finish only while their owner remains alive and the lifetime guard is valid.
