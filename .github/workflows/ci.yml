@@ -68,6 +68,26 @@ jobs:
       - name: Build core-only consumer
         run: cmake --build build/core-only-consumer --parallel
 
+  mdbx:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Configure optional MDBX adapter
+        run: >-
+          cmake -S . -B build/mdbx
+          -DCMAKE_BUILD_TYPE=Debug
+          -DBUILD_TESTING=ON
+          -DIMTG_BUILD_MDBX=ON
+          -DMDBXC_DEPS_MODE=BUNDLED
+          -DMDBXC_BUILD_EXAMPLES=OFF
+          -DMDBXC_BUILD_TESTS=OFF
+      - name: Build optional MDBX adapter
+        run: cmake --build build/mdbx --parallel
+      - name: Test optional MDBX adapter
+        run: ctest --test-dir build/mdbx --output-on-failure
+
   documentation:
     runs-on: ubuntu-latest
     steps:

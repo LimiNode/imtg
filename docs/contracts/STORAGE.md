@@ -1,6 +1,6 @@
 # Storage contract
 
-**Semantic owner:** persistence maintainers. **Status:** M2a protocol and deterministic in-memory reference backend are implemented in `src/imtg/storage/storage.hpp`; M2b adds typed session, processed-update, and minimal render-intent repositories; M2c-a adds claims/fencing, M2c-b adds reconciliation/outbox publication, and the current M2c-c Draft adds the backend-neutral delivery lifecycle and acknowledgement boundary. Complete recovery conformance and MDBX remain planned.
+**Semantic owner:** persistence maintainers. **Status:** M2a protocol and deterministic in-memory reference backend are implemented in `src/imtg/storage/storage.hpp`; M2b adds typed session, processed-update, and minimal render-intent repositories; M2c-a adds claims/fencing, M2c-b adds reconciliation/outbox publication, and merged M2c-c adds the backend-neutral delivery lifecycle and acknowledgement boundary. Complete recovery conformance and MDBX remain planned.
 
 ## Core interfaces
 
@@ -202,7 +202,7 @@ Mandatory runtime persistence is `meta/schema`, sessions, processed updates, ren
 
 ## Initial MDBX profile
 
-MDBX uses a calculated DBI budget. The minimal runtime profile requires **6 logical DBIs**: `meta`, `sessions`, `processed_updates`, `render_intents`, `outbox`, and `event_journal`. Optional modules declare their DBIs and secondary-index DBIs (for example users `+1`, chats `+1`, history data `+1` plus each enabled lookup index). Configuration computes `required_dbs = runtime_dbs + module_dbs + index_dbs + reserved_headroom` and fails before opening the environment if `max_dbs` is insufficient. It never creates a DBI per user/chat.
+MDBX uses a calculated DBI budget. The M2d-a profile requires **6 physical DBIs**: `meta`, `sessions`, `processed_updates`, `render_intents`, `outbox`, and `event_journal`. The `outbox` DBI also stores dispatch-target metadata and applied-target state under reserved key prefixes; this is one physical namespace, not a DBI per logical record category. Optional modules declare their DBIs and secondary-index DBIs (for example users `+1`, chats `+1`, history data `+1` plus each enabled lookup index). Configuration computes `required_dbs = runtime_dbs + module_dbs + index_dbs + reserved_headroom` and fails before opening the environment if `max_dbs` is insufficient. It never creates a DBI per user/chat. The current adapter reserves `max_dbs = 8` by default: six runtime DBIs plus two headroom slots.
 
 Logical keys use composite encodings such as `(bot_id, conversation_scope, chat_id, thread_id, user_id)` where applicable. Byte ordering is fixed before implementation so range scans are deterministic. Pagination uses bounded ranges and continuation keys. Transactions are short-lived, single-owner, and never hold network calls or user callbacks. MDBX reader/writer limits, map-size errors, and retryable conflicts become typed errors.
 
@@ -215,7 +215,14 @@ cases are capability-gated for
 future single-writer backends. M2b additionally covers typed session encoding/recovery within backend
 lifetime, optimistic session saves, processed-update deduplication, and atomic TX1 publication of a
 session transition plus minimal render intent. M2c-a/b cover bounded intent claims and TX2
-reconciliation; the current M2c-c Draft adds bounded delivery claims, lease fencing,
+reconciliation; merged M2c-c adds bounded delivery claims, lease fencing,
 late-ack rejection, target ownership and acknowledgement failure injection. Migrations beyond
 schema metadata, durable due-index queries, DBI-budget calculation and cross-backend recovery
-remain M2d/M2e work. **Dependencies:** none in core; MDBX adapter is M2d.
+remain M2d/M2e work. **M2d-a** adds `imtg_mdbx` behind `IMTG_BUILD_MDBX`,
+using pinned `mdbx-containers` and `libmdbx` sources. Its conformance executable
+proves close/reopen persistence, snapshot consistency, read-your-writes, atomic
+multi-record commit, CAS and ABA fencing, bounded scans, read-only rejection,
+thread ownership, and schema migration-state admission. Native commit errors
+remain conservatively `Unknown`; crash injection, due indexes, migration
+execution and installed-package export remain M2d-b/M2e work. **Dependencies:**
+none in core; the MDBX adapter is optional.

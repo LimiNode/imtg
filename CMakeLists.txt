@@ -4,6 +4,10 @@ project(imtg VERSION 0.1.0 LANGUAGES CXX)
 
 option(IMTG_BUILD_DOCUMENTATION "Build the optional Doxygen documentation check" OFF)
 option(IMTG_BUILD_COMMERCE "Build and install the optional imtg_commerce module" OFF)
+option(IMTG_BUILD_MDBX "Build the optional persistent MDBX storage adapter" OFF)
+set(IMTG_MDBX_CONTAINERS_SOURCE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/external/mdbx-containers" CACHE PATH
+    "Pinned mdbx-containers source used by the optional MDBX adapter")
 
 include(GNUInstallDirs)
 include(CTest)
@@ -41,6 +45,46 @@ if(IMTG_BUILD_COMMERCE)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 endif()
 
+if(IMTG_BUILD_MDBX)
+    if(NOT EXISTS "${IMTG_MDBX_CONTAINERS_SOURCE_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "IMTG_BUILD_MDBX requires the pinned external/mdbx-containers submodule")
+    endif()
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/libmdbx/CMakeLists.txt")
+        message(FATAL_ERROR
+            "IMTG_BUILD_MDBX requires the pinned external/libmdbx submodule")
+    endif()
+    # Provide the flat sibling dependency first so mdbx-containers never
+    # falls back to a configure-time FetchContent download.
+    set(MDBX_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+    set(MDBX_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    set(MDBX_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/libmdbx"
+        "${CMAKE_BINARY_DIR}/_deps/libmdbx" EXCLUDE_FROM_ALL)
+    # Keep the sibling project as a dependency provider only. Its own tests,
+    # examples and optional transports are outside imtg's build graph.
+    set(MDBXC_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(MDBXC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(MDBXC_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+    set(MDBXC_DEPS_MODE BUNDLED CACHE STRING "" FORCE)
+    add_subdirectory("${IMTG_MDBX_CONTAINERS_SOURCE_DIR}"
+        "${CMAKE_BINARY_DIR}/_deps/mdbx-containers" EXCLUDE_FROM_ALL)
+
+    add_library(imtg_mdbx STATIC src/imtg/storage/mdbx_storage.cpp)
+    add_library(imtg::mdbx ALIAS imtg_mdbx)
+    set_target_properties(imtg_mdbx PROPERTIES EXPORT_NAME mdbx)
+    target_compile_features(imtg_mdbx PUBLIC cxx_std_17)
+    target_include_directories(imtg_mdbx PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    target_link_libraries(imtg_mdbx PUBLIC imtg::core
+        mdbx_containers::mdbx_containers)
+    # The source integration is intentionally not exported yet: exporting a
+    # static target would also have to export the sibling libmdbx package and
+    # its platform-specific runtime choices. M2d-b will define that install
+    # boundary after the durable package contract is reviewed.
+endif()
+
 install(TARGETS imtg_core EXPORT imtgTargets)
 if(IMTG_BUILD_COMMERCE)
     install(TARGETS imtg_commerce EXPORT imtgTargets)
@@ -51,7 +95,8 @@ install(DIRECTORY src/imtg/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg
     PATTERN "*.tpp"
     PATTERN "*.ipp"
     PATTERN "commerce" EXCLUDE
-    PATTERN "commerce.hpp" EXCLUDE)
+    PATTERN "commerce.hpp" EXCLUDE
+    PATTERN "mdbx_storage.hpp" EXCLUDE)
 if(IMTG_BUILD_COMMERCE)
     install(FILES src/imtg/commerce.hpp
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg)
@@ -61,6 +106,10 @@ if(IMTG_BUILD_COMMERCE)
         PATTERN "*.hpp"
         PATTERN "*.tpp"
         PATTERN "*.ipp")
+endif()
+if(IMTG_BUILD_MDBX)
+    install(FILES src/imtg/storage/mdbx_storage.hpp
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg/storage)
 endif()
 install(EXPORT imtgTargets
     FILE imtgTargets.cmake
