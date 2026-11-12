@@ -28,6 +28,15 @@ Detailed rules are in [coding-style](docs/guides/coding-style.md), [agent workfl
 Public API documentation requirements and validation commands are in
 [public API documentation](docs/guides/public-api-documentation.md).
 
+## Engineering communication
+
+The user has opted into the installed `sovetwave` skill for technical work on
+imtg and direct follow-up discussions. Read its `SKILL.md` when available;
+the repository's contracts and workflow remain authoritative. The evidence
+and language boundaries are recorded in the
+[agent workflow](docs/guides/coding-agent-workflow.md#engineering-explanation-and-evidence).
+The skill is agent tooling, not a product or build dependency.
+
 ## Header architecture
 
 - Complete domains expose a root-level umbrella at `src/imtg/<domain>.hpp`;
