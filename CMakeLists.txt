@@ -46,34 +46,7 @@ if(IMTG_BUILD_COMMERCE)
 endif()
 
 if(IMTG_BUILD_MDBX)
-    if(NOT EXISTS "${IMTG_MDBX_CONTAINERS_SOURCE_DIR}/CMakeLists.txt")
-        message(FATAL_ERROR
-            "IMTG_BUILD_MDBX requires the pinned external/mdbx-containers submodule")
-    endif()
-    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/libmdbx/CMakeLists.txt")
-        message(FATAL_ERROR
-            "IMTG_BUILD_MDBX requires the pinned external/libmdbx submodule")
-    endif()
-    # Provide the flat sibling dependency first so mdbx-containers never
-    # falls back to a configure-time FetchContent download.
-    set(MDBX_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
-    set(MDBX_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
-    set(MDBX_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
-    if(MSVC)
-        # The pinned MDBX selects C23 when advertised, but MSVC rejects its
-        # C23 maybe_unused declaration. C11 avoids that unsupported path.
-        set(MDBX_C_STANDARD 11)
-    endif()
-    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/libmdbx"
-        "${CMAKE_BINARY_DIR}/_deps/libmdbx" EXCLUDE_FROM_ALL)
-    # Keep the sibling project as a dependency provider only. Its own tests,
-    # examples and optional transports are outside imtg's build graph.
-    set(MDBXC_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(MDBXC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    set(MDBXC_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
-    set(MDBXC_DEPS_MODE BUNDLED CACHE STRING "" FORCE)
-    add_subdirectory("${IMTG_MDBX_CONTAINERS_SOURCE_DIR}"
-        "${CMAKE_BINARY_DIR}/_deps/mdbx-containers" EXCLUDE_FROM_ALL)
+    add_subdirectory(external)
 
     add_library(imtg_mdbx STATIC src/imtg/storage/mdbx_storage.cpp)
     add_library(imtg::mdbx ALIAS imtg_mdbx)

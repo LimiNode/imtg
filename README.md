@@ -80,6 +80,8 @@ ctest --test-dir build/debug --output-on-failure
 Public headers and their implementations are co-located under `src/imtg/<domain>/`, while consumer
 include paths remain `<imtg/...>`. Git-based dependencies, when required, are pinned direct
 submodules under `external/<name>` and initialized non-recursively by default.
+The [flat dependency boundary](external/README.md) owns the inventory, pins,
+initialization commands, and optional CMake provider.
 
 ## Next step
 

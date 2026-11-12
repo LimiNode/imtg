@@ -43,9 +43,11 @@ if(IMTG_BUILD_COMMERCE)
     target_link_libraries(imtg_payment_contract_tests PRIVATE imtg::commerce)
     add_test(NAME imtg_payment_contract_tests COMMAND imtg_payment_contract_tests)
 endif()
-
 if(IMTG_BUILD_MDBX)
     add_executable(imtg_mdbx_storage_tests mdbx_storage_tests.cpp)
     target_link_libraries(imtg_mdbx_storage_tests PRIVATE imtg::mdbx)
     add_test(NAME imtg_mdbx_storage_tests COMMAND imtg_mdbx_storage_tests)
+    add_test(NAME imtg_flat_dependencies
+        COMMAND ${CMAKE_COMMAND} -DIMTG_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+            -P ${PROJECT_SOURCE_DIR}/cmake/CheckFlatDependencies.cmake)
 endif()
