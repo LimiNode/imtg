@@ -83,6 +83,10 @@ if(IMTG_BUILD_MDBX)
     add_library(imtg::mdbx ALIAS imtg_mdbx)
     set_target_properties(imtg_mdbx PROPERTIES EXPORT_NAME mdbx)
     target_compile_features(imtg_mdbx PUBLIC cxx_std_17)
+    if(WIN32)
+        # Native headers must not turn std::min/max and numeric_limits into macros.
+        target_compile_definitions(imtg_mdbx PRIVATE NOMINMAX)
+    endif()
     target_include_directories(imtg_mdbx PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
