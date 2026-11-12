@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <exception>
 #include <limits>
 #include <map>
 #include <stdexcept>
@@ -22,6 +23,8 @@ constexpr std::string_view schema_key = "imtg/schema/v1";
 constexpr char record_magic[] = "IMR1";
 constexpr char schema_magic[] = "IMS1";
 constexpr std::size_t max_scan_page = 4096;
+constexpr unsigned char physical_key_format_version = 1;
+constexpr unsigned char internal_schema_namespace = 0;
 
 enum class PhysicalNamespace : std::size_t {
     Meta = 0,
@@ -30,6 +33,31 @@ enum class PhysicalNamespace : std::size_t {
     RenderIntents,
     Outbox,
     EventJournal,
+};
+
+struct NamespaceRouteDefinition {
+    std::string_view logical_name;
+    PhysicalNamespace physical_namespace;
+    unsigned char logical_prefix;
+};
+
+constexpr std::array<NamespaceRouteDefinition, 11> namespace_routes = {{
+    {"meta", PhysicalNamespace::Meta, 1},
+    {"sessions", PhysicalNamespace::Sessions, 1},
+    {"processed_updates", PhysicalNamespace::ProcessedUpdates, 1},
+    {"render_intents", PhysicalNamespace::RenderIntents, 1},
+    {"render_intent_claims", PhysicalNamespace::RenderIntents, 2},
+    {"render_intent_generations", PhysicalNamespace::RenderIntents, 3},
+    {"outbox_effects", PhysicalNamespace::Outbox, 1},
+    {"outbox_dispatch_targets", PhysicalNamespace::Outbox, 2},
+    {"applied_targets", PhysicalNamespace::Outbox, 3},
+    {"outbox", PhysicalNamespace::Outbox, 4},
+    {"event_journal", PhysicalNamespace::EventJournal, 1},
+}};
+
+struct ResolvedNamespace {
+    MDBX_dbi dbi;
+    unsigned char logical_prefix;
 };
 
 struct PhysicalState {
@@ -85,6 +113,16 @@ Error map_exception(const std::exception& exception)
         return map_mdbx_error(mdbx_exception->error_code(), exception.what());
     }
     return storage_error(ErrorCode::StorageUnavailable, exception.what());
+}
+
+std::string encode_physical_key(unsigned char logical_prefix, std::string_view key)
+{
+    std::string encoded;
+    encoded.reserve(2 + key.size());
+    encoded.push_back(static_cast<char>(physical_key_format_version));
+    encoded.push_back(static_cast<char>(logical_prefix));
+    encoded.append(key);
+    return encoded;
 }
 
 void append_u32(std::string& output, std::uint32_t value)
@@ -289,7 +327,15 @@ public:
             native_config.read_only = config.read_only;
             native_config.no_subdir = config.no_subdir;
             native_config.sync_durable = config.sync_durable;
+            // Config's zero page size selects MDBX's minimum (256), not its OS default.
+            native_config.page_size = 16384;
             connection = mdbxc::Connection::create(native_config);
+            const int native_key_limit = mdbx_env_get_maxkeysize_ex(
+                connection->env_handle(), MDBX_DB_DEFAULTS);
+            if (native_key_limit <= 2) {
+                return storage_error(ErrorCode::StorageUnavailable, "invalid MDBX key-size limit");
+            }
+            max_logical_key_size = static_cast<std::size_t>(native_key_limit) - 2;
             auto native = connection->transaction(
                 config.read_only ? mdbxc::TransactionMode::READ_ONLY
                                  : mdbxc::TransactionMode::WRITABLE);
@@ -302,10 +348,18 @@ public:
                 if (rc != MDBX_SUCCESS) return map_mdbx_error(rc, "opening MDBX DBI");
             }
 
-            MDBX_val key{const_cast<char*>(schema_key.data()), schema_key.size()};
+            const auto encoded_schema_key = encode_physical_key(internal_schema_namespace, schema_key);
+            MDBX_val key{const_cast<char*>(encoded_schema_key.data()), encoded_schema_key.size()};
             MDBX_val value{};
             const int get_rc = mdbx_get(native.handle(), dbis[0], &key, &value);
             if (get_rc == MDBX_NOTFOUND) {
+                MDBX_val legacy_key{const_cast<char*>(schema_key.data()), schema_key.size()};
+                const int legacy_rc = mdbx_get(native.handle(), dbis[0], &legacy_key, &value);
+                if (legacy_rc == MDBX_SUCCESS) {
+                    return storage_error(ErrorCode::StorageSchemaFailure,
+                                         "unprefixed draft MDBX format requires explicit migration");
+                }
+                if (legacy_rc != MDBX_NOTFOUND) return map_mdbx_error(legacy_rc, "checking legacy MDBX schema");
                 if (config.read_only) {
                     return storage_error(ErrorCode::StorageSchemaFailure,
                                          "read-only MDBX environment has no schema metadata");
@@ -360,6 +414,7 @@ public:
     std::shared_ptr<mdbxc::Connection> connection;
     std::array<MDBX_dbi, physical_names.size()> dbis{};
     StorageSchema stored_schema;
+    std::size_t max_logical_key_size{};
     bool open = false;
 };
 
@@ -376,6 +431,7 @@ public:
 
     ~Transaction() override
     {
+        if (m_native && std::this_thread::get_id() != m_thread) std::terminate();
         rollback();
     }
 
@@ -406,43 +462,47 @@ public:
             return storage_error(ErrorCode::InvalidArgument,
                                  "scan namespace and limit are outside the bounded range");
         }
+        if (continuation.size() > m_owner.max_logical_key_size) {
+            return storage_error(ErrorCode::StorageRecordTooLarge, "MDBX scan cursor exceeds the native key limit");
+        }
         const auto dbi = resolve_dbi(name_space);
         if (!dbi) return dbi.error();
-        MDBX_cursor* cursor = nullptr;
-        int rc = mdbx_cursor_open(m_native->handle(), dbi.value(), &cursor);
+        MDBX_cursor* raw_cursor = nullptr;
+        int rc = mdbx_cursor_open(m_native->handle(), dbi.value().dbi, &raw_cursor);
         if (rc != MDBX_SUCCESS) return map_mdbx_error(rc, "opening MDBX scan cursor");
+        const std::unique_ptr<MDBX_cursor, decltype(&mdbx_cursor_close)> cursor(
+            raw_cursor, &mdbx_cursor_close);
 
         std::vector<StorageScanEntry> entries;
         entries.reserve(limit);
-        MDBX_val key{};
+        const auto prefix = encode_physical_key(dbi.value().logical_prefix, {});
+        const auto seek = encode_physical_key(dbi.value().logical_prefix, continuation);
+        MDBX_val key{const_cast<char*>(seek.data()), seek.size()};
         MDBX_val value{};
-        if (continuation.empty()) {
-            rc = mdbx_cursor_get(cursor, &key, &value, MDBX_FIRST);
-        } else {
-            key = MDBX_val{const_cast<char*>(continuation.data()), continuation.size()};
-            rc = mdbx_cursor_get(cursor, &key, &value, MDBX_SET_RANGE);
-            if (rc == MDBX_SUCCESS && key.iov_len == continuation.size()
-                && std::equal(static_cast<const char*>(key.iov_base),
-                              static_cast<const char*>(key.iov_base) + key.iov_len,
-                              continuation.data())) {
-                rc = mdbx_cursor_get(cursor, &key, &value, MDBX_NEXT);
-            }
+        rc = mdbx_cursor_get(cursor.get(), &key, &value, MDBX_SET_RANGE);
+        if (!continuation.empty() && rc == MDBX_SUCCESS && key.iov_len == seek.size()
+            && std::equal(static_cast<const char*>(key.iov_base),
+                          static_cast<const char*>(key.iov_base) + key.iov_len, seek.data())) {
+            rc = mdbx_cursor_get(cursor.get(), &key, &value, MDBX_NEXT);
         }
         while (rc == MDBX_SUCCESS && entries.size() < limit) {
-            const std::string copied_key(static_cast<const char*>(key.iov_base), key.iov_len);
+            // shortcut: tombstones count toward cursor work, not the result limit;
+            // add a physical-progress cursor contract in M2d-b before promising bounded work.
+            const std::string_view physical_key(static_cast<const char*>(key.iov_base), key.iov_len);
+            if (physical_key.size() < prefix.size()
+                || physical_key.substr(0, prefix.size()) != prefix) break;
+            const std::string copied_key(physical_key.substr(prefix.size()));
             const auto decoded = decode_record(std::string_view(
                 static_cast<const char*>(value.iov_base), value.iov_len));
             if (!decoded) {
-                mdbx_cursor_close(cursor);
                 return decoded.error();
             }
             if (decoded.value().value.has_value()) {
                 entries.push_back(StorageScanEntry{copied_key,
                     StorageRecord{*decoded.value().value, decoded.value().revision}});
             }
-            rc = mdbx_cursor_get(cursor, &key, &value, MDBX_NEXT);
+            rc = mdbx_cursor_get(cursor.get(), &key, &value, MDBX_NEXT);
         }
-        mdbx_cursor_close(cursor);
         if (rc != MDBX_SUCCESS && rc != MDBX_NOTFOUND) {
             return map_mdbx_error(rc, "scanning MDBX records");
         }
@@ -656,57 +716,65 @@ private:
         return Result<void>();
     }
 
-    Result<MDBX_dbi> resolve_dbi(std::string_view name_space) const
+    Result<ResolvedNamespace> resolve_dbi(std::string_view name_space) const
     {
         if (name_space.empty()) {
             return storage_error(ErrorCode::InvalidArgument, "storage namespace is empty");
         }
-        for (std::size_t index = 0; index != physical_names.size(); ++index) {
-            if (name_space == physical_names[index]) {
-                return m_owner.dbis[index];
+        for (const auto& route : namespace_routes) {
+            if (name_space == route.logical_name) {
+                return ResolvedNamespace{
+                    m_owner.dbis[static_cast<std::size_t>(route.physical_namespace)],
+                    route.logical_prefix};
             }
         }
         return storage_error(ErrorCode::InvalidArgument,
                              "namespace is outside the MDBX physical profile");
     }
 
-    Result<PhysicalState> read_state(MDBX_dbi dbi, std::string_view name_space,
+    Result<PhysicalState> read_state(ResolvedNamespace route, std::string_view name_space,
                                      std::string_view key) const
     {
         if (key.empty()) {
             return storage_error(ErrorCode::InvalidArgument, "storage key is empty");
+        }
+        if (key.size() > m_owner.max_logical_key_size) {
+            return storage_error(ErrorCode::StorageRecordTooLarge, "MDBX key exceeds the native limit");
         }
         const RecordKey identity{std::string(name_space), std::string(key)};
         const auto pending = m_writes.find(identity);
         if (pending != m_writes.end()) {
             return PhysicalState{true, pending->second.value, pending->second.resulting_revision};
         }
-        MDBX_val db_key{const_cast<char*>(key.data()), key.size()};
+        const auto physical_key = encode_physical_key(route.logical_prefix, key);
+        MDBX_val db_key{const_cast<char*>(physical_key.data()), physical_key.size()};
         MDBX_val db_value{};
-        const int rc = mdbx_get(m_native->handle(), dbi, &db_key, &db_value);
+        const int rc = mdbx_get(m_native->handle(), route.dbi, &db_key, &db_value);
         if (rc == MDBX_NOTFOUND) return PhysicalState{};
         if (rc != MDBX_SUCCESS) return map_mdbx_error(rc, "reading MDBX record");
         return decode_record(std::string_view(
             static_cast<const char*>(db_value.iov_base), db_value.iov_len));
     }
 
-    Result<void> put_record(MDBX_dbi dbi, std::string_view key,
+    Result<void> put_record(ResolvedNamespace route, std::string_view key,
                             const std::optional<StorageBytes>& value,
                             StorageRevision revision)
     {
         const auto encoded = encode_record(value, revision);
         if (!encoded) return terminal_failure(encoded.error());
-        MDBX_val db_key{const_cast<char*>(key.data()), key.size()};
+        const auto physical_key = encode_physical_key(route.logical_prefix, key);
+        MDBX_val db_key{const_cast<char*>(physical_key.data()), physical_key.size()};
         MDBX_val db_value{const_cast<char*>(encoded.value().data()), encoded.value().size()};
-        const int rc = mdbx_put(m_native->handle(), dbi, &db_key, &db_value, MDBX_UPSERT);
+        const int rc = mdbx_put(m_native->handle(), route.dbi, &db_key, &db_value, MDBX_UPSERT);
         if (rc != MDBX_SUCCESS) return terminal_failure(map_mdbx_error(rc, "writing MDBX record"));
         return Result<void>();
     }
 
-    Result<void> erase_physical(MDBX_dbi dbi, std::string_view key)
+    Result<void> erase_physical(ResolvedNamespace route, std::string_view key)
     {
-        MDBX_val db_key{const_cast<char*>(key.data()), key.size()};
-        const int rc = mdbx_del(m_native->handle(), dbi, &db_key, nullptr);
+        const auto physical_key = encode_physical_key(route.logical_prefix, key);
+        MDBX_val db_key{const_cast<char*>(physical_key.data()), physical_key.size()};
+        const int rc = mdbx_del(m_native->handle(), route.dbi, &db_key, nullptr);
         if (rc == MDBX_NOTFOUND) return Result<void>();
         if (rc != MDBX_SUCCESS) return terminal_failure(map_mdbx_error(rc, "erasing MDBX record"));
         return Result<void>();

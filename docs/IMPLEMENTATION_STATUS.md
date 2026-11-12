@@ -5,6 +5,13 @@ M2d-a: an optional persistent MDBX adapter over the accepted storage protocol.
 M2d-b and M2e remain planned until the adapter and its cross-backend recovery
 evidence are independently reviewed.
 
+The M2d-a corrective adds explicit logical namespace routing into the six DBIs,
+versioned binary key prefixes, isolated internal schema metadata, native-key
+size admission and real M2b/M2c repository integration/reopen tests. Both the
+MDBX target and header remain source-build-only. Scan result counts are bounded;
+physical tombstone examination is not. This corrective is pending independent
+review and does not establish process-crash durability.
+
 The Sovetwave header-topology audit is documented in
 [header-architecture.md](guides/header-architecture.md) and ADR 0009. The
 base-domain nested umbrella paths remain installed; optional commerce now has

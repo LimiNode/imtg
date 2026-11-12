@@ -28,6 +28,15 @@ struct MdbxStorageConfig {
 /// The six physical DBIs are `meta`, `sessions`, `processed_updates`,
 /// `render_intents`, `outbox`, and `event_journal`. Logical dispatch-target and
 /// applied-target records share the bounded `outbox` DBI through key prefixes.
+/// Public keys are prefixed by format/namespace bytes. New stores use 16 KiB
+/// pages; oversized keys return `StorageRecordTooLarge` before a native lookup.
+/// Scan limits bound returned records, not physical tombstone examination.
+/// This adapter and its header are source-build-only until M2d-b package review.
+/// \thread_safety Transactions may be created by different workers, but each
+/// live transaction must be used and destroyed on its creating thread. Destroying
+/// a live native transaction on another thread terminates the process. The backend
+/// must outlive its transactions. Close/destruction require externally quiesced
+/// workers and must not race transaction creation or backend observations.
 class MdbxStorageBackend final : public IStorageBackend {
 public:
     /// \brief Opens or creates an MDBX environment.

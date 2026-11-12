@@ -219,10 +219,20 @@ reconciliation; merged M2c-c adds bounded delivery claims, lease fencing,
 late-ack rejection, target ownership and acknowledgement failure injection. Migrations beyond
 schema metadata, durable due-index queries, DBI-budget calculation and cross-backend recovery
 remain M2d/M2e work. **M2d-a** adds `imtg_mdbx` behind `IMTG_BUILD_MDBX`,
-using pinned `mdbx-containers` and `libmdbx` sources. Its conformance executable
+using pinned `mdbx-containers` and `libmdbx` sources. The adapter and header are
+source-build-only, not installed, until M2d-b. Its conformance executable
 proves close/reopen persistence, snapshot consistency, read-your-writes, atomic
 multi-record commit, CAS and ABA fencing, bounded scans, read-only rejection,
 thread ownership, and schema migration-state admission. Native commit errors
 remain conservatively `Unknown`; crash injection, due indexes, migration
 execution and installed-package export remain M2d-b/M2e work. **Dependencies:**
 none in core; the MDBX adapter is optional.
+
+The fixed logical-namespace routing and version-1 binary physical key encoding
+are specified in [the MDBX ADR](../adr/0006-m2d-mdbx-storage-adapter.md).
+Public meta keys cannot reach internal schema metadata. Real session, processed
+update, intent, generation, claim, effect, DT1 and applied-target repositories
+are exercised together through TX1/TX2, rollback and normal close/reopen.
+MDBX scan limits bound returned visible records, not tombstone examinations.
+Physical-work budgeting requires a separate progress/exhaustion cursor contract;
+the current API must not truncate a sparse page and falsely signal exhaustion.

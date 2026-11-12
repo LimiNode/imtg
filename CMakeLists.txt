@@ -107,10 +107,6 @@ if(IMTG_BUILD_COMMERCE)
         PATTERN "*.tpp"
         PATTERN "*.ipp")
 endif()
-if(IMTG_BUILD_MDBX)
-    install(FILES src/imtg/storage/mdbx_storage.hpp
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg/storage)
-endif()
 install(EXPORT imtgTargets
     FILE imtgTargets.cmake
     NAMESPACE imtg::
