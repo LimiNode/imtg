@@ -39,6 +39,10 @@ The skill is agent tooling, not a product or build dependency.
 
 ## Header architecture
 
+The selected profile is hybrid: domain umbrellas for the main library,
+self-contained public components and independently enabled optional modules.
+Core umbrellas must not pull in optional modules or vendor dependencies.
+
 - Complete domains expose a root-level umbrella at `src/imtg/<domain>.hpp`;
   domain leaves remain under `src/imtg/<domain>/`.
 - Domain dependencies form a DAG. Umbrellas include lower-level public entry
@@ -53,7 +57,8 @@ The skill is agent tooling, not a product or build dependency.
 
 The current inventory, target graph, and migration policy are normative in
 [header architecture](docs/guides/header-architecture.md) and
-[ADR 0009](docs/adr/0009-domain-header-architecture.md).
+[ADR 0009](docs/adr/0009-domain-header-architecture.md), as refined by
+[ADR 0010](docs/adr/0010-hybrid-public-header-profile.md).
 
 ## Repository structure
 

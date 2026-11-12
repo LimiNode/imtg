@@ -4,8 +4,9 @@
 **Scope:** `core`, `actions`, `storage`, `sessions`, `reconciliation`, `ui`,
 `runtime`, and the optional `commerce` addendum.
 
-This guide records the current include topology and the target hierarchical
-umbrella model adopted from the Sovetwave C++ engineering guidance. It is a
+This guide records the current include topology and the selected hybrid
+profile: domain umbrellas plus standalone public components and optional modules
+([ADR 0010](../adr/0010-hybrid-public-header-profile.md)). It is a
 dependency contract, not permission to perform a repository-wide mechanical
 rename. Structural migrations are delivered as small, independently tested
 implementation PRs.
@@ -41,6 +42,24 @@ implementation PRs.
    header.
 
 ## Audit snapshots
+
+### Hybrid boundary
+
+Domain umbrellas are convenience entry points, not mandatory includes for
+every consumer. All currently installed component headers remain standalone.
+Optional modules have their own documented entry points and CMake targets;
+their headers and targets are installed only when the module's package boundary
+supports that configuration. No core umbrella may include an optional module,
+backend, payment-provider SDK, GUI, or transport merely for completeness.
+Provider-neutral commerce remains separate from future provider adapters.
+
+Normal domain implementation units include their owning umbrella first after
+that domain migrates. An independently usable component or optional adapter may
+instead include its own self-contained header first. This does not authorize
+private leaves as cross-domain entry points. Record optional/standalone boundaries
+in this inventory and their header Doxygen; verify each promised first-include
+and installed-consumer path. The hybrid profile introduces no dynamic plugin ABI
+or module loader.
 
 The base-domain inventory below is measured against the immutable PR #19 merge
 `6a0814c8107a14d60cafcbdf44f1711eec446b2c`. The commerce addendum is measured

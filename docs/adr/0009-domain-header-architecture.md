@@ -3,6 +3,10 @@
 **Status:** Accepted for new work; migration staged. **Scope:** public C++
 headers under `src/imtg`.
 
+**Refinement:** [ADR 0010](0010-hybrid-public-header-profile.md) selects the
+hybrid profile for standalone public components and optional modules. The DAG,
+root umbrellas, compatibility policy, and explicit install rules below remain.
+
 ## Context
 
 `imtg` already has several domains, but only some have umbrellas and those

@@ -17,8 +17,8 @@ Keep the diff focused and avoid drive-by refactors. A public API change updates 
 
 The project opts into the installed `sovetwave` agent skill for technical
 discussions. The reviewed release is
-[v0.4.0](https://github.com/LimiNode/sovetwave/releases/tag/v0.4.0), commit
-`851f7978d124405646a44d21777f9d6aae0ad731`. This is an explanation and
+[v0.5.0-beta.4](https://github.com/LimiNode/sovetwave/releases/tag/v0.5.0-beta.4).
+This is an explanation and
 evidence policy, not a C++ architecture prescription or runtime dependency.
 If the skill is unavailable, continue under the repository rules below;
 do not download tooling as part of configuration or builds.

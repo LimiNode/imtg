@@ -8,7 +8,10 @@ imtg coordinates Telegram bot application state, deterministic Immediate-Mode vi
 
 ## Header topology and dependency direction
 
-The public C++ surface follows a hierarchical domain-umbrella model. A
+The public C++ surface follows a hybrid profile: domain umbrellas organize
+the main library, while public components and optional modules have independent,
+self-contained entry points. Optional modules own separate build targets;
+core umbrellas never include optional adapters or vendor SDKs. A
 complete domain owns a root-level entry point such as `<imtg/core.hpp>` and
 keeps its leaves under `src/imtg/<domain>/`. Domain dependencies form a DAG;
 umbrellas include lower-level public entry points before their own components,
@@ -26,7 +29,8 @@ acyclic, but the current `core/core.hpp`, `actions/actions.hpp`,
 sessions, and reconciliation do not yet have umbrellas. The staged migration,
 install boundary, and compatibility policy are defined in
 [header-architecture.md](guides/header-architecture.md) and
-[ADR 0009](adr/0009-domain-header-architecture.md).
+[ADR 0009](adr/0009-domain-header-architecture.md), refined by
+[ADR 0010](adr/0010-hybrid-public-header-profile.md).
 
 The Actions implementation snapshot `5dca497` now provides the root
 `<imtg/actions.hpp>` entry point and responsibility-based standalone headers;
