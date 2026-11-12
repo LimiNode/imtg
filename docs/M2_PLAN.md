@@ -28,8 +28,8 @@ intent/conversation/session/generation/target/applied and original-claim
 context; borrowed staging is fail-closed; canonical target scoping is
 conversation-bound; and Unknown recovery must attribute the exact immutable
 effect to the original attempt. The merged M2c-a/b baseline does not claim
-delivery acknowledgements; the current M2c-c Draft adds those logical semantics
-without physical process-crash durability or a Telegram adapter.
+delivery acknowledgements; merged M2c-c adds those logical semantics without
+physical process-crash durability or a Telegram adapter.
 
 Use the two-transaction protocol:
 
@@ -53,7 +53,18 @@ not be implemented by manufacturing UI render intents.
 
 ## M2d — MDBX adapter
 
-Use `mdbx-containers` behind an optional CMake integration. Keep MDBX types out of public core headers. Define connection ownership, thread-bound transactions, schema metadata, sortable composite keys, snapshot semantics, migration/recovery, and explicit DBI budgeting. The minimal runtime profile is `meta`, `sessions`, `processed_updates`, `render_intents`, `outbox`, and `event_journal`; never create a DBI per user or chat.
+**M2d-a (current Draft):** `imtg_mdbx` is an optional CMake target backed by
+pinned `mdbx-containers` and `libmdbx` submodules. MDBX types stay out of public
+core headers. The adapter defines connection ownership, thread-bound
+transactions, schema metadata, bytewise ordered keys, snapshot/read-your-writes
+semantics, tombstone generations, bounded scans and explicit commit-outcome
+mapping. The fixed runtime profile is `meta`, `sessions`, `processed_updates`,
+`render_intents`, `outbox`, and `event_journal`; dispatch-target and applied-
+target records share `outbox`, and no DBI is created per user or chat.
+
+**M2d-b:** complete installed-package export, durable due-index and migration
+execution boundaries, and native recovery evidence without weakening the
+backend-neutral contract.
 
 ## M2e — conformance and recovery integration
 

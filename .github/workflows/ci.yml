@@ -39,11 +39,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Configure ASan/UBSan
         run: >-
           cmake -S . -B build/asan-ubsan -DBUILD_TESTING=ON
           -DCMAKE_BUILD_TYPE=Debug
           -DIMTG_BUILD_COMMERCE=ON
+          -DIMTG_BUILD_MDBX=ON
+          -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
       - name: Build
@@ -67,6 +71,37 @@ jobs:
         run: cmake -S tests/install_consumer -B build/core-only-consumer -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-core-only
       - name: Build core-only consumer
         run: cmake --build build/core-only-consumer --parallel
+
+  mdbx:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        build_type: [Debug, Release]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Configure optional MDBX adapter
+        run: >-
+          cmake -S . -B build/mdbx-${{ matrix.os }}-${{ matrix.build_type }}
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DBUILD_TESTING=ON
+          -DIMTG_BUILD_MDBX=ON
+          -DMDBXC_DEPS_MODE=BUNDLED
+          -DMDBXC_BUILD_EXAMPLES=OFF
+          -DMDBXC_BUILD_TESTS=OFF
+      - name: Build optional MDBX adapter
+        run: cmake --build build/mdbx-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
+      - name: Test optional MDBX adapter
+        run: ctest --test-dir build/mdbx-${{ matrix.os }}-${{ matrix.build_type }} -C ${{ matrix.build_type }} --output-on-failure
+      - name: Install source-only adapter package boundary
+        run: cmake --install build/mdbx-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --prefix build/mdbx-install-${{ matrix.os }}-${{ matrix.build_type }}
+      - name: Configure installed core consumer without MDBX API
+        run: cmake -S tests/install_consumer -B build/mdbx-consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/mdbx-install-${{ matrix.os }}-${{ matrix.build_type }}
+      - name: Build installed core consumer
+        run: cmake --build build/mdbx-consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
 
   documentation:
     runs-on: ubuntu-latest

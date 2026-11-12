@@ -14,5 +14,10 @@ silently.
 
 System and platform libraries for which `find_package()` is the established integration are valid
 exceptions. Unavoidable nested dependencies require a documented reason and explicit approval.
-Do not add speculative submodules. For M2d, investigate sibling `external/mdbx-containers` and
-`external/libmdbx` targets with an offline consumer test before adopting that layout.
+Do not add speculative submodules. M2d-a pins sibling `external/mdbx-containers`
+and `external/libmdbx` submodules and provides them to CMake as one optional
+dependency boundary. `IMTG_BUILD_MDBX=OFF` remains the default and performs no
+MDBX lookup or download; `IMTG_BUILD_MDBX=ON` requires both initialized
+submodules and uses `MDBXC_DEPS_MODE=BUNDLED` without a FetchContent fallback.
+The optional adapter is tested with a local persistence/reopen consumer; its
+installed-package export remains a later M2d-b boundary.

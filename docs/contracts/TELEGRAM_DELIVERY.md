@@ -1,7 +1,7 @@
 # Telegram delivery contract
 
 **Semantic owner:** transport/delivery maintainers. **Status:** M2c-c implements
-the storage-only reference delivery lifecycle in the current Draft PR. Gateway,
+the merged storage-only reference delivery lifecycle. Gateway,
 worker orchestration, HTTP, and method-specific retry evidence remain planned for M3.
 
 ## Responsibilities
