@@ -1,8 +1,10 @@
 #ifndef IMTG_ACTIONS_TOKEN_HPP
 #define IMTG_ACTIONS_TOKEN_HPP
 
-#include "imtg/core/result.hpp"
-#include "imtg/core/clock.hpp"
+/// \file imtg/actions/token.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include <imtg/core.hpp>
 
 #include <cstdint>
 #include <optional>

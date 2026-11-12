@@ -63,6 +63,10 @@ jobs:
         run: ctest --test-dir build/core-only --output-on-failure
       - name: Install core-only package
         run: cmake --install build/core-only --prefix build/install-core-only
+      - name: Configure core-only public-header boundary
+        run: cmake -S tests/public_headers -B build/core-only-headers -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-core-only
+      - name: Build core-only public-header boundary
+        run: cmake --build build/core-only-headers --parallel
       - name: Configure core-only consumer
         run: cmake -S tests/install_consumer -B build/core-only-consumer -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-core-only
       - name: Build core-only consumer

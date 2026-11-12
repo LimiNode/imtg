@@ -1,8 +1,11 @@
 #ifndef IMTG_RECONCILIATION_OUTBOX_HPP
 #define IMTG_RECONCILIATION_OUTBOX_HPP
 
-#include "imtg/core/result.hpp"
-#include "imtg/sessions/render_intents.hpp"
+/// \file imtg/reconciliation/outbox.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include <imtg/core.hpp>
+#include <imtg/sessions.hpp>
 
 #include <cstdint>
 #include <chrono>
@@ -131,8 +134,12 @@ struct OutboxEffectPage {
 };
 
 /// \brief Encodes an effect in a bounded versioned format.
+/// \param effect Immutable identity and lifecycle state to validate and encode.
+/// \return Binary envelope or a validation/size error.
 [[nodiscard]] Result<StorageBytes> encode_outbox_effect(const OutboxEffect& effect);
 /// \brief Decodes and validates an effect envelope.
+/// \param encoded Versioned binary envelope; borrowed only during this call.
+/// \return Validated effect or a malformed/unsupported envelope error.
 [[nodiscard]] Result<OutboxEffect> decode_outbox_effect(std::string_view encoded);
 
 class IAppliedTargetRepository;

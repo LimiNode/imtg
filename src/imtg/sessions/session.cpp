@@ -1,5 +1,4 @@
-#include "imtg/sessions/session.hpp"
-#include "imtg/sessions/render_intents.hpp"
+#include <imtg/sessions.hpp>
 
 #include <limits>
 #include <utility>

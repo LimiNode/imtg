@@ -1,8 +1,11 @@
 #ifndef IMTG_SESSIONS_RENDER_INTENTS_HPP
 #define IMTG_SESSIONS_RENDER_INTENTS_HPP
 
-#include "imtg/core/clock.hpp"
-#include "imtg/sessions/session.hpp"
+/// \file imtg/sessions/render_intents.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include <imtg/core.hpp>
+#include "session.hpp"
 
 #include <chrono>
 #include <cstddef>

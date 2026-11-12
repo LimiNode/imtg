@@ -1,11 +1,14 @@
 #ifndef IMTG_ACTIONS_ACTION_REGISTRY_HPP
 #define IMTG_ACTIONS_ACTION_REGISTRY_HPP
 
-#include <imtg/actions/ActionContext.hpp>
-#include <imtg/actions/ActionHandle.hpp>
-#include <imtg/actions/PayloadCodec.hpp>
-#include <imtg/actions/token.hpp>
-#include <imtg/core/clock.hpp>
+/// \file imtg/actions/ActionRegistry.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include "ActionContext.hpp"
+#include "ActionHandle.hpp"
+#include "PayloadCodec.hpp"
+#include "token.hpp"
+#include <imtg/core.hpp>
 
 #include <charconv>
 #include <functional>

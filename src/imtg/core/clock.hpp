@@ -1,11 +1,15 @@
 #ifndef IMTG_CORE_CLOCK_HPP
 #define IMTG_CORE_CLOCK_HPP
 
+/// \file imtg/core/clock.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
 #include <chrono>
 #include <mutex>
 
 namespace imtg {
 
+/// \brief System-clock-domain timestamp used by deadlines and persisted time encodings.
 using ClockTime = std::chrono::system_clock::time_point;
 
 /// \brief Clock boundary used by deterministic core components.

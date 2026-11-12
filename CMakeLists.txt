@@ -45,23 +45,16 @@ install(TARGETS imtg_core EXPORT imtgTargets)
 if(IMTG_BUILD_COMMERCE)
     install(TARGETS imtg_commerce EXPORT imtgTargets)
 endif()
-install(DIRECTORY src/imtg/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg
-    FILES_MATCHING
-    PATTERN "*.hpp"
-    PATTERN "*.tpp"
-    PATTERN "*.ipp"
-    PATTERN "commerce" EXCLUDE
-    PATTERN "commerce.hpp" EXCLUDE)
+include(cmake/ImtgPublicHeaders.cmake)
+set(imtg_install_headers ${IMTG_CORE_PUBLIC_HEADERS})
 if(IMTG_BUILD_COMMERCE)
-    install(FILES src/imtg/commerce.hpp
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg)
-    install(DIRECTORY src/imtg/commerce/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/imtg/commerce
-        FILES_MATCHING
-        PATTERN "*.hpp"
-        PATTERN "*.tpp"
-        PATTERN "*.ipp")
+    list(APPEND imtg_install_headers ${IMTG_COMMERCE_PUBLIC_HEADERS})
 endif()
+foreach(header IN LISTS imtg_install_headers)
+    get_filename_component(header_directory "${header}" DIRECTORY)
+    install(FILES "src/${header}"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/${header_directory}")
+endforeach()
 install(EXPORT imtgTargets
     FILE imtgTargets.cmake
     NAMESPACE imtg::

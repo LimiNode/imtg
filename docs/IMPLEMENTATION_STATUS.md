@@ -6,16 +6,16 @@ reviewed separately in Draft PR #24; M2d-b and M2e remain planned.
 The hybrid public-header profile is accepted in
 [ADR 0010](adr/0010-hybrid-public-header-profile.md): domain umbrellas plus
 standalone components and independently enabled optional modules. This policy
-change does not implement the remaining umbrella or install-manifest migration.
+is implemented by this slice's root umbrellas and explicit install manifest;
+independent review remains required.
 
 The Sovetwave header-topology audit is documented in
 [header-architecture.md](guides/header-architecture.md) and ADR 0009. The
-base-domain nested umbrella paths remain installed; optional commerce now has
-the root-level `imtg/commerce.hpp` when enabled, and Actions now has the
-root-level `imtg/actions.hpp` with compatibility shims for the old nested
-paths. Core/storage and the other remaining root-level umbrella migrations,
-explicit install manifests, and compatibility transitions are still planned
-implementation work.
+eight domains expose root-level umbrellas. All old installed leaf paths remain;
+the nested umbrellas forward to the root entry points. The explicit manifest
+contains 29 core-package and seven optional commerce entry points. Core does not
+include optional adapters or commerce. Installed-header tests check the exact
+package inventory and every supported header as a first include.
 
 **As of main merge `152e7e9` (PR #22 M2c-c merged):** the repository contains the complete
 Telegram-free M1 foundation, the M2a backend-neutral storage protocol, the M2b
@@ -46,7 +46,7 @@ audit contract must be accepted before a separate GUI target is implemented.
 | Area | Status | Evidence / next proof |
 |---|---|---|
 | Architecture and contracts | `contract-only` | Markdown documents in `docs/`; review links and invariants |
-| Header topology | `hybrid profile accepted; migration in progress` | [Header architecture guide](guides/header-architecture.md), [ADR 0010](adr/0010-hybrid-public-header-profile.md); Actions and commerce root umbrellas exist, remaining domains and explicit manifest are staged separately |
+| Header topology | `hybrid migration implemented; review pending` | [Header architecture guide](guides/header-architecture.md), [ADR 0010](adr/0010-hybrid-public-header-profile.md); eight root umbrellas, explicit manifest, compatibility shims, topology CTest and installed first-include tests |
 | CMake `imtg_core` target and C++17 baseline | `implemented` | Root CMake target configures/builds; CTest executes offline core tests |
 | Typed identities and deterministic clock | `implemented` | `src/imtg/core/`; M1a equality/encoding/hash tests |
 | Immediate-Mode UI tree | `partial` | M1b implements immutable tree nodes, stable paths, RAII scopes, duplicate detection, and offline tests; components remain intentionally small |
