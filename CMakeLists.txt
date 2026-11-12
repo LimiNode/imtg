@@ -66,6 +66,10 @@ if(IMTG_BUILD_MDBX)
     endif()
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/libmdbx"
         "${CMAKE_BINARY_DIR}/_deps/libmdbx" EXCLUDE_FROM_ALL)
+    if(MSVC)
+        # Upstream exports this option but its own C++ wrapper also needs it.
+        target_compile_options(mdbx-static PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/Zc:__cplusplus>)
+    endif()
     # Keep the sibling project as a dependency provider only. Its own tests,
     # examples and optional transports are outside imtg's build graph.
     set(MDBXC_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
