@@ -1,6 +1,9 @@
 #ifndef IMTG_COMMERCE_PAYMENT_RECORDS_HPP
 #define IMTG_COMMERCE_PAYMENT_RECORDS_HPP
 
+/// \file imtg/commerce/PaymentRecords.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
 #include "PaymentTypes.hpp"
 
 #include <optional>

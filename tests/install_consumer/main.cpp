@@ -1,9 +1,10 @@
 #include <imtg/actions.hpp>
-#include <imtg/core/core.hpp>
-#include <imtg/runtime/runtime.hpp>
-#include <imtg/reconciliation/outbox.hpp>
-#include <imtg/storage/storage.hpp>
-#include <imtg/ui/ui.hpp>
+#include <imtg/core.hpp>
+#include <imtg/runtime.hpp>
+#include <imtg/reconciliation.hpp>
+#include <imtg/storage.hpp>
+#include <imtg/sessions.hpp>
+#include <imtg/ui.hpp>
 
 int main()
 {

@@ -3,42 +3,26 @@ project(imtg_public_headers LANGUAGES CXX)
 
 find_package(imtg CONFIG REQUIRED)
 
-set(IMTG_PUBLIC_HEADERS
-    imtg/actions.hpp
-    imtg/actions/actions.hpp
-    imtg/actions/ActionCommand.hpp
-    imtg/actions/ActionContext.hpp
-    imtg/actions/ActionHandle.hpp
-    imtg/actions/ActionRegistry.hpp
-    imtg/actions/PayloadCodec.hpp
-    imtg/actions/registry.hpp
-    imtg/actions/token.hpp
-    imtg/core/clock.hpp
-    imtg/core/core.hpp
-    imtg/core/identifiers.hpp
-    imtg/core/result.hpp
-    imtg/runtime/reference_runtime.hpp
-    imtg/runtime/runtime.hpp
-    imtg/storage/storage.hpp
-    imtg/storage/time_encoding.hpp
-    imtg/sessions/fsm.hpp
-    imtg/sessions/render_intents.hpp
-    imtg/sessions/session.hpp
-    imtg/reconciliation/outbox.hpp
-    imtg/ui/tree.hpp
-    imtg/ui/ui.hpp)
-
+include(../../cmake/ImtgPublicHeaders.cmake)
+set(IMTG_PUBLIC_HEADERS ${IMTG_CORE_PUBLIC_HEADERS})
 option(IMTG_REQUIRE_COMMERCE "Check optional commerce headers and target" OFF)
 if(IMTG_REQUIRE_COMMERCE)
-    list(APPEND IMTG_PUBLIC_HEADERS
-        imtg/commerce.hpp
-        imtg/commerce/PaymentTypes.hpp
-        imtg/commerce/PaymentPolicy.hpp
-        imtg/commerce/PaymentRecords.hpp
-        imtg/commerce/PaymentTransaction.hpp
-        imtg/commerce/PaymentProvider.hpp
-        imtg/commerce/PaymentServices.hpp)
+    list(APPEND IMTG_PUBLIC_HEADERS ${IMTG_COMMERCE_PUBLIC_HEADERS})
 endif()
+
+# Compare the real package to the declared manifest, not just the source tree.
+get_target_property(include_dirs imtg::core INTERFACE_INCLUDE_DIRECTORIES)
+list(REMOVE_DUPLICATES include_dirs)
+foreach(include_dir IN LISTS include_dirs)
+    file(GLOB_RECURSE installed_headers RELATIVE "${include_dir}"
+        "${include_dir}/imtg/*.hpp" "${include_dir}/imtg/*.tpp" "${include_dir}/imtg/*.ipp")
+    list(SORT installed_headers)
+    set(expected_headers ${IMTG_PUBLIC_HEADERS})
+    list(SORT expected_headers)
+    if(NOT "${installed_headers}" STREQUAL "${expected_headers}")
+        message(FATAL_ERROR "Installed public headers differ from the manifest: ${installed_headers}")
+    endif()
+endforeach()
 
 foreach(header IN LISTS IMTG_PUBLIC_HEADERS)
     string(REPLACE "/" "_" target_name "${header}")
@@ -78,7 +62,7 @@ int main()
     endif()
     add_executable("${target_name}" "${source}")
     target_compile_features("${target_name}" PRIVATE cxx_std_17)
-    if(header MATCHES "^imtg/commerce/")
+    if(header MATCHES "^imtg/commerce(/|[.])")
         target_link_libraries("${target_name}" PRIVATE imtg::commerce)
     else()
         target_link_libraries("${target_name}" PRIVATE imtg::core)

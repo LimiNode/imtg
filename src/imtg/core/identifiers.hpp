@@ -1,7 +1,10 @@
 #ifndef IMTG_CORE_IDENTIFIERS_HPP
 #define IMTG_CORE_IDENTIFIERS_HPP
 
-#include "imtg/core/result.hpp"
+/// \file imtg/core/identifiers.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include "result.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -17,6 +20,9 @@ struct BotId {
 };
 
 /// \brief Compares bot identities.
+/// \param left First typed identity or scope.
+/// \param right Second typed identity or scope.
+/// \return True when the typed identities or scopes are equal.
 [[nodiscard]] constexpr bool operator==(BotId left, BotId right) noexcept
 {
     return left.value == right.value;
@@ -28,6 +34,9 @@ struct ChatId {
 };
 
 /// \brief Compares chat identities.
+/// \param left First typed identity or scope.
+/// \param right Second typed identity or scope.
+/// \return True when the typed identities or scopes are equal.
 [[nodiscard]] constexpr bool operator==(ChatId left, ChatId right) noexcept
 {
     return left.value == right.value;
@@ -39,6 +48,9 @@ struct UserId {
 };
 
 /// \brief Compares user identities.
+/// \param left First typed identity or scope.
+/// \param right Second typed identity or scope.
+/// \return True when the typed identities or scopes are equal.
 [[nodiscard]] constexpr bool operator==(UserId left, UserId right) noexcept
 {
     return left.value == right.value;
@@ -49,6 +61,7 @@ struct Chat {
 };
 
 /// \brief Compares chat-wide scope markers; all instances are equivalent.
+/// \return Always true; the marker carries no per-instance identity.
 [[nodiscard]] constexpr bool operator==(Chat, Chat) noexcept
 {
     return true;
@@ -60,6 +73,9 @@ struct UserInChat {
 };
 
 /// \brief Compares user-in-chat scopes.
+/// \param left First typed identity or scope.
+/// \param right Second typed identity or scope.
+/// \return True when the typed identities or scopes are equal.
 [[nodiscard]] constexpr bool operator==(UserInChat left, UserInChat right) noexcept
 {
     return left.user_id == right.user_id;
@@ -79,10 +95,16 @@ struct ConversationKey {
 };
 
 /// \brief Compares all typed components of two conversation identities.
+/// \param left First typed identity or scope.
+/// \param right Second typed identity or scope.
+/// \return True when the typed identities or scopes are equal.
 [[nodiscard]] bool operator==(const ConversationKey& left,
                               const ConversationKey& right) noexcept;
 
 /// \brief Reports whether conversation identities differ.
+/// \param left First typed identity or scope.
+/// \param right Second typed identity or scope.
+/// \return True when any typed identity component differs.
 [[nodiscard]] bool operator!=(const ConversationKey& left,
                               const ConversationKey& right) noexcept;
 
@@ -92,6 +114,9 @@ struct ConversationKey {
 [[nodiscard]] Result<ConversationKey> parse_conversation_key(std::string_view encoded);
 
 /// \brief Provides deterministic lexicographic ordering by typed components.
+/// \param left First typed identity or scope.
+/// \param right Second typed identity or scope.
+/// \return True when the left typed identity precedes the right.
 [[nodiscard]] bool operator<(const ConversationKey& left, const ConversationKey& right);
 
 } // namespace imtg

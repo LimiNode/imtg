@@ -93,7 +93,9 @@ are documented in [header-architecture.md](guides/header-architecture.md) and
 [ADR 0010](adr/0010-hybrid-public-header-profile.md). Root-level umbrella
 migration and explicit install-boundary changes are separate, staged
 implementation PRs; this track does not change M2 behavior or claim that the
-migration is complete.
+migration is complete merely by documentation. The root umbrellas and explicit
+manifest are implemented in the separate structural slice; acceptance requires
+its topology, installed-consumer, optional-boundary checks, and independent review.
 
 **M2 acceptance:** in-memory and MDBX conformance covers schema compatibility,
 atomic multi-record commit, duplicate updates, revision conflicts, TX1/TX2

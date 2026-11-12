@@ -1,6 +1,7 @@
 # Header architecture and dependency audit
 
-**Status:** normative for new work; staged implementation migration is planned.
+**Status:** normative hybrid profile; root-umbrella migration implemented in this slice,
+pending independent review.
 **Scope:** `core`, `actions`, `storage`, `sessions`, `reconciliation`, `ui`,
 `runtime`, and the optional `commerce` addendum.
 
@@ -42,6 +43,35 @@ implementation PRs.
    header.
 
 ## Audit snapshots
+
+### Implemented hybrid entry points
+
+The migration now provides all eight root umbrellas: `core`, `actions`,
+`storage`, `sessions`, `reconciliation`, `ui`, `runtime`, and optional `commerce`.
+Each includes lower-level domain umbrellas before its local public components.
+Public leaves remain self-contained. Normal implementation units start with
+their domain umbrella; no runtime algorithm or public declaration is changed.
+
+`cmake/ImtgPublicHeaders.cmake` explicitly enumerates 29 core-package headers
+and seven optional commerce headers. No recursive source-header installation
+remains. Core-only installation excludes commerce; source-only MDBX is not in
+the public manifest. The installed-header fixture compares the complete real
+header inventory to the manifest and compiles every entry first. It links the
+optional umbrella, as well as its components, to `imtg::commerce`.
+
+The nested `core/core.hpp`, `actions/actions.hpp`, `actions/registry.hpp`,
+`ui/ui.hpp`, and `runtime/runtime.hpp` paths remain forwarding compatibility
+headers. Removal requires a declared compatibility-breaking release and migration
+note. All old component paths remain supported. No private leaves are introduced.
+
+`cmake/CheckHeaderTopology.cmake` checks the declared domain DAG, include spelling,
+owning-umbrella implementation entry, public manifest, and missing local headers.
+The separate source-only MDBX slice is not audited by this include migration.
+
+The following historical snapshots explain the original migration; references
+to absent umbrellas or recursive installation below describe those snapshots,
+not the implemented state above. The current reconciliation dependency set is
+`core`, `storage`, and `sessions`; commerce uses the root core/storage umbrellas.
 
 ### Hybrid boundary
 
@@ -211,10 +241,10 @@ own declared public components. The proposed include sets are:
 | Target umbrella | Lower-level umbrella includes | Own component includes |
 | --- | --- | --- |
 | `core.hpp` | none | `core/clock.hpp`, `core/identifiers.hpp`, `core/result.hpp` |
-| `actions.hpp` | `<imtg/core.hpp>` | `actions/token.hpp`, `actions/registry.hpp` |
+| `actions.hpp` | `<imtg/core.hpp>` | `actions/token.hpp`, `ActionCommand.hpp`, `ActionContext.hpp`, `PayloadCodec.hpp`, `ActionHandle.hpp`, `ActionRegistry.hpp` under `actions/` |
 | `storage.hpp` | `<imtg/core.hpp>` | `storage/time_encoding.hpp`, `storage/storage.hpp` |
 | `sessions.hpp` | `<imtg/core.hpp>`, `<imtg/storage.hpp>` | `sessions/fsm.hpp`, `sessions/session.hpp`, `sessions/render_intents.hpp` |
-| `reconciliation.hpp` | `<imtg/core.hpp>`, `<imtg/sessions.hpp>` | `reconciliation/outbox.hpp` |
+| `reconciliation.hpp` | `<imtg/core.hpp>`, `<imtg/storage.hpp>`, `<imtg/sessions.hpp>` | `reconciliation/outbox.hpp` |
 | `ui.hpp` | `<imtg/core.hpp>`, `<imtg/actions.hpp>` | `ui/tree.hpp` |
 | `runtime.hpp` | `<imtg/core.hpp>`, `<imtg/actions.hpp>`, `<imtg/ui.hpp>` | `runtime/reference_runtime.hpp` |
 | `commerce.hpp` (optional) | `<imtg/core.hpp>`, `<imtg/storage.hpp>` after those umbrellas land | `commerce/PaymentTypes.hpp`, `PaymentPolicy.hpp`, `PaymentRecords.hpp`, `PaymentTransaction.hpp`, `PaymentProvider.hpp`, `PaymentServices.hpp` |
@@ -274,7 +304,8 @@ Each structural implementation PR must update the install manifest and prove:
 - core-only and optional-domain configurations preserve their dependency
   boundaries.
 
-The current audit itself is documentation-only. Its checks are Markdown-link
-validation and `git diff --check`; no source layout, install manifest, or API
-behavior is changed here.
+The original audit was documentation-only. The implemented entry-point addendum
+above is verified by topology CTest, standalone installed-header builds,
+independent consumers, core-only/commerce builds, and Doxygen. Report the actual
+results per reviewed HEAD; this guide alone is not evidence of a passing CI run.
 

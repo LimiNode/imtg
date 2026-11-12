@@ -1,8 +1,11 @@
 #ifndef IMTG_UI_TREE_HPP
 #define IMTG_UI_TREE_HPP
 
-#include "imtg/core/result.hpp"
-#include <imtg/actions/ActionRegistry.hpp>
+/// \file imtg/ui/tree.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include <imtg/core.hpp>
+#include <imtg/actions.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +18,7 @@
 
 namespace imtg {
 
+/// \brief Semantic tree node category used by deterministic rendering and reconciliation.
 enum class NodeKind {
     Root,
     Text,

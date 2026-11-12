@@ -1,6 +1,9 @@
 #ifndef IMTG_CORE_RESULT_HPP
 #define IMTG_CORE_RESULT_HPP
 
+/// \file imtg/core/result.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
 #include <optional>
 #include <string>
 #include <type_traits>
