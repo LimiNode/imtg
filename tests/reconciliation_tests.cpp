@@ -6,6 +6,7 @@
 #include <chrono>
 #include <limits>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -129,6 +130,89 @@ public:
         const OutboxEffect& effect, ITransaction& transaction) const override
     {
         return m_delegate.create_or_validate(effect, transaction);
+    }
+
+    Result<OutboxEffectPage> claim_outbox_effects(
+        std::size_t limit, ClockTime now, std::chrono::milliseconds lease_duration,
+        std::string_view continuation, ITransaction& transaction) const override
+    {
+        return m_delegate.claim_outbox_effects(limit, now, lease_duration,
+                                                continuation, transaction);
+    }
+
+    Result<OutboxEffect> renew_outbox_effect(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ClockTime lease_until, ITransaction& transaction) const override
+    {
+        return m_delegate.renew_outbox_effect(id, token, expected_revision, now,
+                                               lease_until, transaction);
+    }
+
+    Result<OutboxEffect> mark_dispatch_admitted(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ITransaction& transaction) const override
+    {
+        return m_delegate.mark_dispatch_admitted(id, token, expected_revision, now,
+                                                  transaction);
+    }
+
+    Result<OutboxEffect> acknowledge_success(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, std::optional<std::string> physical_identity,
+        IAppliedTargetRepository& applied, ITransaction& transaction) const override
+    {
+        return m_delegate.acknowledge_success(id, token, expected_revision, now,
+                                               std::move(physical_identity), applied,
+                                               transaction);
+    }
+
+    Result<OutboxEffect> resolve_unknown_success(
+        const UnknownSuccessEvidence& evidence, ClockTime now,
+        IAppliedTargetRepository& applied, ITransaction& transaction) const override
+    {
+        return m_delegate.resolve_unknown_success(evidence, now, applied, transaction);
+    }
+
+    Result<OutboxEffect> record_retryable_failure(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ClockTime next_eligible_at, ITransaction& transaction) const override
+    {
+        return m_delegate.record_retryable_failure(id, token, expected_revision, now,
+                                                    next_eligible_at, transaction);
+    }
+
+    Result<OutboxEffect> record_unknown_outcome(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ITransaction& transaction) const override
+    {
+        return m_delegate.record_unknown_outcome(id, token, expected_revision, now,
+                                                 transaction);
+    }
+
+    Result<OutboxEffect> record_failed(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, ITransaction& transaction) const override
+    {
+        return m_delegate.record_failed(id, token, expected_revision, now, transaction);
+    }
+
+    Result<OutboxEffect> retry_unknown_effect(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, bool safe_repeat_proof, ClockTime next_eligible_at,
+        ITransaction& transaction) const override
+    {
+        return m_delegate.retry_unknown_effect(id, token, expected_revision, now,
+                                               safe_repeat_proof, next_eligible_at,
+                                               transaction);
+    }
+
+    Result<OutboxEffect> supersede_effect(
+        const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
+        ClockTime now, const OutboxEffectId& newer_effect_id,
+        ITransaction& transaction) const override
+    {
+        return m_delegate.supersede_effect(id, token, expected_revision, now,
+                                            newer_effect_id, transaction);
     }
 
     mutable std::size_t load_calls{};
@@ -712,6 +796,61 @@ void test_generation_and_applied_conflicts()
     CHECK(target_rejected_commit.outcome == CommitOutcome::RejectedConflict);
 }
 
+void test_delivery_admission_fences_newer_tx1()
+{
+    InMemoryStorageBackend backend;
+    const auto key = conversation();
+    create_session_watch_row(backend, key);
+    const auto first_id = publish_intent(backend, key, 2);
+    const auto first_claim = claim_intent(backend, first_id, ClockTime{});
+    ReconciliationPlanner planner;
+    const auto first_input = input_for(key, first_id, first_claim, 2, 0, 0, 2, 1);
+    const auto first_plan = planner.build(first_input);
+    CHECK(first_plan && !first_plan.value().no_op);
+
+    RenderIntentClaimRepository claims;
+    OutboxRepository outbox;
+    AtomicReconciliation publisher(backend, claims, outbox);
+    const auto published = publisher.publish(first_plan.value(), first_id,
+                                              first_claim.claim_token,
+                                              first_claim.row_revision, ClockTime{});
+    CHECK(published.outcome == ReconciliationOutcome::Planned
+          && published.effect.has_value());
+
+    auto delivery_claim = begin(backend);
+    const auto page = outbox.claim_outbox_effects(
+        1, ClockTime{}, std::chrono::hours(1), {}, *delivery_claim.transaction());
+    CHECK(page && page.value().effects.size() == 1);
+    const auto claimed_effect = page.value().effects.front();
+    CHECK(delivery_claim.commit().outcome == CommitOutcome::Committed);
+
+    // TX1 commits a newer session revision and desired generation while the
+    // already-published R1 effect is still waiting for admission.
+    SessionRepository sessions;
+    RenderIntentRepository intents;
+    auto tx1 = begin(backend);
+    auto current_session = sessions.load(key, *tx1.transaction());
+    CHECK(current_session && current_session.value());
+    current_session.value()->screen.version = 2;
+    const auto saved_session = sessions.save(*current_session.value(),
+                                             current_session.value()->revision,
+                                             *tx1.transaction());
+    CHECK(saved_session);
+    const auto newer_id = RenderIntentRepository::make_id(
+        key, saved_session.value().revision);
+    const RenderIntent newer_intent{newer_id, key, saved_session.value().revision,
+                                    "screen", std::nullopt};
+    CHECK(intents.append(newer_intent, *tx1.transaction()));
+    CHECK(tx1.commit().outcome == CommitOutcome::Committed);
+
+    auto admission = begin(backend);
+    const auto rejected = outbox.mark_dispatch_admitted(
+        claimed_effect.id, claimed_effect.claim_token, claimed_effect.revision,
+        ClockTime{}, *admission.transaction());
+    CHECK(!rejected && rejected.error().code == ErrorCode::StorageStaleClaim);
+    CHECK(admission.transaction()->state() == TransactionState::RolledBack);
+}
+
 } // namespace
 
 int main()
@@ -722,5 +861,6 @@ int main()
     test_fencing_and_unknown_recovery();
     test_stage_rolls_back_after_claim_failure();
     test_generation_and_applied_conflicts();
+    test_delivery_admission_fences_newer_tx1();
     return 0;
 }

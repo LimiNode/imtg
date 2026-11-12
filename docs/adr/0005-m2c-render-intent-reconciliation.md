@@ -299,6 +299,7 @@ Pending -> ClaimedBeforeDispatch -> DispatchAdmitted
                          |                  +--> UnknownOutcome
                          +--> Pending only after a definite pre-dispatch rollback
 UnknownOutcome -> retry only under an explicit safe-repeat proof
+UnknownOutcome -> Succeeded only through typed authoritative success evidence
 ```
 
 An expired `ClaimedBeforeDispatch` can be reclaimed only after storage proves
@@ -417,6 +418,46 @@ content. kurlyk sequential rate limits can provide pacing only; they are not
 durable ownership or ordering. The implementation must document this
 conservative limitation and use lookup/idempotency or target-level policy when
 strict remote ordering is required.
+
+### M2c-c reference mapping
+
+The storage-only delivery baseline implements these transitions in
+`OutboxRepository`, not a second worker state machine. Effect rows are written
+as `OE2`, adding the retained supersession identity; legacy `OE1` envelopes
+remain readable. Existing M2c-b Pending rows need no rewrite. `AT1`, `LT1`,
+and stable effect identities are unchanged.
+
+An internal `DT1` reservation in `outbox_dispatch_targets`, keyed by canonical
+`LT1`, stores the admitted effect ID and token. Acquisition is a CAS in the
+same transaction as `DispatchAdmitted`. Clearing the owner retains the row's
+generation. Lease expiry never releases an admitted/unknown owner. This
+separate record avoids using confirmed-applied fields as a dispatch lock or
+changing the M2c-b applied-target schema. It is logical outbox metadata, not a
+new per-user DBI or distributed job framework. A future backend must preserve
+its atomicity with the effect and applied-target rows.
+
+Delivery writes watch the authoritative applied-target revision. Obsolete
+unadmitted work discovered by a claim scan becomes `Failed` without transport;
+admitted/unknown work instead requires an explicit resolution. A terminal
+failure or supersession of unknown work releases ownership only by explicit
+caller policy and does not assert remote cancellation. Safe-repeat recovery
+requires the caller's method-specific proof assertion; M3 owns validation and
+audit of that evidence. All returned delivery errors roll back the borrowed
+transaction, including failures between target/effect/applied writes.
+
+The reference `resolve_unknown_success()` entry point is deliberately typed:
+it requires the exact effect identity, claim token, observed effect-row
+revision, observed applied-target row revision, and canonical `LT1` target. The repository verifies the durable
+`DT1` owner and rejects a result older than the monotonic applied target. It
+then releases the reservation and records `Succeeded` plus the confirmed
+physical mapping in the same transaction. This is a storage acknowledgement
+of authoritative adapter evidence, not a generic `is_success` flag and not a
+transport retry.
+
+Reference scans use the existing stable-ID cursor strategy. The default
+maximum is eight claims, including lease recoveries; it bounds work without
+claiming to count actual HTTP submissions. Exhaustion never automatically
+retries unknown work. No worker, HTTP adapter, or durable backend is introduced.
 
 ## Failure-injection matrix
 

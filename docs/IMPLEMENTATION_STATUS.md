@@ -1,6 +1,8 @@
 # Implementation status
 
-M2c-a and M2c-b are merged in `main`; M2c-c through M2e remain planned.
+M2c-a and M2c-b are merged in `main`. The M2c-c delivery-state and
+acknowledgement baseline is implemented in the current Draft PR; M2d and M2e
+remain planned until the reference slice is independently reviewed and merged.
 
 The Sovetwave header-topology audit is documented in
 [header-architecture.md](guides/header-architecture.md) and ADR 0009. The
@@ -11,13 +13,14 @@ paths. Core/storage and the other remaining root-level umbrella migrations,
 explicit install manifests, and compatibility transitions are still planned
 implementation work.
 
-**As of main merge `b89c5f7` (M2c-b, PR #19, and PR #17 merged):** the repository contains the complete
+**As of main merge `9e2caa1` (PR #20 Actions migration merged):** the repository contains the complete
 Telegram-free M1 foundation, the M2a backend-neutral storage protocol, the M2b
 typed session/FSM semantic baseline, and the M2c-a claims/fencing plus M2c-b
-reconciliation/outbox slices. Durable process-crash persistence, delivery,
-and transport remain planned for later milestones.
+reconciliation/outbox slices. The current Draft PR adds the M2c-c reference
+delivery lifecycle; durable process-crash persistence and transport remain
+planned for later milestones.
 
-M1 acceptance gates are complete: deterministic rendering, typed/versioned actions, stale-handle rejection, per-conversation ordering, bounded admission and shutdown, observable worker failure, and dispatcher quiescence are covered by the offline test suite and the Debug/Release plus sanitizer CI matrix. M2a adds snapshot/optimistic transaction semantics, schema metadata, commit outcomes, and reusable conformance tests. M2b adds typed sessions, deterministic FSM transitions, processed-update deduplication, and atomic minimal render-intent publication. M2c-a claims/fencing and the M2c-b reconciliation/outbox slice are implemented; canonical `LT1` target scoping, applied-target desired-revision fencing, bounded physical identities, mandatory TX2 context/fencing, fail-closed staging, injected-repository recovery, and deterministic Unknown/interleaving tests are now covered. Durable adapters, delivery acknowledgements, and complete cross-backend recovery conformance remain open.
+M1 acceptance gates are complete: deterministic rendering, typed/versioned actions, stale-handle rejection, per-conversation ordering, bounded admission and shutdown, observable worker failure, and dispatcher quiescence are covered by the offline test suite and the Debug/Release plus sanitizer CI matrix. M2a adds snapshot/optimistic transaction semantics, schema metadata, commit outcomes, and reusable conformance tests. M2b adds typed sessions, deterministic FSM transitions, processed-update deduplication, and atomic minimal render-intent publication. M2c-a claims/fencing and the M2c-b reconciliation/outbox slice are implemented; canonical `LT1` target scoping, applied-target desired-revision fencing, bounded physical identities, mandatory TX2 context/fencing, fail-closed staging, injected-repository recovery, and deterministic Unknown/interleaving tests are now covered. M2c-c adds the Draft storage-only acknowledgement baseline, target reservations, and a finite claim budget. The current corrective also adds typed `UnknownOutcome` success resolution, desired-state fencing at delivery admission, monotonic lease renewal, and deterministic late-success/TX1→TX2→TX1 regressions. Durable adapters and complete cross-backend recovery conformance remain open.
 
 The Telegram application profile work is documentation-only planning. Typed
 gateway routing, headless handlers, payment-priority handling, forms/tickets,
@@ -51,7 +54,7 @@ audit contract must be accepted before a separate GUI target is implemented.
 | Durable repositories and MDBX backend | `planned` | M2c–M2e durable claims, recovery, MDBX adapter, and process-crash proof |
 | Telegram transport / kurlyk | `planned` | M3 adapter tests against fakes and documented API limits |
 | Payment provider contracts and capability audit | `partial` | [PAYMENTS.md](contracts/PAYMENTS.md), [PAYMENT_PROVIDER_CAPABILITY_AUDIT.md](research/PAYMENT_PROVIDER_CAPABILITY_AUDIT.md), optional `imtg_commerce` identities, account-scoped eligibility, exact asset-scale validation, evidence binding, shared `CommitResult` payment transactions, explicit refund policies and `imtg_payment_contract_tests`; provider adapters, durable persistence, webhooks and onboarding remain future work |
-| Render intents, reconciliation, and outbox | `partial` | M2c-a claims/fencing and M2c-b canonical `LT1` target scoping, mandatory TX2 context, authoritative session/generation/applied-target fencing, atomic outbox publication, fail-closed borrowed staging, and conservative Unknown recovery are merged; delivery-state, acknowledgements, durable adapters, and full cross-backend recovery matrix remain future work |
+| Render intents, reconciliation, and outbox | `partial` | M2c-a claims/fencing and M2c-b canonical `LT1` target scoping, mandatory TX2 context, authoritative session/generation/applied-target fencing, atomic outbox publication, fail-closed borrowed staging, and conservative Unknown recovery are merged; the current Draft PR adds bounded delivery claims, dispatch admission, fenced acknowledgements, monotonic applied-target evidence, retry/Unknown policy, and supersession; durable adapters and full cross-backend recovery remain future work |
 | Localization | `planned` | M4 catalog, fallback, and pluralization tests |
 | Users, chats, history, access control, jobs | `planned` | M4/M5 service and retention tests |
 | Build targets, releases, CI | `implemented` | CMake install/export package, Debug/Release CTest, and CI matrix |

@@ -27,8 +27,9 @@ backend-neutral in-memory baseline. Publishable TX2 plans require complete
 intent/conversation/session/generation/target/applied and original-claim
 context; borrowed staging is fail-closed; canonical target scoping is
 conversation-bound; and Unknown recovery must attribute the exact immutable
-effect to the original attempt. This does not claim physical process-crash
-durability, delivery acknowledgements, or a Telegram adapter.
+effect to the original attempt. The merged M2c-a/b baseline does not claim
+delivery acknowledgements; the current M2c-c Draft adds those logical semantics
+without physical process-crash durability or a Telegram adapter.
 
 Use the two-transaction protocol:
 
@@ -41,11 +42,14 @@ delivery: claim effect, execute external operation, record fenced outcome
 
 Records have stable identities. Claims use leases and monotonically increasing fencing tokens. Recovery defines retry eligibility, supersession, `UnknownOutcome`, expected-revision checks, bounded pagination, and crash behavior between every phase. A failure-injection matrix is required before implementation.
 
-M2c-c is the next delivery-acknowledgement boundary. It must preserve M2c-b
-logical slot/effect identity while adding fenced delivery-state transitions;
-actual Telegram calls, provider policy, commerce fulfillment and moderation
-actions remain M3–M5 adapter/module work. Headless routing is a M3 gateway
-contract and must not be implemented by manufacturing UI render intents.
+M2c-c adds the backend-neutral delivery-acknowledgement boundary. The reference
+implementation preserves M2c-b logical slot/effect identity while adding
+bounded effect scans, fenced delivery-state transitions, the durable
+pre-dispatch marker, explicit UnknownOutcome recovery, and atomic applied-target
+acknowledgements. It remains an in-memory semantic baseline: actual Telegram
+calls, provider policy, commerce fulfillment and moderation actions remain
+M3–M5 adapter/module work. Headless routing is a M3 gateway contract and must
+not be implemented by manufacturing UI render intents.
 
 ## M2d — MDBX adapter
 
