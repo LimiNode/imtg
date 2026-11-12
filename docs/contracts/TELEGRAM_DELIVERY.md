@@ -73,8 +73,11 @@ The dispatch sequence is strict:
 3. Only then call the external adapter, outside storage.
 4. Record its outcome in a new, fenced transaction.
 
-`mark_dispatch_admitted()` also atomically acquires a conversation-scoped
-target reservation. At most one effect can be admitted for one `LT1` target.
+`mark_dispatch_admitted()` also re-reads the existing render intent, session,
+and desired-generation marker, watches those rows, and atomically acquires a
+conversation-scoped target reservation. An effect whose session revision is no
+longer current is rejected before admission. At most one effect can be
+admitted for one `LT1` target.
 An expired admitted claim becomes `UnknownOutcome`, not claimable work, and
 keeps that reservation. A different effect cannot bypass it using another
 intent, token, or effect ID. Confirmed success, proven non-acceptance, or an
@@ -100,6 +103,17 @@ becomes `Failed`. Unknown work never becomes retryable merely because a budget
 or lease expired. Tokens and attempt counters cannot wrap. The durable adapter
 will supply the due-index performance model; reference transaction creation
 still copies an in-memory snapshot.
+
+`resolve_unknown_success()` is the only success path for an expired or otherwise
+`UnknownOutcome` effect. Its typed evidence must name the exact effect, claim
+token, observed effect-row revision, observed applied-target row revision, and
+LT1 target; the repository verifies the persisted DT1 owner and monotonic
+`AppliedTargetState` before atomically
+recording `Succeeded`. It never invokes the transport or treats a timeout,
+lease expiry, or `DispatchAdmitted` marker as success. A same-revision
+independent `Always` intent may update its own confirmed physical mapping, but
+an ordinary state-change effect cannot overwrite another effect already
+confirmed at that revision.
 
 `retry_unknown_effect(..., safe_repeat_proof, ...)` requires the caller's
 explicit assertion of method-specific idempotency or authoritative lookup

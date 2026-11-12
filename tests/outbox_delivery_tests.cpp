@@ -31,20 +31,40 @@ std::string target()
     return encoded.value();
 }
 
-OutboxEffect make_effect(std::string id, StorageRevision desired, std::string payload = "payload")
+std::string dispatch_owner(std::string_view effect_id, ClaimToken token)
 {
-    const RenderIntentId render_intent{std::move(id)};
-    const auto target_identity = target();
+    std::string encoded{"DT1"};
+    for (unsigned i = 0; i != 8; ++i)
+        encoded.push_back(static_cast<char>((effect_id.size() >> (8 * i)) & 0xff));
+    encoded.append(effect_id);
+    for (unsigned i = 0; i != 8; ++i)
+        encoded.push_back(static_cast<char>((token.value >> (8 * i)) & 0xff));
+    return encoded;
+}
+
+std::uint64_t next_test_update_id = 1;
+
+OutboxEffect make_effect(std::string id, StorageRevision desired,
+                         std::string payload = "payload",
+                         ConversationKey owner = conversation())
+{
+    (void)id;
+    const auto update = UpdateIdentity{owner.bot_id, next_test_update_id++};
+    const RenderIntentId render_intent =
+        RenderIntentRepository::make_id(owner, desired, update);
+    const auto target_result = make_logical_target_identity(owner, "body");
+    CHECK(target_result);
+    const auto target_identity = target_result.value();
     ReconciliationInput input{
         render_intent, target_identity, EffectKind::Edit, "body", desired, 0,
         RenderPolicy::OnChange, 1, std::move(payload)};
-    input.conversation = conversation();
+    input.conversation = owner;
     input.session_revision = desired;
     input.desired_generation = 1;
     input.desired_generation_row_revision = 1;
     input.applied_target_revision = 0;
     input.context = ReconciliationContext{
-        render_intent, conversation(), desired, desired, 1, 1, target_identity,
+        render_intent, owner, desired, desired, 1, 1, target_identity,
         EffectKind::Edit, "body", 0, 0, RenderPolicy::OnChange,
         ClaimToken{1}, 1};
     ReconciliationPlanner planner;
@@ -53,8 +73,60 @@ OutboxEffect make_effect(std::string id, StorageRevision desired, std::string pa
     return plan.value().effect;
 }
 
+void ensure_delivery_context(InMemoryStorageBackend& backend, const OutboxEffect& effect)
+{
+    const auto parsed = decode_logical_target_identity(effect.slot.target_identity);
+    CHECK(parsed);
+    const auto key = parsed.value().conversation;
+    const auto session_key = key.encode();
+    SessionRecord record;
+    record.conversation = key;
+    record.state = FsmStateId{"state", 1};
+    record.screen = ScreenIdentity{"screen", 1};
+    const auto encoded = encode_session_record(record);
+    CHECK(encoded);
+
+    auto read = begin(backend, TransactionMode::ReadOnly);
+    const auto existing = read.transaction()->read("sessions", session_key);
+    CHECK(existing);
+    const auto read_commit = read.commit();
+    CHECK(read_commit.outcome == CommitOutcome::Committed);
+    if (!existing.value()) {
+        auto create = begin(backend);
+        CHECK(create.transaction()->create_if_absent("sessions", session_key, encoded.value()));
+        CHECK(create.commit().outcome == CommitOutcome::Committed);
+    }
+    auto current = begin(backend, TransactionMode::ReadOnly);
+    auto row = current.transaction()->read("sessions", session_key);
+    CHECK(row);
+    auto current_commit = current.commit();
+    CHECK(current_commit.outcome == CommitOutcome::Committed);
+    StorageRevision revision = row.value() ? row.value()->revision : 0;
+    while (revision < effect.desired_revision) {
+        auto advance = begin(backend);
+        const auto written = advance.transaction()->write("sessions", session_key,
+                                                          encoded.value(), revision);
+        CHECK(written);
+        CHECK(advance.commit().outcome == CommitOutcome::Committed);
+        revision = written.value();
+    }
+
+    const auto origin_marker = effect.slot.render_intent_id.value.rfind("|u=");
+    CHECK(origin_marker != std::string::npos);
+    const auto origin_id = std::stoull(effect.slot.render_intent_id.value.substr(origin_marker + 3));
+    RenderIntentRepository intents;
+    auto intent_work = begin(backend);
+    const RenderIntent origin_intent{
+        effect.slot.render_intent_id, key, effect.desired_revision, "screen",
+        UpdateIdentity{key.bot_id, origin_id}};
+    const auto appended = intents.append(origin_intent, *intent_work.transaction());
+    CHECK(appended);
+    CHECK(intent_work.commit().outcome == CommitOutcome::Committed);
+}
+
 void insert_effect(InMemoryStorageBackend& backend, const OutboxEffect& effect)
 {
+    ensure_delivery_context(backend, effect);
     OutboxRepository repository;
     auto work = begin(backend);
     CHECK(repository.create_or_validate(effect, *work.transaction()));
@@ -70,6 +142,11 @@ OutboxEffect read_effect(InMemoryStorageBackend& backend, const OutboxEffectId& 
     CHECK(work.commit().outcome == CommitOutcome::Committed);
     return *effect.value();
 }
+
+OutboxEffect claim_one(InMemoryStorageBackend& backend, OutboxRepository& repository,
+                       ClockTime now = ClockTime{});
+OutboxEffect admit(InMemoryStorageBackend& backend, OutboxRepository& repository,
+                   const OutboxEffect& claim, ClockTime now = ClockTime{});
 
 void test_competing_claims_and_lease_fencing()
 {
@@ -97,6 +174,13 @@ void test_competing_claims_and_lease_fencing()
         effect.id, left_claim.claim_token, left_claim.revision, ClockTime{},
         ClockTime{2h}, *renew.transaction());
     CHECK(renewed && renew.commit().outcome == CommitOutcome::Committed);
+
+    auto shortened = begin(backend);
+    const auto rejected_shortening = repository.renew_outbox_effect(
+        effect.id, left_claim.claim_token, renewed.value().revision, ClockTime{},
+        ClockTime{90min}, *shortened.transaction());
+    CHECK(!rejected_shortening && rejected_shortening.error().code == ErrorCode::InvalidArgument);
+    CHECK(shortened.transaction()->state() == TransactionState::RolledBack);
 
     auto expired = begin(backend);
     const auto stale = repository.renew_outbox_effect(
@@ -204,6 +288,84 @@ void test_dispatch_boundary_and_unknown_recovery()
     CHECK(authoritative.state == OutboxEffectState::DispatchAdmitted);
 }
 
+void test_unknown_success_resolution()
+{
+    InMemoryStorageBackend backend;
+    OutboxRepository repository;
+    AppliedTargetRepository applied;
+    const auto effect = make_effect("late-success", 1);
+    insert_effect(backend, effect);
+    const auto claim = claim_one(backend, repository);
+    const auto admitted = admit(backend, repository, claim);
+
+    auto expire = begin(backend);
+    const auto expired = repository.claim_outbox_effects(
+        1, ClockTime{2h}, 1h, {}, *expire.transaction());
+    CHECK(expired && expired.value().effects.empty());
+    CHECK(expire.commit().outcome == CommitOutcome::Committed);
+    const auto unknown = read_effect(backend, effect.id);
+    CHECK(unknown.state == OutboxEffectState::UnknownOutcome);
+
+    UnknownSuccessEvidence evidence{unknown.id, unknown.claim_token, unknown.revision, 0,
+                                    unknown.slot.target_identity,
+                                    std::string{"telegram:message:late"}};
+
+    auto forge_owner = begin(backend);
+    const auto owner_row = forge_owner.transaction()->read(
+        "outbox_dispatch_targets", unknown.slot.target_identity);
+    CHECK(owner_row && owner_row.value());
+    CHECK(forge_owner.transaction()->write(
+        "outbox_dispatch_targets", unknown.slot.target_identity,
+        dispatch_owner("forged", ClaimToken{99}), owner_row.value()->revision));
+    CHECK(forge_owner.commit().outcome == CommitOutcome::Committed);
+    auto rejected_owner = begin(backend);
+    const auto owner_result = repository.resolve_unknown_success(
+        evidence, ClockTime{2h}, applied, *rejected_owner.transaction());
+    CHECK(!owner_result && owner_result.error().code == ErrorCode::StorageConflict);
+    CHECK(rejected_owner.transaction()->state() == TransactionState::RolledBack);
+
+    auto restore_owner = begin(backend);
+    const auto forged_row = restore_owner.transaction()->read(
+        "outbox_dispatch_targets", unknown.slot.target_identity);
+    CHECK(forged_row && forged_row.value());
+    CHECK(restore_owner.transaction()->write(
+        "outbox_dispatch_targets", unknown.slot.target_identity,
+        dispatch_owner(unknown.id.value, unknown.claim_token), forged_row.value()->revision));
+    CHECK(restore_owner.commit().outcome == CommitOutcome::Committed);
+
+    auto recovery = begin(backend);
+    const auto resolved = repository.resolve_unknown_success(
+        evidence, ClockTime{2h}, applied, *recovery.transaction());
+    CHECK(resolved && resolved.value().state == OutboxEffectState::Succeeded);
+    CHECK(recovery.commit().outcome == CommitOutcome::Committed);
+
+    auto verify = begin(backend, TransactionMode::ReadOnly);
+    const auto target_state = applied.load(target(), *verify.transaction());
+    CHECK(target_state && target_state.value()
+          && target_state.value()->confirmed_applied_revision == 1
+          && target_state.value()->last_confirmed_effect == std::optional<OutboxEffectId>{effect.id}
+          && target_state.value()->physical_identity
+          && *target_state.value()->physical_identity == "telegram:message:late");
+    CHECK(verify.commit().outcome == CommitOutcome::Committed);
+
+    // A repeated authoritative observation is idempotent with the new row revision.
+    evidence.expected_revision = resolved.value().revision;
+    evidence.expected_target_revision = target_state.value()->revision;
+    auto duplicate = begin(backend);
+    const auto duplicate_result = repository.resolve_unknown_success(
+        evidence, ClockTime{2h}, applied, *duplicate.transaction());
+    CHECK(duplicate_result && duplicate_result.value().state == OutboxEffectState::Succeeded);
+    CHECK(duplicate.commit().outcome == CommitOutcome::Committed);
+
+    // A stale token/revision can never resolve a later state.
+    evidence.expected_revision = unknown.revision;
+    auto stale = begin(backend);
+    const auto stale_result = repository.resolve_unknown_success(
+        evidence, ClockTime{2h}, applied, *stale.transaction());
+    CHECK(!stale_result && stale_result.error().code == ErrorCode::StorageStaleClaim);
+    CHECK(stale.transaction()->state() == TransactionState::RolledBack);
+}
+
 void test_acknowledgement_is_atomic_and_monotonic()
 {
     InMemoryStorageBackend backend;
@@ -282,7 +444,7 @@ void test_acknowledgement_is_atomic_and_monotonic()
 }
 
 OutboxEffect claim_one(InMemoryStorageBackend& backend, OutboxRepository& repository,
-                       ClockTime now = ClockTime{})
+                       ClockTime now)
 {
     auto work = begin(backend);
     const auto page = repository.claim_outbox_effects(1, now, 1h, {}, *work.transaction());
@@ -292,7 +454,7 @@ OutboxEffect claim_one(InMemoryStorageBackend& backend, OutboxRepository& reposi
 }
 
 OutboxEffect admit(InMemoryStorageBackend& backend, OutboxRepository& repository,
-                   const OutboxEffect& claim, ClockTime now = ClockTime{})
+                   const OutboxEffect& claim, ClockTime now)
 {
     auto work = begin(backend);
     const auto admitted = repository.mark_dispatch_admitted(
@@ -307,8 +469,10 @@ void test_target_ownership_and_late_completion()
     InMemoryStorageBackend backend;
     OutboxRepository repository;
     AppliedTargetRepository applied;
+    // Two independent effects for the same revision still contend on the
+    // target reservation; only a newer session revision is stale at admission.
     const auto older = make_effect("a-target-old", 1);
-    const auto newer = make_effect("b-target-new", 2);
+    const auto newer = make_effect("b-target-new", 1);
     insert_effect(backend, older);
     insert_effect(backend, newer);
     const auto old_claim = claim_one(backend, repository);
@@ -342,10 +506,10 @@ void test_target_ownership_and_late_completion()
         reclaimed_new.revision, ClockTime{2h}, *still_blocked.transaction()));
 
     auto resolution = begin(backend);
-    const auto superseded = repository.supersede_effect(
+    const auto abandoned = repository.record_failed(
         older.id, unknown_old.claim_token, unknown_old.revision, ClockTime{2h},
-        newer.id, *resolution.transaction());
-    CHECK(superseded && resolution.commit().outcome == CommitOutcome::Committed);
+        *resolution.transaction());
+    CHECK(abandoned && resolution.commit().outcome == CommitOutcome::Committed);
     const auto admitted_new = admit(backend, repository, reclaimed_new, ClockTime{2h});
     auto completion = begin(backend);
     const auto succeeded = repository.acknowledge_success(
@@ -359,8 +523,41 @@ void test_target_ownership_and_late_completion()
     CHECK(!stale && stale.error().code == ErrorCode::StorageStaleClaim);
     auto verify = begin(backend, TransactionMode::ReadOnly);
     const auto state = applied.load(target(), *verify.transaction());
-    CHECK(state && state.value() && state.value()->confirmed_applied_revision == 2
+    CHECK(state && state.value() && state.value()->confirmed_applied_revision == 1
           && state.value()->physical_identity == std::optional<std::string>{"message:new"});
+}
+
+void test_independent_same_revision_success()
+{
+    InMemoryStorageBackend backend;
+    OutboxRepository repository;
+    AppliedTargetRepository applied;
+    const auto first = make_effect("always-first", 1, "first");
+    const auto second = make_effect("always-second", 1, "second");
+    insert_effect(backend, first);
+    insert_effect(backend, second);
+    const auto first_claim = claim_one(backend, repository);
+    const auto second_claim = claim_one(backend, repository);
+    const auto first_admitted = admit(backend, repository, first_claim);
+    auto first_ack = begin(backend);
+    CHECK(repository.acknowledge_success(first.id, first_admitted.claim_token,
+                                         first_admitted.revision, ClockTime{},
+                                         std::string{"message:first"}, applied,
+                                         *first_ack.transaction()));
+    CHECK(first_ack.commit().outcome == CommitOutcome::Committed);
+    const auto second_admitted = admit(backend, repository, second_claim);
+    auto second_ack = begin(backend);
+    CHECK(repository.acknowledge_success(second.id, second_admitted.claim_token,
+                                         second_admitted.revision, ClockTime{},
+                                         std::string{"message:second"}, applied,
+                                         *second_ack.transaction()));
+    CHECK(second_ack.commit().outcome == CommitOutcome::Committed);
+    auto verify = begin(backend, TransactionMode::ReadOnly);
+    const auto state = applied.load(target(), *verify.transaction());
+    CHECK(state && state.value()
+          && state.value()->confirmed_applied_revision == 1
+          && state.value()->last_confirmed_effect == std::optional<OutboxEffectId>{second.id}
+          && state.value()->physical_identity == std::optional<std::string>{"message:second"});
 }
 
 // Storage errors at individual writes must invalidate the borrowed transaction.
@@ -560,11 +757,7 @@ void test_target_revision_watch_and_scope_isolation()
         ConversationKey{BotId{8}, ChatId{42}, Chat{}},
         ConversationKey{BotId{7}, ChatId{43}, Chat{}}};
     for (const auto& owner : owners) {
-        auto effect = make_effect("same-logical-slot", 1);
-        const auto scoped = make_logical_target_identity(owner, "body");
-        CHECK(scoped);
-        effect.slot.target_identity = scoped.value();
-        effect.id = OutboxEffectId::from_slot(effect.slot);
+        auto effect = make_effect("same-logical-slot", 1, "payload", owner);
         insert_effect(separate, effect);
     }
     auto claims = begin(separate);
@@ -640,6 +833,7 @@ void test_retry_failure_and_supersession()
 {
     InMemoryStorageBackend backend;
     OutboxRepository repository;
+    AppliedTargetRepository applied;
     const auto old_effect = make_effect("supersede-old", 1, "old");
     const auto new_effect = make_effect("supersede-new", 2, "new");
     insert_effect(backend, old_effect);
@@ -679,6 +873,24 @@ void test_retry_failure_and_supersession()
     const auto new_state = read_effect(backend, new_effect.id);
     CHECK(old_state.state == OutboxEffectState::Superseded
           && new_state.state == OutboxEffectState::Failed);
+
+    // A terminally superseded old callback cannot overwrite a newer confirmed
+    // effect, even when the newer effect has already advanced applied state.
+    insert_effect(backend, make_effect("supersede-confirmed", 3, "confirmed"));
+    const auto confirmed_claim = claim_one(backend, repository, ClockTime{1h});
+    const auto confirmed_admitted = admit(backend, repository, confirmed_claim, ClockTime{1h});
+    auto confirmed_work = begin(backend);
+    CHECK(repository.acknowledge_success(
+        confirmed_admitted.id, confirmed_admitted.claim_token, confirmed_admitted.revision,
+        ClockTime{1h}, std::string{"message:confirmed"}, applied,
+        *confirmed_work.transaction()));
+    CHECK(confirmed_work.commit().outcome == CommitOutcome::Committed);
+    auto late_work = begin(backend);
+    const auto late = repository.acknowledge_success(
+        old_effect.id, old_claim.claim_token, old_claim.revision, ClockTime{2h},
+        std::string{"message:old"}, applied, *late_work.transaction());
+    CHECK(!late && late.error().code == ErrorCode::StorageStaleClaim);
+    CHECK(late_work.transaction()->state() == TransactionState::RolledBack);
 
     const auto retry_effect = make_effect("definite-admission-rejection", 3);
     insert_effect(backend, retry_effect);
@@ -727,10 +939,12 @@ int main()
 {
     test_competing_claims_and_lease_fencing();
     test_dispatch_boundary_and_unknown_recovery();
+    test_unknown_success_resolution();
     test_acknowledgement_is_atomic_and_monotonic();
     test_retry_failure_and_supersession();
     test_bounded_scan_and_pending_shutdown_recovery();
     test_target_ownership_and_late_completion();
+    test_independent_same_revision_success();
     test_partial_staging_is_fail_closed();
     test_commit_failure_matrix_and_dispatch_gate();
     test_target_revision_watch_and_scope_isolation();

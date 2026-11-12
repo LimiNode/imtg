@@ -299,6 +299,7 @@ Pending -> ClaimedBeforeDispatch -> DispatchAdmitted
                          |                  +--> UnknownOutcome
                          +--> Pending only after a definite pre-dispatch rollback
 UnknownOutcome -> retry only under an explicit safe-repeat proof
+UnknownOutcome -> Succeeded only through typed authoritative success evidence
 ```
 
 An expired `ClaimedBeforeDispatch` can be reclaimed only after storage proves
@@ -443,6 +444,15 @@ caller policy and does not assert remote cancellation. Safe-repeat recovery
 requires the caller's method-specific proof assertion; M3 owns validation and
 audit of that evidence. All returned delivery errors roll back the borrowed
 transaction, including failures between target/effect/applied writes.
+
+The reference `resolve_unknown_success()` entry point is deliberately typed:
+it requires the exact effect identity, claim token, observed effect-row
+revision, observed applied-target row revision, and canonical `LT1` target. The repository verifies the durable
+`DT1` owner and rejects a result older than the monotonic applied target. It
+then releases the reservation and records `Succeeded` plus the confirmed
+physical mapping in the same transaction. This is a storage acknowledgement
+of authoritative adapter evidence, not a generic `is_success` flag and not a
+transport retry.
 
 Reference scans use the existing stable-ID cursor strategy. The default
 maximum is eight claims, including lease recoveries; it bounds work without

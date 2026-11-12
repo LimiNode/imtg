@@ -14,6 +14,9 @@ namespace {
 constexpr std::string_view outbox_namespace = "outbox_effects";
 constexpr std::string_view applied_namespace = "applied_targets";
 constexpr std::string_view dispatch_namespace = "outbox_dispatch_targets";
+constexpr std::string_view render_namespace = "render_intents";
+constexpr std::string_view session_namespace = "sessions";
+constexpr std::string_view generation_namespace = "render_intent_generations";
 constexpr std::size_t max_field_size = 1024 * 1024;
 constexpr std::size_t max_record_size = 4 * 1024 * 1024;
 constexpr std::size_t max_logical_slot_size = 4096;
@@ -430,6 +433,58 @@ Result<void> watch_delivery_target(const OutboxEffect& effect, ITransaction& tra
                              target.value() ? target.value()->revision : 0);
 }
 
+Result<void> watch_delivery_context(const OutboxEffect& effect, ITransaction& transaction)
+{
+    const auto target = decode_logical_target_identity(effect.slot.target_identity);
+    if (!target) return target.error();
+
+    RenderIntentRepository intents;
+    const auto intent = intents.load(effect.slot.render_intent_id, transaction);
+    if (!intent) return intent.error();
+    if (!intent.value()) return err(ErrorCode::StorageNotFound,
+                                   "delivery render intent is absent");
+    if (target.value().conversation != intent.value()->conversation)
+        return err(ErrorCode::ScopeMismatch,
+                   "delivery target belongs to another render intent conversation");
+    if (intent.value()->session_revision != effect.desired_revision)
+        return err(ErrorCode::StorageStaleClaim,
+                   "delivery effect does not match render intent revision");
+
+    const auto intent_row = transaction.read(render_namespace, effect.slot.render_intent_id.value);
+    if (!intent_row) return intent_row.error();
+    if (!intent_row.value()) return err(ErrorCode::StorageNotFound,
+                                        "delivery render intent row is absent");
+    const auto watched_intent = transaction.watch(render_namespace,
+                                                  effect.slot.render_intent_id.value,
+                                                  intent_row.value()->revision);
+    if (!watched_intent) return watched_intent.error();
+
+    SessionRepository sessions;
+    const auto session = sessions.load(intent.value()->conversation, transaction);
+    if (!session) return session.error();
+    if (!session.value()) return err(ErrorCode::StorageNotFound,
+                                     "delivery session is absent");
+    if (session.value()->revision != intent.value()->session_revision)
+        return err(ErrorCode::StorageStaleClaim,
+                   "delivery effect is older than the current session");
+    const auto watched_session = transaction.watch(session_namespace,
+                                                   intent.value()->conversation.encode(),
+                                                   session.value()->revision);
+    if (!watched_session) return watched_session.error();
+
+    DesiredGenerationRepository generations;
+    const auto generation = generations.load(intent.value()->conversation.encode(), transaction);
+    if (!generation) return generation.error();
+    if (generation.value().value == 0)
+        return err(ErrorCode::StorageSerializationFailure,
+                   "desired generation marker is invalid");
+    const auto watched_generation = transaction.watch(
+        generation_namespace, intent.value()->conversation.encode(),
+        generation.value().row_revision);
+    if (!watched_generation) return watched_generation.error();
+    return {};
+}
+
 // The target slot survives lease expiry: an admitted/unknown operation may still
 // execute remotely. Only a definite outcome or explicit resolution releases it.
 enum class DispatchOwnership { Acquire, Release, Watch };
@@ -501,6 +556,77 @@ Result<OutboxEffect> rollback_effect(ITransaction& transaction, Error error)
 {
     transaction.rollback();
     return error;
+}
+
+Result<OutboxEffect> apply_confirmed_success(
+    const OutboxEffect& loaded, ClockTime now, std::optional<std::string> physical_identity,
+    IAppliedTargetRepository& applied, ITransaction& transaction)
+{
+    if (physical_identity && physical_identity->size() > max_logical_slot_size)
+        return rollback_effect(transaction, err(ErrorCode::StorageRecordTooLarge,
+                                                "physical identity is too large"));
+
+    const auto current = applied.load(loaded.slot.target_identity, transaction);
+    if (!current) return rollback_effect(transaction, current.error());
+
+    bool applied_already = false;
+    AppliedTargetState next;
+    if (current.value()) {
+        if (current.value()->desired_revision > loaded.desired_revision
+            || current.value()->confirmed_applied_revision > loaded.desired_revision)
+            return rollback_effect(transaction, err(ErrorCode::StorageStaleClaim,
+                                                    "acknowledgement is older than target state"));
+        if (current.value()->confirmed_applied_revision == loaded.desired_revision) {
+            if (current.value()->last_confirmed_effect
+                && *current.value()->last_confirmed_effect == loaded.id) {
+                applied_already = true;
+                next = *current.value();
+            } else {
+                // Independent Always intents may intentionally render the same
+                // session revision more than once. State-change effects at the
+                // same revision remain fenced by the last confirmed identity.
+                RenderIntentRepository intents;
+                const auto intent = intents.load(loaded.slot.render_intent_id, transaction);
+                if (!intent) return rollback_effect(transaction, intent.error());
+                if (!intent.value() || !intent.value()->origin)
+                    return rollback_effect(transaction, err(ErrorCode::StorageStaleClaim,
+                                                            "another effect already confirmed this revision"));
+                next = *current.value();
+                if (loaded.slot.effect_kind == EffectKind::Delete)
+                    next.physical_identity.reset();
+                else if (physical_identity)
+                    next.physical_identity = std::move(physical_identity);
+                next.last_confirmed_effect = loaded.id;
+            }
+        } else {
+            next = *current.value();
+            next.desired_revision = std::max(next.desired_revision, loaded.desired_revision);
+            next.confirmed_applied_revision = loaded.desired_revision;
+            if (loaded.slot.effect_kind == EffectKind::Delete)
+                next.physical_identity.reset();
+            else if (physical_identity)
+                next.physical_identity = std::move(physical_identity);
+            next.last_confirmed_effect = loaded.id;
+        }
+    } else {
+        if (loaded.slot.effect_kind == EffectKind::Delete) physical_identity.reset();
+        next = AppliedTargetState{loaded.slot.target_identity, std::move(physical_identity),
+                                  loaded.desired_revision, loaded.desired_revision,
+                                  loaded.id, 0};
+    }
+
+    if (!applied_already) {
+        const auto saved = applied.save(next, current.value() ? current.value()->revision : 0,
+                                        transaction);
+        if (!saved) return rollback_effect(transaction, saved.error());
+    }
+    const auto released = change_dispatch_owner(loaded, transaction, DispatchOwnership::Release);
+    if (!released) return rollback_effect(transaction, released.error());
+    auto acknowledged = loaded;
+    acknowledged.state = OutboxEffectState::Succeeded;
+    acknowledged.lease_until = ClockTime{};
+    acknowledged.next_eligible_at = now;
+    return write_effect(acknowledged, transaction);
 }
 
 Result<OutboxEffect> require_live_claim(const OutboxEffect& effect, ClaimToken token,
@@ -668,6 +794,9 @@ Result<OutboxEffect> OutboxRepository::renew_outbox_effect(
     if (!loaded) return rollback_effect(transaction, loaded.error());
     const auto live = require_live_claim(loaded.value(), token, expected_revision, now);
     if (!live) return rollback_effect(transaction, live.error());
+    if (lease_until < loaded.value().lease_until)
+        return rollback_effect(transaction, err(ErrorCode::InvalidArgument,
+                                                "lease renewal cannot shorten the current lease"));
     auto next = loaded.value();
     next.lease_until = lease_until;
     return write_effect(next, transaction);
@@ -687,6 +816,8 @@ Result<OutboxEffect> OutboxRepository::mark_dispatch_admitted(
         return rollback_effect(transaction, live ? Error{ErrorCode::InvalidState,
                                                          "effect is not before dispatch admission"}
                                                   : live.error());
+    const auto context = watch_delivery_context(loaded.value(), transaction);
+    if (!context) return rollback_effect(transaction, context.error());
     auto next = loaded.value();
     next.state = OutboxEffectState::DispatchAdmitted;
     const auto acquired = change_dispatch_owner(next, transaction, DispatchOwnership::Acquire);
@@ -712,44 +843,43 @@ Result<OutboxEffect> OutboxRepository::acknowledge_success(
         return rollback_effect(transaction, live ? Error{ErrorCode::InvalidState,
                                                          "effect is not admitted for acknowledgement"}
                                                   : live.error());
-    if (physical_identity && physical_identity->size() > max_logical_slot_size)
-        return rollback_effect(transaction, err(ErrorCode::StorageRecordTooLarge,
-                                                "physical identity is too large"));
+    return apply_confirmed_success(loaded.value(), now, std::move(physical_identity),
+                                   applied, transaction);
+}
 
-    const auto current = applied.load(loaded.value().slot.target_identity, transaction);
-    if (!current) return rollback_effect(transaction, current.error());
-    AppliedTargetState next;
-    if (current.value()) {
-        if (current.value()->desired_revision > loaded.value().desired_revision
-            || current.value()->confirmed_applied_revision > loaded.value().desired_revision)
-            return rollback_effect(transaction, err(ErrorCode::StorageStaleClaim,
-                                                    "acknowledgement is older than target state"));
-        next = *current.value();
-        next.desired_revision = std::max(next.desired_revision, loaded.value().desired_revision);
-        next.confirmed_applied_revision = loaded.value().desired_revision;
-        if (loaded.value().slot.effect_kind == EffectKind::Delete)
-            next.physical_identity.reset();
-        else if (physical_identity)
-            next.physical_identity = std::move(physical_identity);
-        next.last_confirmed_effect = loaded.value().id;
-    } else {
-        if (loaded.value().slot.effect_kind == EffectKind::Delete) physical_identity.reset();
-        next = AppliedTargetState{loaded.value().slot.target_identity,
-                                  std::move(physical_identity), loaded.value().desired_revision,
-                                  loaded.value().desired_revision, loaded.value().id, 0};
-    }
-    const auto saved = applied.save(next, current.value() ? current.value()->revision : 0,
-                                    transaction);
-    if (!saved) return rollback_effect(transaction, saved.error());
-    const auto released = change_dispatch_owner(loaded.value(), transaction, DispatchOwnership::Release);
-    if (!released) return rollback_effect(transaction, released.error());
-    auto acknowledged = loaded.value();
-    acknowledged.state = OutboxEffectState::Succeeded;
-    acknowledged.lease_until = ClockTime{};
-    acknowledged.next_eligible_at = now;
-    const auto written = write_effect(acknowledged, transaction);
-    if (!written) return rollback_effect(transaction, written.error());
-    return written;
+Result<OutboxEffect> OutboxRepository::resolve_unknown_success(
+    const UnknownSuccessEvidence& evidence, ClockTime now,
+    IAppliedTargetRepository& applied, ITransaction& transaction) const
+{
+    if (transaction.mode() != TransactionMode::ReadWrite)
+        return rollback_effect(transaction, err(ErrorCode::StorageReadOnly,
+                                                "unknown success resolution requires a read-write transaction"));
+    if (evidence.effect_id.value.empty() || evidence.target_identity.empty()
+        || evidence.claim_token.value == 0 || evidence.expected_revision == 0)
+        return rollback_effect(transaction, err(ErrorCode::InvalidArgument,
+                                                "unknown success evidence is incomplete"));
+    const auto target = decode_logical_target_identity(evidence.target_identity);
+    if (!target) return rollback_effect(transaction, target.error());
+    const auto loaded = load_required_effect(evidence.effect_id, transaction);
+    if (!loaded) return rollback_effect(transaction, loaded.error());
+    const auto token_match = require_token(loaded.value(), evidence.claim_token,
+                                           evidence.expected_revision);
+    if (!token_match) return rollback_effect(transaction, token_match.error());
+    if (loaded.value().slot.target_identity != evidence.target_identity)
+        return rollback_effect(transaction, err(ErrorCode::ScopeMismatch,
+                                                "unknown success target does not match the effect"));
+    const auto observed_target = applied.load(evidence.target_identity, transaction);
+    if (!observed_target) return rollback_effect(transaction, observed_target.error());
+    if ((observed_target.value() ? observed_target.value()->revision : 0)
+        != evidence.expected_target_revision)
+        return rollback_effect(transaction, err(ErrorCode::StorageStaleClaim,
+                                                "applied target evidence is stale"));
+    if (loaded.value().state == OutboxEffectState::Succeeded) return loaded.value();
+    if (loaded.value().state != OutboxEffectState::UnknownOutcome)
+        return rollback_effect(transaction, err(ErrorCode::InvalidState,
+                                                "effect is not in UnknownOutcome"));
+    return apply_confirmed_success(loaded.value(), now, evidence.physical_identity,
+                                   applied, transaction);
 }
 
 Result<OutboxEffect> OutboxRepository::record_retryable_failure(

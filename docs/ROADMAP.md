@@ -76,9 +76,12 @@ fully fenced publishable TX2 plans, fail-closed borrowed staging, canonical
 target scoping and conservative Unknown recovery. **M2c-c status:** the current
 Draft implementation adds bounded outbox delivery claims, the committed
 `DispatchAdmitted` boundary, fenced success/failure/Unknown transitions,
-monotonic applied-target acknowledgements, and explicit supersession. It remains
-an in-memory semantic baseline and makes no process-crash durability or Telegram
-transport claim. Independent review and merge of this slice are still pending.
+monotonic applied-target acknowledgements, and explicit supersession. The
+current corrective adds typed authoritative success resolution for
+`UnknownOutcome`, session/intent/generation fencing at delivery admission, and
+monotonic lease renewal. It remains an in-memory semantic baseline and makes no
+process-crash durability or Telegram transport claim. Independent review and
+merge of this slice are still pending.
 
 **M2d/M2e:** optional MDBX adapter and cross-backend conformance/recovery
 proof. They depend on the accepted transaction/recovery contracts and must not

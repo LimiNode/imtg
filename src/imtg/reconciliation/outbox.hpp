@@ -109,6 +109,20 @@ struct OutboxEffect {
     std::optional<OutboxEffectId> superseded_by; ///< Newer effect retained for audit.
 };
 
+/// \brief Typed evidence supplied by an authoritative delivery-recovery layer.
+/// \details This is intentionally narrower than a transport result: the caller
+/// must identify the exact immutable effect attempt and its LT1 target. The
+/// repository still verifies the durable claim, DT1 owner, and monotonic
+/// applied-target state before publishing success.
+struct UnknownSuccessEvidence {
+    OutboxEffectId effect_id; ///< Exact effect whose UnknownOutcome was inspected.
+    ClaimToken claim_token{}; ///< Claim token recorded for that attempt.
+    StorageRevision expected_revision{}; ///< Effect row revision observed by recovery.
+    StorageRevision expected_target_revision{}; ///< Applied-target row revision, or zero when absent.
+    std::string target_identity; ///< Exact LT1 target identity returned by recovery.
+    std::optional<std::string> physical_identity; ///< Confirmed transport identity, when available.
+};
+
 /// \brief Bounded page returned by an outbox claim scan.
 struct OutboxEffectPage {
     std::vector<OutboxEffect> effects; ///< Effects claimed by this transaction.
@@ -201,6 +215,19 @@ public:
     [[nodiscard]] virtual Result<OutboxEffect> acknowledge_success(
         const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
         ClockTime now, std::optional<std::string> physical_identity,
+        IAppliedTargetRepository& applied, ITransaction& transaction) const = 0;
+
+    /// \brief Resolves an UnknownOutcome using authoritative typed evidence.
+    /// \param evidence Exact effect, claim, row revision, and LT1 target evidence.
+    /// \param now Authoritative time recorded on the terminal transition.
+    /// \param applied Repository used to persist confirmed target evidence.
+    /// \param transaction Borrowed read-write transaction containing both writes.
+    /// \return Candidate Succeeded effect, or a stale/conflict error.
+    /// \details This path never requires a live lease and never calls transport.
+    /// It accepts only an UnknownOutcome whose DT1 owner still matches the saved
+    /// effect identity and token. Newer or conflicting applied evidence wins.
+    [[nodiscard]] virtual Result<OutboxEffect> resolve_unknown_success(
+        const UnknownSuccessEvidence& evidence, ClockTime now,
         IAppliedTargetRepository& applied, ITransaction& transaction) const = 0;
 
     /// \brief Records proven non-acceptance with bounded retry time and attempt budget.
@@ -307,6 +334,10 @@ public:
     [[nodiscard]] Result<OutboxEffect> acknowledge_success(
         const OutboxEffectId& id, ClaimToken token, StorageRevision expected_revision,
         ClockTime now, std::optional<std::string> physical_identity,
+        IAppliedTargetRepository& applied, ITransaction& transaction) const override;
+    /// \copydoc IOutboxRepository::resolve_unknown_success
+    [[nodiscard]] Result<OutboxEffect> resolve_unknown_success(
+        const UnknownSuccessEvidence& evidence, ClockTime now,
         IAppliedTargetRepository& applied, ITransaction& transaction) const override;
     /// \copydoc IOutboxRepository::record_retryable_failure
     [[nodiscard]] Result<OutboxEffect> record_retryable_failure(

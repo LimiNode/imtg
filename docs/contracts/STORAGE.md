@@ -116,14 +116,23 @@ authentication or authorization primitives.
 
 The M2c-c delivery repository claims bounded pages with a monotonic token and
 lease, stages `DispatchAdmitted` for confirmed commit before an external call,
-and rejects stale renewal or acknowledgement attempts. A confirmed success updates the effect
-and `AppliedTargetState` in one caller-owned transaction; desired and confirmed
-applied revisions never decrease, and a physical transport identity is written
-only with that confirmation. `UnknownOutcome` is not claimable by default: it
-can return to retryable work only when the caller supplies an explicit
-safe-repeat proof. This reference behavior is logical in-memory semantics, not
-process-crash durability. The normative state/commit/retry rules and reference
-failure-injection evidence are in [TELEGRAM_DELIVERY.md](TELEGRAM_DELIVERY.md).
+and rejects stale renewal or acknowledgement attempts. Admission re-reads and
+watches the existing render intent, session, and desired-generation marker; an
+effect whose session revision is no longer current cannot reach the external
+call. A confirmed success updates the effect and `AppliedTargetState` in one
+caller-owned transaction; desired and confirmed applied revisions never
+decrease, and a physical transport identity is written only with that
+confirmation. `UnknownOutcome` is not claimable by default: it can return to
+retryable work only when the caller supplies an explicit safe-repeat proof, or
+reach `Succeeded` through the typed `resolve_unknown_success()` path with
+exact effect/token/effect-row/applied-row-revision/LT1 evidence and a
+still-matching DT1 owner. A
+same-revision independent `Always` intent remains eligible; a state-change
+effect cannot overwrite another confirmed effect at that revision. Lease
+renewal is monotonic and rejects a shorter expiry. This reference behavior is
+logical in-memory semantics, not process-crash durability. The normative
+state/commit/retry rules and reference failure-injection evidence are in
+[TELEGRAM_DELIVERY.md](TELEGRAM_DELIVERY.md).
 
 ## Revisions, errors, and migration
 
