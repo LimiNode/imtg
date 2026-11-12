@@ -59,6 +59,11 @@ if(IMTG_BUILD_MDBX)
     set(MDBX_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
     set(MDBX_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
     set(MDBX_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+    if(MSVC)
+        # The pinned MDBX selects C23 when advertised, but MSVC rejects its
+        # C23 maybe_unused declaration. C11 avoids that unsupported path.
+        set(MDBX_C_STANDARD 11)
+    endif()
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/external/libmdbx"
         "${CMAKE_BINARY_DIR}/_deps/libmdbx" EXCLUDE_FROM_ALL)
     # Keep the sibling project as a dependency provider only. Its own tests,

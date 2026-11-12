@@ -13,6 +13,10 @@ the pinned `LimiNode/mdbx-containers` submodule at
 v0.13.12, Apache-2.0). The dependency is provided as a CMake target; no
 configure-time FetchContent download is allowed.
 
+The pinned libmdbx defaults to C23 when the compiler advertises support.
+The Windows CI compiler rejects its C23 `[[maybe_unused]]` declaration;
+the source integration selects C11 for MSVC without modifying upstream sources.
+
 The adapter is opened with `MdbxStorageBackend::open()` and closed explicitly
 with `close()`. It uses `mdbx-containers::Connection` and its thread-bound
 transaction guard, while the record codec and CAS protocol remain owned by
