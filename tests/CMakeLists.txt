@@ -16,6 +16,10 @@ add_test(NAME imtg_reference_runtime_tests COMMAND imtg_reference_runtime_tests)
 
 add_executable(imtg_storage_tests storage_tests.cpp)
 target_link_libraries(imtg_storage_tests PRIVATE imtg::core)
+if(IMTG_BUILD_MDBX)
+    target_compile_definitions(imtg_storage_tests PRIVATE IMTG_TEST_MDBX=1)
+    target_link_libraries(imtg_storage_tests PRIVATE imtg::mdbx)
+endif()
 add_test(NAME imtg_storage_tests COMMAND imtg_storage_tests)
 
 add_executable(imtg_session_tests session_tests.cpp)

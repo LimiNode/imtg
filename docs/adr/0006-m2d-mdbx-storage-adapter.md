@@ -66,9 +66,10 @@ Core builds and installs without MDBX. The optional adapter currently builds
 from source but is not exported by the imtg install package: exporting a static
 adapter also requires a reviewed package boundary for the sibling libmdbx
 target and platform runtime. That boundary is M2d-b work. The optional
-conformance test covers persistence/reopen, snapshots, read-your-writes,
-atomic multi-record publication, CAS/ABA fencing, bounded scans, schema gates,
-read-only rejection and thread ownership.
+conformance suite against MDBX with its single-writer capability declaration,
+alongside the adapter-specific persistence/reopen checks. Together they cover
+snapshots, read-your-writes, atomic multi-record publication, CAS/ABA fencing,
+bounded scans, schema gates, read-only rejection and thread ownership.
 
 ## Rejected alternatives
 
