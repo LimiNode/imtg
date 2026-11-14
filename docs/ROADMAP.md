@@ -25,6 +25,9 @@ and the three integration profiles in
 Payment-provider evidence and the provider-neutral contract are recorded in
 [PAYMENT_PROVIDER_CAPABILITY_AUDIT.md](research/PAYMENT_PROVIDER_CAPABILITY_AUDIT.md)
 and [PAYMENTS.md](contracts/PAYMENTS.md).
+The multi-surface application direction is recorded in
+[MULTI_SURFACE_APPLICATION.md](contracts/MULTI_SURFACE_APPLICATION.md), ADR
+0010, and the exploratory [ImGuiX/WASM research note](research/IMGUIX_WASM_MINI_APP.md).
 
 ## D0 — Architecture & Engineering Foundation
 
@@ -118,7 +121,9 @@ need.
 run without a UI render intent; shutdown leaves recoverable outbox work.
 **Exit:** one minimal bot runs with documented operational limits.
 **Deferred:** advanced webhooks, Mini Apps and domain-specific
-commerce/moderation policy.
+commerce/moderation policy. The Mini App boundary is documented separately;
+this milestone does not authorize an HTTP server, JavaScript/WASM frontend or
+browser authentication implementation in core.
 
 ## M4 — Application composition and localization
 
@@ -196,6 +201,25 @@ target. The architecture decision and rejected alternatives are recorded in
 [ADR 0008](adr/0008-operator-admin-console.md). Until those gates are met,
 `imtg-admin` remains documentation-only and headless deployments remain
 unchanged.
+
+## Multi-surface application track
+
+The bot, Telegram Mini App and optional ImGuiX/operator console are interfaces
+to one application/domain layer, not separate business implementations. This
+is a cross-cutting composition track, not a new `imtg_core` runtime milestone.
+
+The normative contract is [MULTI_SURFACE_APPLICATION.md](contracts/MULTI_SURFACE_APPLICATION.md)
+and the decision is [ADR 0010](adr/0010-multi-surface-application-runtime.md).
+The first implementation target is a small HTML Mini App/Application API
+vertical slice after the M3 gateway and shared domain services are ready:
+verified signed launch data, one typed command, idempotency/CAS, one shared
+business record and a bot read/notification. It must not expose direct FSM
+mutation or require an operator console.
+
+ImGuiX/WASM remains optional research. It may proceed in a separate PoC and
+must prove mobile WebView input, viewport, theme, reconnect, accessibility and
+resource behavior before being selected as a default frontend. See
+[IMGUIX_WASM_MINI_APP.md](research/IMGUIX_WASM_MINI_APP.md).
 
 ## Reference applications and ordering
 

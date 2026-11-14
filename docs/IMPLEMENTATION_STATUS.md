@@ -39,6 +39,16 @@ ImGuiX-based UI and the GUI-shell ideas referenced from `mgc-platform` are not
 dependencies of `imtg_core`; an authenticated operator API, authorization and
 audit contract must be accepted before a separate GUI target is implemented.
 
+The multi-surface application direction is now documented but not implemented:
+Telegram bot, Mini App and operator clients are separate adapters over shared
+application/domain services and business state. `imtg_core` contains no HTTP,
+WebAssembly, ImGuiX or browser authentication implementation. Mini App identity,
+scope, idempotency, business-versus-FSM state separation and the optional
+ImGuiX/WASM PoC gates are owned by
+[MULTI_SURFACE_APPLICATION.md](contracts/MULTI_SURFACE_APPLICATION.md),
+[ADR 0010](adr/0010-multi-surface-application-runtime.md), and
+[IMGUIX_WASM_MINI_APP.md](research/IMGUIX_WASM_MINI_APP.md).
+
 | Area | Status | Evidence / next proof |
 |---|---|---|
 | Architecture and contracts | `contract-only` | Markdown documents in `docs/`; review links and invariants |
@@ -59,5 +69,6 @@ audit contract must be accepted before a separate GUI target is implemented.
 | Users, chats, history, access control, jobs | `planned` | M4/M5 service and retention tests |
 | Build targets, releases, CI | `implemented` | CMake install/export package, Debug/Release CTest, and CI matrix |
 | Operator console (`imtg-admin`) | `planned` | [Operator console contract](contracts/OPERATOR_CONSOLE.md) and [ADR 0008](adr/0008-operator-admin-console.md); no GUI source, transport, or dependency is present |
+| Multi-surface Application API / Mini App | `contract-only` | [Multi-surface contract](contracts/MULTI_SURFACE_APPLICATION.md), [ADR 0010](adr/0010-multi-surface-application-runtime.md), and [ImGuiX/WASM research](research/IMGUIX_WASM_MINI_APP.md); no HTTP gateway, Mini App frontend, WASM bridge or shared-domain application is present |
 
 README sketches and this design do not imply a working build. This table must be updated whenever a later PR changes implementation coverage.

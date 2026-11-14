@@ -205,7 +205,7 @@ example tree after the corresponding contracts are approved.
    fulfillment contracts, moderation policy and durable jobs.
 4. Use `intake-bot`, `shop-bot` and `guardian-bot` as independent integration
    gates; their domain records remain optional modules.
-5. Defer AI moderation, advanced dashboards, Mini Apps, analytics and broad CRM
+5. Defer AI moderation, advanced dashboards, Mini App implementation, analytics and broad CRM
    or inventory integrations until measured demand and a security review exist.
 
 The roadmap must never treat research interest as permission to add speculative
