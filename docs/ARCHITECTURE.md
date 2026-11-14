@@ -30,7 +30,7 @@ sessions, and reconciliation do not yet have umbrellas. The staged migration,
 install boundary, and compatibility policy are defined in
 [header-architecture.md](guides/header-architecture.md) and
 [ADR 0009](adr/0009-domain-header-architecture.md), refined by
-[ADR 0010](adr/0010-hybrid-public-header-profile.md).
+[ADR 0011](adr/0011-hybrid-public-header-profile.md).
 
 The Actions implementation snapshot `5dca497` now provides the root
 `<imtg/actions.hpp>` entry point and responsibility-based standalone headers;

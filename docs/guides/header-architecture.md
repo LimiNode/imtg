@@ -6,7 +6,7 @@
 
 This guide records the current include topology and the selected hybrid
 profile: domain umbrellas plus standalone public components and optional modules
-([ADR 0010](../adr/0010-hybrid-public-header-profile.md)). It is a
+([ADR 0011](../adr/0011-hybrid-public-header-profile.md)). It is a
 dependency contract, not permission to perform a repository-wide mechanical
 rename. Structural migrations are delivered as small, independently tested
 implementation PRs.
@@ -277,4 +277,3 @@ Each structural implementation PR must update the install manifest and prove:
 The current audit itself is documentation-only. Its checks are Markdown-link
 validation and `git diff --check`; no source layout, install manifest, or API
 behavior is changed here.
-

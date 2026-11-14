@@ -28,6 +28,20 @@ Detailed rules are in [coding-style](docs/guides/coding-style.md), [agent workfl
 Public API documentation requirements and validation commands are in
 [public API documentation](docs/guides/public-api-documentation.md).
 
+## Engineering communication profile
+
+- Direct work on this repository uses Sovetwave `v0.5.0-beta.4` with the
+  historical-computing lexicon overlay enabled persistently at the user's
+  request.
+- Apply that overlay lightly and only where the term is technically accurate;
+  preserve identifiers, commands, diagnostics, API names, and established
+  technical terms exactly.
+- The overlay is conversational guidance. Do not put historical vocabulary,
+  persona language, or period styling into source code, comments, identifiers,
+  commit messages, pull-request text, or canonical public documentation.
+- Keep the distinction between an experiment, a built artifact, and operational
+  acceptance explicit in project reports.
+
 ## Engineering communication
 
 The user has opted into the installed `sovetwave` skill for technical work on
@@ -58,7 +72,7 @@ Core umbrellas must not pull in optional modules or vendor dependencies.
 The current inventory, target graph, and migration policy are normative in
 [header architecture](docs/guides/header-architecture.md) and
 [ADR 0009](docs/adr/0009-domain-header-architecture.md), as refined by
-[ADR 0010](docs/adr/0010-hybrid-public-header-profile.md).
+[ADR 0011](docs/adr/0011-hybrid-public-header-profile.md).
 
 ## Repository structure
 

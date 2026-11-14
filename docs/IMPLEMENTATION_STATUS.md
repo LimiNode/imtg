@@ -4,7 +4,7 @@ M2c-a, M2c-b, and M2c-c are merged in `main` at `152e7e9`. M2d-a is being
 reviewed separately in Draft PR #24; M2d-b and M2e remain planned.
 
 The hybrid public-header profile is accepted in
-[ADR 0010](adr/0010-hybrid-public-header-profile.md): domain umbrellas plus
+[ADR 0011](adr/0011-hybrid-public-header-profile.md): domain umbrellas plus
 standalone components and independently enabled optional modules. This policy
 change does not implement the remaining umbrella or install-manifest migration.
 
@@ -46,7 +46,7 @@ audit contract must be accepted before a separate GUI target is implemented.
 | Area | Status | Evidence / next proof |
 |---|---|---|
 | Architecture and contracts | `contract-only` | Markdown documents in `docs/`; review links and invariants |
-| Header topology | `hybrid profile accepted; migration in progress` | [Header architecture guide](guides/header-architecture.md), [ADR 0010](adr/0010-hybrid-public-header-profile.md); Actions and commerce root umbrellas exist, remaining domains and explicit manifest are staged separately |
+| Header topology | `hybrid profile accepted; migration in progress` | [Header architecture guide](guides/header-architecture.md), [ADR 0011](adr/0011-hybrid-public-header-profile.md); Actions and commerce root umbrellas exist, remaining domains and explicit manifest are staged separately |
 | CMake `imtg_core` target and C++17 baseline | `implemented` | Root CMake target configures/builds; CTest executes offline core tests |
 | Typed identities and deterministic clock | `implemented` | `src/imtg/core/`; M1a equality/encoding/hash tests |
 | Immediate-Mode UI tree | `partial` | M1b implements immutable tree nodes, stable paths, RAII scopes, duplicate detection, and offline tests; components remain intentionally small |

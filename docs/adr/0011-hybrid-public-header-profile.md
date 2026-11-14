@@ -1,4 +1,4 @@
-# ADR 0010: hybrid public header profile
+# ADR 0011: hybrid public header profile
 
 **Status:** Accepted for new work; implementation migration staged.
 **Scope:** public C++ include and optional-target boundaries.
