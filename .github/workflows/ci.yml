@@ -89,9 +89,6 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DBUILD_TESTING=ON
           -DIMTG_BUILD_MDBX=ON
-          -DMDBXC_DEPS_MODE=BUNDLED
-          -DMDBXC_BUILD_EXAMPLES=OFF
-          -DMDBXC_BUILD_TESTS=OFF
       - name: Build optional MDBX adapter
         run: cmake --build build/mdbx-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
       - name: Test optional MDBX adapter

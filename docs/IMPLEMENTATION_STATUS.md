@@ -1,5 +1,11 @@
 # Implementation status
 
+Flat dependency wiring is owned by `external/CMakeLists.txt`: the two direct
+pinned sibling submodules provide MDBX without recursive initialization or
+configure-time downloads. The MDBX CTest configuration includes a Git inventory
+check. See [dependency boundary](../external/README.md). This does not complete
+M2d-b installed export or M2e crash recovery.
+
 M2c-a, M2c-b, and M2c-c are merged in `main`. The current Draft PR starts
 M2d-a: an optional persistent MDBX adapter over the accepted storage protocol.
 M2d-b and M2e remain planned until the adapter and its cross-backend recovery
