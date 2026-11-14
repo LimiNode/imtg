@@ -1,8 +1,15 @@
 #include "imtg/storage/storage.hpp"
 
+#if defined(IMTG_TEST_MDBX)
+#include "imtg/storage/mdbx_storage.hpp"
+#endif
+
 #include "test_support.hpp"
 
 #include <atomic>
+#include <chrono>
+#include <exception>
+#include <filesystem>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -12,6 +19,61 @@
 namespace {
 
 using BackendFactory = std::function<std::unique_ptr<imtg::IStorageBackend>(imtg::StorageSchema)>;
+
+#if defined(IMTG_TEST_MDBX)
+
+class MdbxTestBackend final : public imtg::IStorageBackend {
+public:
+    MdbxTestBackend(std::unique_ptr<imtg::MdbxStorageBackend> backend,
+                    std::filesystem::path path)
+        : m_backend(std::move(backend)), m_path(std::move(path))
+    {
+    }
+
+    ~MdbxTestBackend() override
+    {
+        if (m_backend) static_cast<void>(m_backend->close());
+        std::error_code error;
+        std::filesystem::remove(m_path, error);
+    }
+
+    imtg::Result<std::unique_ptr<imtg::ITransaction>> begin_transaction(
+        imtg::TransactionMode mode) override
+    {
+        return m_backend->begin_transaction(mode);
+    }
+
+    imtg::Result<imtg::StorageSchema> schema() const override
+    {
+        return m_backend->schema();
+    }
+
+    imtg::Result<void> validate_schema(const imtg::StorageSchema& expected) const override
+    {
+        return m_backend->validate_schema(expected);
+    }
+
+private:
+    std::unique_ptr<imtg::MdbxStorageBackend> m_backend;
+    std::filesystem::path m_path;
+};
+
+std::unique_ptr<imtg::IStorageBackend> make_mdbx_backend(imtg::StorageSchema schema)
+{
+    static std::atomic<unsigned> next_id{0};
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto path = std::filesystem::temp_directory_path()
+        / (std::string("imtg_storage_fixture_") + std::to_string(stamp) + "_"
+           + std::to_string(next_id.fetch_add(1)));
+    imtg::MdbxStorageConfig config;
+    config.path = path.string();
+    config.schema = std::move(schema);
+    auto opened = imtg::MdbxStorageBackend::open(std::move(config));
+    CHECK(opened);
+    return std::make_unique<MdbxTestBackend>(std::move(opened).value(), path);
+}
+
+#endif
 
 struct BackendFixture {
     BackendFactory create_backend;
@@ -62,6 +124,7 @@ void test_schema_and_revision_boundaries(const BackendFixture& fixture)
     auto zero = begin(*backend);
     const auto rejected = zero.transaction()->write("sessions", "zero", "bad", 0);
     CHECK(!rejected && rejected.error().code == imtg::ErrorCode::StorageConflict);
+    zero.rollback();
 
     for (const auto state : {imtg::MigrationState::Migrating,
                              imtg::MigrationState::RecoveryRequired}) {
@@ -117,28 +180,51 @@ void test_snapshot_and_basic_constraints(const BackendFixture& fixture)
     CHECK(create_record(*backend, "snapshot", "old") == 1);
 
     auto old_snapshot = begin(*backend, imtg::TransactionMode::ReadOnly);
-    auto writer = begin(*backend);
-    const auto updated = writer.transaction()->write("sessions", "snapshot", "new", 1);
-    CHECK(updated && updated.value() == 2);
-    CHECK(writer.commit().outcome == imtg::CommitOutcome::Committed);
+    if (fixture.supports_multiple_active_writers) {
+        auto writer = begin(*backend);
+        const auto updated = writer.transaction()->write("sessions", "snapshot", "new", 1);
+        CHECK(updated && updated.value() == 2);
+        CHECK(writer.commit().outcome == imtg::CommitOutcome::Committed);
+    } else {
+        // MDBX binds a transaction to its creating thread and does not allow
+        // that thread to open a writer while its snapshot is still active.
+        std::exception_ptr writer_failure;
+        std::thread writer_thread([&] {
+            try {
+                auto writer = begin(*backend);
+                const auto updated = writer.transaction()->write(
+                    "sessions", "snapshot", "new", 1);
+                CHECK(updated && updated.value() == 2);
+                CHECK(writer.commit().outcome == imtg::CommitOutcome::Committed);
+            } catch (...) {
+                writer_failure = std::current_exception();
+            }
+        });
+        writer_thread.join();
+        if (writer_failure) std::rethrow_exception(writer_failure);
+    }
 
     const auto old_value = old_snapshot.transaction()->read("sessions", "snapshot");
     CHECK(old_value && old_value.value()->value == "old"
           && old_value.value()->revision == 1);
+    CHECK(old_snapshot.commit().outcome == imtg::CommitOutcome::Committed);
     auto current = begin(*backend, imtg::TransactionMode::ReadOnly);
     const auto current_value = current.transaction()->read("sessions", "snapshot");
     CHECK(current_value && current_value.value()->value == "new"
           && current_value.value()->revision == 2);
+    CHECK(current.commit().outcome == imtg::CommitOutcome::Committed);
 
     auto duplicate = begin(*backend);
     const auto duplicate_result = duplicate.transaction()->create_if_absent(
         "sessions", "snapshot", "duplicate");
     CHECK(!duplicate_result
           && duplicate_result.error().code == imtg::ErrorCode::StorageConflict);
+    duplicate.rollback();
 
     auto read_only = begin(*backend, imtg::TransactionMode::ReadOnly);
     const auto forbidden = read_only.transaction()->write("sessions", "snapshot", "bad", 2);
     CHECK(!forbidden && forbidden.error().code == imtg::ErrorCode::StorageReadOnly);
+    read_only.rollback();
 
     {
         auto automatic_rollback = begin(*backend);
@@ -172,11 +258,13 @@ void test_delete_recreate_aba(const BackendFixture& fixture)
     const auto rejected = stale_cas.transaction()->write(
         "sessions", "aba", "stale-overwrite", 1);
     CHECK(!rejected && rejected.error().code == imtg::ErrorCode::StorageConflict);
+    stale_cas.rollback();
 
     auto verify = begin(*backend, imtg::TransactionMode::ReadOnly);
     const auto current = verify.transaction()->read("sessions", "aba");
     CHECK(current && current.value()->value == "generation-three"
           && current.value()->revision == 3);
+    CHECK(verify.commit().outcome == imtg::CommitOutcome::Committed);
 
     if (!fixture.supports_multiple_active_writers) return;
 
@@ -545,6 +633,17 @@ int main()
         true,
     };
     run_conformance(in_memory);
+
+#if defined(IMTG_TEST_MDBX)
+    const BackendFixture mdbx{
+        [](imtg::StorageSchema schema) {
+            return make_mdbx_backend(std::move(schema));
+        },
+        false,
+    };
+    run_conformance(mdbx);
+#endif
+
     run_in_memory_failure_tests();
     test_unit_of_work_move_assignment();
     return 0;

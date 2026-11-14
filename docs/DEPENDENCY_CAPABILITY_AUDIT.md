@@ -31,11 +31,13 @@ tests and failure injection.
 | `LimiNode/kurlyk` | `b62cd53f672c47b74bb14d762ea9dc59a9df19ce` | HTTP admission, cancellation, retries, rate limits, callback completion |
 | `LimiNode/time-shield-cpp` | `d5f1203f24341e4146af35d5bb36e762056d181f` | Monotonic timers, deadlines, scheduling and shutdown |
 | `LimiNode/mdbx-containers` | `4ab32b5eab3cdfce95d1a6c0f05f566019793ec4` | MDBX transactions, ordered tables, composite keys, sequences and replication outbox |
+| `erthink/libmdbx` | `5315e9905b525a0a183b76fc787317c51076f944` | libmdbx v0.13.12 native environment and transaction engine (Apache-2.0) |
 | `LimiNode/optionx_cpp` | `982413438755038982d990f251c77ecb09f2e294` | Reference Telegram signal bridge lifetime and callback patterns |
 
-The repositories were inspected independently at these commits. Their source
-trees under a local ignored build directory are audit material, not candidate
-submodules.
+The repositories were inspected independently at these commits. The M2d-a
+implementation pins the two MDBX sources as direct, non-recursive submodules
+under `external/`; the separate audit clone under `build/` is not part of the
+source tree.
 
 ## Capability matrix
 

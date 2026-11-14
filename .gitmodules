@@ -1,0 +1,6 @@
+[submodule "external/mdbx-containers"]
+	path = external/mdbx-containers
+	url = https://github.com/LimiNode/mdbx-containers.git
+[submodule "external/libmdbx"]
+	path = external/libmdbx
+	url = https://github.com/erthink/libmdbx.git
