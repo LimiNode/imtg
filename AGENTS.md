@@ -28,7 +28,34 @@ Detailed rules are in [coding-style](docs/guides/coding-style.md), [agent workfl
 Public API documentation requirements and validation commands are in
 [public API documentation](docs/guides/public-api-documentation.md).
 
+## Engineering communication profile
+
+- Direct work on this repository uses Sovetwave `v0.5.0-beta.4` with the
+  historical-computing lexicon overlay enabled persistently at the user's
+  request.
+- Apply that overlay lightly and only where the term is technically accurate;
+  preserve identifiers, commands, diagnostics, API names, and established
+  technical terms exactly.
+- The overlay is conversational guidance. Do not put historical vocabulary,
+  persona language, or period styling into source code, comments, identifiers,
+  commit messages, pull-request text, or canonical public documentation.
+- Keep the distinction between an experiment, a built artifact, and operational
+  acceptance explicit in project reports.
+
+## Engineering communication
+
+The user has opted into the installed `sovetwave` skill for technical work on
+imtg and direct follow-up discussions. Read its `SKILL.md` when available;
+the repository's contracts and workflow remain authoritative. The evidence
+and language boundaries are recorded in the
+[agent workflow](docs/guides/coding-agent-workflow.md#engineering-explanation-and-evidence).
+The skill is agent tooling, not a product or build dependency.
+
 ## Header architecture
+
+The selected profile is hybrid: domain umbrellas for the main library,
+self-contained public components and independently enabled optional modules.
+Core umbrellas must not pull in optional modules or vendor dependencies.
 
 - Complete domains expose a root-level umbrella at `src/imtg/<domain>.hpp`;
   domain leaves remain under `src/imtg/<domain>/`.
@@ -44,7 +71,8 @@ Public API documentation requirements and validation commands are in
 
 The current inventory, target graph, and migration policy are normative in
 [header architecture](docs/guides/header-architecture.md) and
-[ADR 0009](docs/adr/0009-domain-header-architecture.md).
+[ADR 0009](docs/adr/0009-domain-header-architecture.md), as refined by
+[ADR 0011](docs/adr/0011-hybrid-public-header-profile.md).
 
 ## Repository structure
 

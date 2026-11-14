@@ -13,6 +13,8 @@
 - Co-locate public headers and non-template implementations under `src/imtg/<domain>/`. Consumers
   continue to include `<imtg/...>`; the physical source layout must not leak into public includes.
 - Each complete domain owns a root-level umbrella at `src/imtg/<domain>.hpp`.
+  The profile is hybrid: standalone public components remain independently
+  includable, and optional modules own separate entry points and targets.
   Public headers use an `IMTG_..._HPP` include guard (or an equivalent
   project-approved mechanism) and include only what they require. The header
   that defines a public type owns its declaration; umbrella headers re-export
