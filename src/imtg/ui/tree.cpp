@@ -1,4 +1,4 @@
-#include "imtg/ui/tree.hpp"
+#include <imtg/ui.hpp>
 
 namespace imtg {
 

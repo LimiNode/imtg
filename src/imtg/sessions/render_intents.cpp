@@ -1,5 +1,5 @@
-#include "imtg/sessions/render_intents.hpp"
-#include "imtg/storage/time_encoding.hpp"
+#include <imtg/sessions.hpp>
+#include <imtg/storage.hpp>
 
 #include <algorithm>
 #include <chrono>

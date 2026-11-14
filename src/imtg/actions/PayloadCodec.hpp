@@ -1,7 +1,10 @@
 #ifndef IMTG_ACTIONS_PAYLOAD_CODEC_HPP
 #define IMTG_ACTIONS_PAYLOAD_CODEC_HPP
 
-#include <imtg/core/result.hpp>
+/// \file imtg/actions/PayloadCodec.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include <imtg/core.hpp>
 
 #include <cstdint>
 #include <functional>

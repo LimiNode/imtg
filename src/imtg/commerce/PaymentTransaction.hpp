@@ -1,9 +1,12 @@
 #ifndef IMTG_COMMERCE_PAYMENT_TRANSACTION_HPP
 #define IMTG_COMMERCE_PAYMENT_TRANSACTION_HPP
 
+/// \file imtg/commerce/PaymentTransaction.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
 #include "PaymentRecords.hpp"
 
-#include <imtg/storage/storage.hpp>
+#include <imtg/storage.hpp>
 
 #include <memory>
 #include <optional>

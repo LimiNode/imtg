@@ -1,8 +1,10 @@
 #ifndef IMTG_COMMERCE_PAYMENT_TYPES_HPP
 #define IMTG_COMMERCE_PAYMENT_TYPES_HPP
 
-#include <imtg/core/clock.hpp>
-#include <imtg/core/result.hpp>
+/// \file imtg/commerce/PaymentTypes.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include <imtg/core.hpp>
 
 #include <cstdint>
 #include <string>

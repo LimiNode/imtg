@@ -1,8 +1,10 @@
 #ifndef IMTG_STORAGE_TIME_ENCODING_HPP
 #define IMTG_STORAGE_TIME_ENCODING_HPP
 
-#include "imtg/core/clock.hpp"
-#include "imtg/core/result.hpp"
+/// \file imtg/storage/time_encoding.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include <imtg/core.hpp>
 #include <cstdint>
 
 namespace imtg {

@@ -1,7 +1,10 @@
 #ifndef IMTG_SESSIONS_FSM_HPP
 #define IMTG_SESSIONS_FSM_HPP
 
-#include "imtg/core/result.hpp"
+/// \file imtg/sessions/fsm.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include <imtg/core.hpp>
 
 #include <cstdint>
 #include <functional>

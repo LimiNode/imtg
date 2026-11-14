@@ -1,6 +1,9 @@
 #ifndef IMTG_COMMERCE_PAYMENT_SERVICES_HPP
 #define IMTG_COMMERCE_PAYMENT_SERVICES_HPP
 
+/// \file imtg/commerce/PaymentServices.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
 #include "PaymentProvider.hpp"
 #include "PaymentTransaction.hpp"
 

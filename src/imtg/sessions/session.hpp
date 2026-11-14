@@ -1,10 +1,12 @@
 #ifndef IMTG_SESSIONS_SESSION_HPP
 #define IMTG_SESSIONS_SESSION_HPP
 
-#include "imtg/core/clock.hpp"
-#include "imtg/core/identifiers.hpp"
-#include "imtg/sessions/fsm.hpp"
-#include "imtg/storage/storage.hpp"
+/// \file imtg/sessions/session.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include <imtg/core.hpp>
+#include "fsm.hpp"
+#include <imtg/storage.hpp>
 
 #include <cstddef>
 #include <cstdint>

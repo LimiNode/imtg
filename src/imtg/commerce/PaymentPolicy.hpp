@@ -1,6 +1,9 @@
 #ifndef IMTG_COMMERCE_PAYMENT_POLICY_HPP
 #define IMTG_COMMERCE_PAYMENT_POLICY_HPP
 
+/// \file imtg/commerce/PaymentPolicy.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
 #include "PaymentTypes.hpp"
 
 #include <optional>
