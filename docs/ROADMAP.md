@@ -90,7 +90,7 @@ create a DBI per user or chat.
 **Header architecture track:** the Sovetwave domain-umbrella audit and rules
 are documented in [header-architecture.md](guides/header-architecture.md) and
 [ADR 0009](adr/0009-domain-header-architecture.md), refined to a hybrid profile by
-[ADR 0010](adr/0010-hybrid-public-header-profile.md). Root-level umbrella
+[ADR 0011](adr/0011-hybrid-public-header-profile.md). Root-level umbrella
 migration and explicit install-boundary changes are separate, staged
 implementation PRs; this track does not change M2 behavior or claim that the
 migration is complete merely by documentation. The root umbrellas and explicit

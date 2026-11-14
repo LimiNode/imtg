@@ -58,7 +58,7 @@ Core umbrellas must not pull in optional modules or vendor dependencies.
 The current inventory, target graph, and migration policy are normative in
 [header architecture](docs/guides/header-architecture.md) and
 [ADR 0009](docs/adr/0009-domain-header-architecture.md), as refined by
-[ADR 0010](docs/adr/0010-hybrid-public-header-profile.md).
+[ADR 0011](docs/adr/0011-hybrid-public-header-profile.md).
 
 ## Repository structure
 
