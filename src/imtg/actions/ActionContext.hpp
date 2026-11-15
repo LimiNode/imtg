@@ -1,8 +1,11 @@
 #ifndef IMTG_ACTIONS_ACTION_CONTEXT_HPP
 #define IMTG_ACTIONS_ACTION_CONTEXT_HPP
 
-#include <imtg/actions/ActionCommand.hpp>
-#include <imtg/core/result.hpp>
+/// \file imtg/actions/ActionContext.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include "ActionCommand.hpp"
+#include <imtg/core.hpp>
 
 #include <functional>
 #include <utility>

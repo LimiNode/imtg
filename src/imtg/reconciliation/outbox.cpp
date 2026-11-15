@@ -1,5 +1,5 @@
-#include "imtg/reconciliation/outbox.hpp"
-#include "imtg/storage/time_encoding.hpp"
+#include <imtg/reconciliation.hpp>
+#include <imtg/storage.hpp>
 
 #include <algorithm>
 #include <cmath>

@@ -1,7 +1,10 @@
 #ifndef IMTG_ACTIONS_ACTION_HANDLE_HPP
 #define IMTG_ACTIONS_ACTION_HANDLE_HPP
 
-#include <imtg/actions/token.hpp>
+/// \file imtg/actions/ActionHandle.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include "token.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -14,6 +17,7 @@ class ActionRegistry;
 
 namespace detail {
 
+/// \brief Internal non-owning validation seam for generation-bound registry handles.
 using ActionHandleValidator = Result<void> (*)(
     const ActionRegistry*,
     const ActionId&,
@@ -22,6 +26,7 @@ using ActionHandleValidator = Result<void> (*)(
     const std::weak_ptr<const void>&);
 
 /// \brief Validates one opaque handle state through the owning registry seam.
+/// \return Success for a live matching registration, or a stale/invalid handle error.
 [[nodiscard]] Result<void> validate_action_handle(
     const ActionRegistry*,
     const ActionId&,

@@ -1,9 +1,12 @@
 #ifndef IMTG_RUNTIME_REFERENCE_RUNTIME_HPP
 #define IMTG_RUNTIME_REFERENCE_RUNTIME_HPP
 
-#include <imtg/actions/ActionRegistry.hpp>
-#include "imtg/core/identifiers.hpp"
-#include "imtg/ui/tree.hpp"
+/// \file imtg/runtime/reference_runtime.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include <imtg/actions.hpp>
+#include <imtg/core.hpp>
+#include <imtg/ui.hpp>
 
 #include <condition_variable>
 #include <cstddef>

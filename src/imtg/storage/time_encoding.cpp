@@ -1,4 +1,4 @@
-#include "imtg/storage/time_encoding.hpp"
+#include <imtg/storage.hpp>
 #include <limits>
 #include <ratio>
 #include <type_traits>
