@@ -40,6 +40,12 @@ umbrella policy and compatibility paths are defined by
 [ADR 0011](docs/adr/0011-hybrid-public-header-profile.md). Public functions and
 methods use `snake_case`; public types use `CamelCase`.
 
+## Versioning
+
+The proposed Git tag is `v0.1.0-alpha.1`. The CMake package version remains
+numeric `0.1.0`; the `alpha.1` qualifier belongs to the prerelease tag and does
+not imply stable API or production support.
+
 ## Known limitations
 
 - No Telegram Bot API gateway or production transport integration.

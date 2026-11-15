@@ -27,7 +27,11 @@ contains 29 core-package and seven optional commerce entry points. Core does not
 include optional adapters or commerce. Installed-header tests check the exact
 package inventory and every supported header as a first include.
 
-**As of main merge `a1436bb` (PR #28 merged after PR #26 and PR #25):** the repository contains the complete
+Integration provenance for the current `main` is explicit: PR #24 merged as
+`8abda4c`, PR #26 as `9e66a04`, PR #29 as `b03c778`, and PR #30 as `a1436bb`.
+PR #25 and PR #28 were superseded and closed without direct merge commits.
+
+**As of main merge `a1436bb` (PR #30):** the repository contains the complete
 Telegram-free M1 foundation, the M2a backend-neutral storage protocol, the M2b
 typed session/FSM semantic baseline, and the M2c-a claims/fencing plus M2c-b
 reconciliation/outbox slices. M2c-c adds the merged reference delivery

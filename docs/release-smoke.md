@@ -26,6 +26,10 @@ cmake --install build/release-commerce --config Release --prefix build/install-c
 cmake -S tests/public_headers -B build/release-core-headers \
   -DCMAKE_PREFIX_PATH=$PWD/build/install-core
 cmake --build build/release-core-headers --config Release
+cmake -S tests/public_headers -B build/release-commerce-headers \
+  -DCMAKE_PREFIX_PATH=$PWD/build/install-commerce \
+  -DIMTG_REQUIRE_COMMERCE=ON
+cmake --build build/release-commerce-headers --config Release
 cmake -S tests/install_consumer -B build/release-core-consumer \
   -DCMAKE_PREFIX_PATH=$PWD/build/install-core
 cmake --build build/release-core-consumer --config Release
@@ -38,7 +42,9 @@ ctest --test-dir build/release-commerce-consumer -C Release --output-on-failure
 
 Confirm that the fresh prefixes contain the explicit public-header manifest,
 the CMake package files, and `share/licenses/imtg/LICENSE`, and that a core-only
-consumer does not require MDBX.
+consumer does not require MDBX. The core header build covers 29 installed
+headers; the commerce build covers the complete 36-header inventory (29 core
+plus seven optional commerce headers).
 
 ## MDBX source-build profile
 
@@ -53,6 +59,18 @@ ctest --test-dir build/release-mdbx -C Release --output-on-failure
 Run the flat-dependency audit and verify the exact gitlink revisions before
 accepting the result. Do not expect `imtg::mdbx` in the installed/exported
 package; that boundary is deferred to M2d-b.
+
+The install jobs must also run the repository-owned license assertion:
+
+```sh
+cmake -DIMTG_SOURCE_DIR=$PWD -DIMTG_INSTALL_PREFIX=$PWD/build/install-core \
+  -P cmake/CheckInstalledLicense.cmake
+cmake -DIMTG_SOURCE_DIR=$PWD -DIMTG_INSTALL_PREFIX=$PWD/build/install-commerce \
+  -P cmake/CheckInstalledLicense.cmake
+```
+
+The assertion checks both the installed path and the SHA-256 content against the
+root `LICENSE` file.
 
 ## Additional acceptance
 
