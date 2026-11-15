@@ -1,0 +1,40 @@
+# Supported installed entry points; implementation-only headers are never glob-installed.
+set(IMTG_CORE_PUBLIC_HEADERS
+    imtg/actions.hpp
+    imtg/actions/ActionCommand.hpp
+    imtg/actions/ActionContext.hpp
+    imtg/actions/ActionHandle.hpp
+    imtg/actions/ActionRegistry.hpp
+    imtg/actions/PayloadCodec.hpp
+    imtg/actions/actions.hpp
+    imtg/actions/registry.hpp
+    imtg/actions/token.hpp
+    imtg/core.hpp
+    imtg/core/clock.hpp
+    imtg/core/core.hpp
+    imtg/core/identifiers.hpp
+    imtg/core/result.hpp
+    imtg/reconciliation.hpp
+    imtg/reconciliation/outbox.hpp
+    imtg/runtime.hpp
+    imtg/runtime/reference_runtime.hpp
+    imtg/runtime/runtime.hpp
+    imtg/sessions.hpp
+    imtg/sessions/fsm.hpp
+    imtg/sessions/render_intents.hpp
+    imtg/sessions/session.hpp
+    imtg/storage.hpp
+    imtg/storage/storage.hpp
+    imtg/storage/time_encoding.hpp
+    imtg/ui.hpp
+    imtg/ui/tree.hpp
+    imtg/ui/ui.hpp)
+
+set(IMTG_COMMERCE_PUBLIC_HEADERS
+    imtg/commerce.hpp
+    imtg/commerce/PaymentPolicy.hpp
+    imtg/commerce/PaymentProvider.hpp
+    imtg/commerce/PaymentRecords.hpp
+    imtg/commerce/PaymentServices.hpp
+    imtg/commerce/PaymentTransaction.hpp
+    imtg/commerce/PaymentTypes.hpp)

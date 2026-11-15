@@ -1,7 +1,10 @@
 #ifndef IMTG_STORAGE_STORAGE_HPP
 #define IMTG_STORAGE_STORAGE_HPP
 
-#include "imtg/core/result.hpp"
+/// \file imtg/storage/storage.hpp
+/// \brief Standalone public component; no preceding umbrella include is required.
+
+#include <imtg/core.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -17,19 +20,24 @@
 
 namespace imtg {
 
+/// \brief Owning binary-safe storage value; embedded zero bytes are preserved.
 using StorageBytes = std::string;
 /// Zero means that a logical key has no generation; visible records always use non-zero values.
 using StorageRevision = std::uint64_t;
 
 /// \brief Returns the next non-zero record generation or a typed exhaustion error.
+/// \param current Last generation, including a retained tombstone generation.
+/// \return Next generation, or an error instead of wrapping to zero.
 /// \thread_safety Safe to call concurrently.
 [[nodiscard]] Result<StorageRevision> next_storage_revision(StorageRevision current);
 
+/// \brief Snapshot access mode; read-only transactions cannot stage mutations.
 enum class TransactionMode {
     ReadOnly,
     ReadWrite,
 };
 
+/// \brief Transaction lifecycle; terminal states reject further storage operations.
 enum class TransactionState {
     Active,
     Committed,
@@ -37,12 +45,14 @@ enum class TransactionState {
     Unknown,
 };
 
+/// \brief Schema admission state; non-stable environments require recovery or migration.
 enum class MigrationState {
     Stable,
     Migrating,
     RecoveryRequired,
 };
 
+/// \brief Publication evidence; Unknown requires authoritative inspection, not blind replay.
 enum class CommitOutcome {
     Committed,
     RejectedConflict,
