@@ -30,10 +30,14 @@ jobs:
         run: cmake -S tests/install_consumer -B build/consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build installed consumer
         run: cmake --build build/consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
+      - name: Run installed consumer smoke test
+        run: ctest --test-dir build/consumer-${{ matrix.os }}-${{ matrix.build_type }} --build-config ${{ matrix.build_type }} --output-on-failure
       - name: Configure installed commerce consumer
         run: cmake -S tests/install_commerce_consumer -B build/commerce-consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build installed commerce consumer
         run: cmake --build build/commerce-consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
+      - name: Run installed commerce consumer smoke test
+        run: ctest --test-dir build/commerce-consumer-${{ matrix.os }}-${{ matrix.build_type }} --build-config ${{ matrix.build_type }} --output-on-failure
 
   sanitizers:
     runs-on: ubuntu-latest
@@ -75,6 +79,8 @@ jobs:
         run: cmake -S tests/install_consumer -B build/core-only-consumer -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-core-only
       - name: Build core-only consumer
         run: cmake --build build/core-only-consumer --parallel
+      - name: Run core-only consumer smoke test
+        run: ctest --test-dir build/core-only-consumer --output-on-failure
 
   mdbx:
     strategy:
@@ -103,6 +109,8 @@ jobs:
         run: cmake -S tests/install_consumer -B build/mdbx-consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/mdbx-install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build installed core consumer
         run: cmake --build build/mdbx-consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
+      - name: Run installed core consumer smoke test
+        run: ctest --test-dir build/mdbx-consumer-${{ matrix.os }}-${{ matrix.build_type }} --build-config ${{ matrix.build_type }} --output-on-failure
 
   documentation:
     runs-on: ubuntu-latest

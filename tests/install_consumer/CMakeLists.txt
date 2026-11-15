@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(imtg_install_consumer LANGUAGES CXX)
 
+include(CTest)
+
 find_package(imtg CONFIG REQUIRED)
 
 # M2d-a deliberately publishes neither the adapter target nor its header.
@@ -17,3 +19,4 @@ endforeach()
 add_executable(imtg_install_consumer main.cpp)
 target_compile_features(imtg_install_consumer PRIVATE cxx_std_17)
 target_link_libraries(imtg_install_consumer PRIVATE imtg::core)
+add_test(NAME imtg_install_consumer_smoke COMMAND imtg_install_consumer)

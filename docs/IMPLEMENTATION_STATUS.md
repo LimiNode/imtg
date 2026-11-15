@@ -27,7 +27,7 @@ contains 29 core-package and seven optional commerce entry points. Core does not
 include optional adapters or commerce. Installed-header tests check the exact
 package inventory and every supported header as a first include.
 
-**As of main merge `9e66a04` (PR #26 merged after PR #24):** the repository contains the complete
+**As of main merge `a1436bb` (PR #28 merged after PR #26 and PR #25):** the repository contains the complete
 Telegram-free M1 foundation, the M2a backend-neutral storage protocol, the M2b
 typed session/FSM semantic baseline, and the M2c-a claims/fencing plus M2c-b
 reconciliation/outbox slices. M2c-c adds the merged reference delivery
@@ -57,7 +57,7 @@ audit contract must be accepted before a separate GUI target is implemented.
 | Area | Status | Evidence / next proof |
 |---|---|---|
 | Architecture and contracts | `contract-only` | Markdown documents in `docs/`; review links and invariants |
-| Header topology | `hybrid migration implemented; review pending` | [Header architecture guide](guides/header-architecture.md), [ADR 0011](adr/0011-hybrid-public-header-profile.md); eight root umbrellas, explicit manifest, compatibility shims, topology CTest and installed first-include tests |
+| Header topology | `implemented` | [Header architecture guide](guides/header-architecture.md), [ADR 0011](adr/0011-hybrid-public-header-profile.md); eight root umbrellas, explicit manifest, compatibility shims, topology CTest and installed first-include tests |
 | CMake `imtg_core` target and C++17 baseline | `implemented` | Root CMake target configures/builds; CTest executes offline core tests |
 | Typed identities and deterministic clock | `implemented` | `src/imtg/core/`; M1a equality/encoding/hash tests |
 | Immediate-Mode UI tree | `partial` | M1b implements immutable tree nodes, stable paths, RAII scopes, duplicate detection, and offline tests; components remain intentionally small |
