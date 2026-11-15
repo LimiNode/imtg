@@ -19,6 +19,11 @@ details stay in ordinary comments unless they form part of a public contract.
 
 ## Header entry points
 
+The selected profile is hybrid. Document an independently usable component or
+optional module's supported include path and target boundary in its header
+Doxygen. Do not require consumers to include a parent umbrella first or expose
+an optional SDK through a core header.
+
 Each complete domain has one documented umbrella entry point at
 `<imtg/<domain>.hpp>`. An umbrella documents the domain boundary and re-exports
 owned public components; it does not duplicate declarations. Public standalone

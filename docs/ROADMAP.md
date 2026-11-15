@@ -74,7 +74,7 @@ on the reference backend. **M2c-b status:** reconciliation/outbox planning is
 merged in `main` on the backend-neutral in-memory baseline. Its gates are
 fully fenced publishable TX2 plans, fail-closed borrowed staging, canonical
 target scoping and conservative Unknown recovery. **M2c-c status:** merged in
-`main` at `152e7e9`. It adds bounded outbox delivery claims, the committed
+`main`. It adds bounded outbox delivery claims, the committed
 `DispatchAdmitted` boundary, fenced success/failure/Unknown transitions,
 monotonic applied-target acknowledgements, explicit supersession, typed
 authoritative success resolution for `UnknownOutcome`, session/intent/
@@ -82,13 +82,13 @@ generation fencing at delivery admission, and monotonic lease renewal. It
 remains an in-memory semantic baseline and makes no process-crash durability or
 Telegram transport claim.
 
-**M2d-a status:** current Draft implements the optional `imtg_mdbx` adapter
+**M2d-a status:** merged in PR #24; the optional `imtg_mdbx` adapter
 using pinned `mdbx-containers` and `libmdbx` submodules. It persists the
 backend-neutral record format across close/reopen, keeps transactions
 thread-affine, retains tombstone generations, supports bounded scans and schema
 admission, and uses six bounded physical DBIs. The adapter is source-integrated
-but not exported from the install package until the dependency package boundary
-is reviewed.
+but not exported from the install package until the M2d-b package boundary is
+complete.
 
 **M2d-b/M2e:** complete the installed-package boundary, durable due-index and
 migration tooling, cross-backend conformance/recovery, crash/restart evidence,
@@ -97,7 +97,8 @@ or chat.
 
 **Header architecture track:** the Sovetwave domain-umbrella audit and rules
 are documented in [header-architecture.md](guides/header-architecture.md) and
-[ADR 0009](adr/0009-domain-header-architecture.md). Root-level umbrella
+[ADR 0009](adr/0009-domain-header-architecture.md), refined to a hybrid profile by
+[ADR 0011](adr/0011-hybrid-public-header-profile.md). Root-level umbrella
 migration and explicit install-boundary changes are separate, staged
 implementation PRs; this track does not change M2 behavior or claim that the
 migration is complete.
