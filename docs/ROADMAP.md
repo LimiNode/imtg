@@ -137,17 +137,24 @@ Add immutable catalogs, fallback/plural rules and locale snapshots; module
 composition and dependency injection; optional typed forms/dialogs,
 draft/resume storage, attachment metadata and reusable policy hooks; users,
 chats and permission contracts; and provider-neutral payment method and
-commercial integration-model selection for checkout UI. The payment provider
-capability audit remains the onboarding source of truth; gateway,
-hosted-checkout, self-hosted processor, marketplace/reseller and
-Merchant-of-Record paths are not interchangeable.
+commercial integration-model selection for checkout UI. After the first alpha,
+an optional `imtg_scenarios` module may add versioned scenario packages,
+resource/schema validation, an offline simulator and DOT export around the
+existing `imtg::Fsm`; it must not replace the C++ registration path or enter
+`imtg_core`. The payment provider capability audit remains the onboarding source
+of truth; gateway, hosted-checkout, self-hosted processor,
+marketplace/reseller and Merchant-of-Record paths are not interchangeable.
 
 **Depends on:** M1; durable services depend on M2/M3. **Acceptance:**
 concurrent users render different locales without ID changes; forms validate
 and resume after restart; a headless module and an interactive module share one
 router and bounded scheduler; missing keys and plural categories have
-deterministic fallbacks. **Exit:** `intake-bot` contract tests compose forms,
-tickets and notifications without putting ticket fields in imtg core.
+deterministic fallbacks. If scenario packages are implemented, acceptance also
+requires deterministic package validation, bounded resource references,
+typed-guard enforcement, finite automatic-step budgets, atomic state/result/
+effect planning and offline replay. **Exit:** `intake-bot` contract tests
+compose forms, tickets and notifications without putting ticket fields in imtg
+core; scenario loading remains an independently buildable optional module.
 **Deferred:** domain-specific catalog, CRM and advanced history policy.
 
 ## M5 — Durable domain services and reference applications
@@ -228,4 +235,7 @@ integrations. Research interest is not permission to add speculative core code.
 See [TELEGRAM_APPLICATION_PROFILES.md](research/TELEGRAM_APPLICATION_PROFILES.md)
 for acceptance scenarios, [PAYMENTS.md](contracts/PAYMENTS.md) for payment
 invariants, and [ADR 0006](adr/0006-headless-routing-and-application-composition.md)
-for the composition decision.
+for the composition decision. The optional scenario-package boundary is
+specified in [ADR 0012](adr/0012-optional-scenario-packages.md) and its source
+observations are in
+[TG_STATEMACHINE_BOT_CAPABILITY_AUDIT.md](research/TG_STATEMACHINE_BOT_CAPABILITY_AUDIT.md).

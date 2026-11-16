@@ -32,6 +32,7 @@ future adapter must have its own implementation and an explicit license review.
 | `prettyleaf/telegram-support-bot` | `68ffe135bc80058b8ea0f569d761e192ce6b251d` | No license detected; active | `internal/services/ticket_service.go`, `internal/database/migrations/`, media metadata migrations | Ticket scenario reference only; no source reuse |
 | `mikhail494/telegram-ticket-system` | `a545aec0039666dbe2508b0b11b8ec3958e92904` | `NOASSERTION`; active | `src/ticketRouting.ts`, `src/persistence/ticketsRepository.ts`, `src/supportIngressLimiter.ts`, `test/bot/ticketStatus.test.ts` | Recovery/limits reference only; licensing must be resolved before reuse |
 | `Talonmortem/service-request-bot` | `c0320219fc98c8644de2e4e14770d479b03f4fb4` | No license detected; active | `app/service.py`, `tests/test_service.py` | Small intake-flow reference only; no source reuse |
+| `chechestor/tg-statemachine-bot` | `64f46d14215d328ec27c288ad2ace697d1665565` | No declared license; active at review | `dialog_fsm.yaml`, `fsm/fsm.py`, `conversation_core/conversation_core.py`, `tools/generate_fsm_drawio.py`, `bot/qa/` | Scenario-package, offline simulation and QA reference only; no source reuse |
 | Miss Rose documentation | N/A (closed-source product reference) | Product documentation, not source | official AntiRaid/Captcha/locks/antiflood documentation | Feature vocabulary and operator controls only |
 | `LimiNode/event-hub-cpp` | `2d4b09763603db2e5f9c5ca5bce7de3ffc9332b0` | Existing LimiNode audit | `TaskManager`, `EventBus`, `ModuleHub`, `RunLoop` | Reuse/adapt only behind existing imtg lifetime and backpressure contracts |
 | `LimiNode/kurlyk` | `b62cd53f672c47b74bb14d762ea9dc59a9df19ce` | Existing LimiNode audit | request admission, cancellation, retry and rate-limit paths | Future Telegram transport adapter; not a durable outbox |
@@ -50,6 +51,8 @@ The LimiNode rows reuse the exact revisions already recorded in
 | Per-key serialization and bounded admission | imtg M1 runtime already provides keyed mailboxes and bounded queues; kurlyk provides bounded HTTP admission | Already implemented foundation plus transport adapter; do not duplicate event-hub or HTTP queues | M3: flood tests show bounded memory, per-chat ordering and `QueueFull`/`Closed` outcomes |
 | Urgent payment updates | Telegram payment examples expose pre-checkout and successful-payment events; the Bot API requires the pre-checkout answer within ten seconds after Telegram sends the query, while the bot does not receive that upstream send timestamp | imtg-owned typed update class with bounded priority/deadline policy; local receipt time is monotonic accounting only, and delivery/queue/validation/HTTP uncertainty consumes a conservative budget; domain verification remains commerce module | M3: expired/deadline and duplicate payment tests; gateway never waits behind ordinary rendering work |
 | Dialogs, forms and pagination | aiogram-dialog provides dialog stacks, widgets, navigation and examples of multi-step input | Optional `imtg_forms`/`imtg_dialogs` modules using FSM/UI contracts | M4: draft/resume, field validation and locale snapshot tests |
+| Scenario packages | `tg-statemachine-bot` separates a graph, external stage instructions and stage schemas, and includes an offline graph exporter and QA contour | Optional `imtg_scenarios` loader/simulator around `imtg::Fsm`; YAML/JSON is an authoring format, not a core dependency or the only FSM API | M4: package validation, bounded resources, deterministic offline traces, version policy and DOT export; see [ADR 0012](../adr/0012-optional-scenario-packages.md) |
+| Declarative transition safety | The reviewed scenario stores `condition` metadata, but the inspected transition path selects by trigger and does not independently enforce the condition | Scenario metadata and LLM output are proposals; typed guards, authorization, current revision and transaction fencing remain runtime-owned | M4: forged/early events, stale revisions, invalid guards, cycle termination and atomic state/result/effect tests |
 | Text/moderation fast path | Shield separates message detection, control-plane dictionaries and audit; tgbot/GroupButler show rules and flood controls | Optional `imtg_moderation`; policy and evidence are application-owned | M5: bounded fast path, dry-run, reversible sanction and audit tests |
 | Join CAPTCHA and anti-raid | `telegram-antispam-bot` implements flood/profile scoring and CAPTCHA paths; Miss Rose documents operator controls | Optional guardian module; not core and not a universal ban policy | M5: configurable Normal→Elevated→Raid→Lockdown→Recovery simulation |
 | Catalog, orders, payment ledger and fulfillment | Shop examples separate cart/order/payment handlers and include stock/payment tests; one example documents quarantine for out-of-stock | Optional `imtg_commerce` domain module; payment identity independent of callbacks | M5: duplicate payment, unique-item allocation, refund and delivery-Unknown recovery tests |
@@ -59,6 +62,24 @@ The LimiNode rows reuse the exact revisions already recorded in
 | Audit and history | Shield and ticket projects record decisions/statuses; imtg contracts already separate technical journal from user history | Shared contract plus optional history/journal services | M5: retention/deletion, redaction and authorization tests |
 
 ## Architectural decisions from the audit
+
+### Optional scenario packages, not a second FSM
+
+The scenario-package boundary is recorded in [ADR 0012](../adr/0012-optional-scenario-packages.md)
+and the detailed source notes are in
+[TG_STATEMACHINE_BOT_CAPABILITY_AUDIT.md](TG_STATEMACHINE_BOT_CAPABILITY_AUDIT.md).
+An optional loader may turn versioned graph metadata, bounded resource
+references and stage schemas into the existing `imtg::Fsm` representation. The
+ordinary C++ registration path remains valid for small applications.
+
+The loader validates identities, reachability, terminal states, cycles,
+resource containment, schemas and version compatibility before execution. A
+scenario or LLM response can propose a typed event or result, but it cannot
+choose an authorization outcome or publish an effect. Guards and revisions are
+rechecked inside the existing serialized transaction boundary. Automatic
+progression consumes one finite step/model/cost/deadline budget. A validator,
+offline simulator and DOT export belong to the optional module; parsing,
+prompts and model clients do not belong in `imtg_core`.
 
 ### One router, two handler modes
 
@@ -114,6 +135,9 @@ to it; no profile promises universal anti-raid protection.
   from observed behavior and keep attribution/license review in the module.
 - Do not add Mini Apps, AI moderation, analytics, CRM, or a universal inventory
   engine before a reference application demonstrates the need.
+- Do not make YAML/JSON scenario loading mandatory, let declarative metadata
+  bypass typed guards, or copy `tg-statemachine-bot` code/prompts/schemas; its
+  reviewed revision has no declared license.
 - Do not start MDBX or Telegram transport in this documentation PR.
 
 ## Review and acceptance gate
@@ -123,3 +147,6 @@ from `TELEGRAM_APPLICATION_PROFILES.md` against fake gateway/storage adapters,
 then one minimal real Telegram example. The proof must include bounded
 admission, restart/recovery, authorization, duplicate-update handling and
 explicit UnknownOutcome behavior; a README-only integration is insufficient.
+Scenario-package implementation, if started later, also requires the
+validation, offline replay, budget and resource-containment gates in
+[TG_STATEMACHINE_BOT_CAPABILITY_AUDIT.md](TG_STATEMACHINE_BOT_CAPABILITY_AUDIT.md).
