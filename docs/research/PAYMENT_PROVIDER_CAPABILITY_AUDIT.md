@@ -1,7 +1,7 @@
 # Payment provider capability audit
 
 **Status:** research baseline for the optional `imtg_commerce` module. **Audit
-date:** 2026-11-07. This document is not an approval to onboard a provider and
+date:** 2026-11-16. This document is not an approval to onboard a provider and
 does not claim that any payment adapter is implemented.
 
 ## Scope and evidence rules
@@ -67,6 +67,7 @@ and operational review.
 | TabPay | P1 | Individual and self-employed onboarding is advertised; contractual restrictions below are unresolved | Mir and SBP are advertised | Not a current priority | Payment links/API/webhooks require operational verification | `needs_verification` | Confirm the legal entity, account model, aggregation/routing restrictions, settlement behavior and sandbox/live parity |
 | Paydex | P1 | Individual onboarding is advertised; canonical source is `paydex.pro` and operator attribution is not inferred from another domain | Russian cards and SBP are advertised; Mir needs explicit confirmation | Not a current priority | Verify payment links, API, callbacks, status lookup and refunds | `needs_verification` | Confirm legal entity, Mir acceptance and production reliability |
 | AnyPay | P1 | Individual merchants are advertised | Mir/SBP acceptance must be distinguished from other card or payout features | Not a current priority | API/payment links and callbacks are advertised; verify signature and refunds | `needs_verification` | Run a method-by-method acceptance test with an eligible account |
+| Coinso | P1 | Individuals and operation without an individual entrepreneur are advertised; the operator is identified as WIDEMADE LABS LTD (UK), but account and jurisdiction terms require confirmation | Bank cards and SBP are advertised; Mir is not separately confirmed | BTC, ETH, TON, USDT, USDC and other crypto assets are advertised | Hosted `standard` checkout, `h2h` flow, REST API, status/methods endpoints and `payment.success`/`payment.failed` webhooks are documented; refund and provider-side idempotency semantics remain unconfirmed | `needs_verification` | Confirm legal entity and merchant eligibility, Mir/SBP acceptance, idempotency, refund, status authentication, webhook replay handling, settlement and sandbox/live parity |
 | ENOT | P2 | The public API lists methods, but individual eligibility is not established here | Mir and SBP appear in API material; acceptance and merchant type need proof | Not a current priority | API/callback surface exists; verify current webhook and status contracts | `needs_verification` | Keep in inventory; do not select for P0 implementation |
 | NOWPayments | P2 | Crypto merchant onboarding | Not the Russian-card/SBP path | Crypto payments | Hosted/API, webhooks, status and refunds depend on provider policy | `claimed` | Separate crypto adapter and compliance review |
 | OxaPay | P2 | Crypto merchant onboarding | Not the Russian-card/SBP path | Crypto payments | Invoices, merchant API and callbacks are advertised | `claimed` | Verify webhook signatures, settlement and refund model |
@@ -110,6 +111,9 @@ Official entry points:
 - [TabPay](https://tabpay.org/terms/)
 - [Paydex](https://paydex.pro/)
 - [AnyPay](https://anypay.io/)
+- [Coinso](https://coinso.io/)
+- [Coinso API documentation](https://coinso.io/docs)
+- [Coinso payments](https://coinso.io/payments?lang=ru)
 - [ENOT](https://enot.io/)
 - [NOWPayments](https://nowpayments.io/)
 - [OxaPay](https://oxapay.com/)
@@ -147,6 +151,7 @@ Mir/SBP acceptance, webhook signatures, status lookup or settlement.
 | TabPay | [terms](https://tabpay.org/terms/) | Public offer and API must be checked together with the exact account. Terms appear to address payment aggregation/routing, accepting payments for third parties, third-party resources or API credentials, suspension/holds up to 180 days, and a 100% penalty with a 100,000 RUB minimum; quote and applicability require legal verification. |
 | Paydex | [canonical entry point](https://paydex.pro/) | Merchant eligibility, public offer, API, Mir/SBP acceptance, webhook/signature, status, refund and settlement evidence. `paydex.ru` is not treated as the canonical source and no common operator is assumed. |
 | AnyPay | [official entry point](https://anypay.io/) | Merchant eligibility, public offer, method-by-method Mir/SBP acceptance, API/webhook signature, status, refund and settlement evidence. |
+| Coinso | [official site](https://coinso.io/); [API documentation](https://coinso.io/docs); [payments](https://coinso.io/payments?lang=ru) | Current legal entity and merchant offer; account/residency eligibility; separate Mir and SBP acceptance; provider-side idempotency; status authentication and invoice/transaction binding; `X-Signature` HMAC-SHA256 replay rules; refund and settlement semantics; sandbox/live parity. |
 
 TabPay's terms also make multi-shop, multi-provider and platform use a
 `needs_verification` case. The audit must not treat a REST API or payment page
@@ -196,6 +201,12 @@ FreeKassa is the P0 prototype candidate because the supplied research points to
 an individual-friendly checkout and the required Russian methods. It remains a
 candidate until eligibility, receipt, webhook, refund and Mir/SBP acceptance are
 confirmed in a sandbox and with an approved merchant account.
+
+Coinso is a P1 candidate for a possible unified RUB/crypto route: its documented
+`standard` hosted checkout, `h2h` flow and test mode could reduce application-side
+payment UI, but the missing refund and idempotency evidence prevents adapter work
+or production selection. It must first pass the same eligibility and method
+conformance gates as the other providers.
 
 LAVA, TabPay, Paydex and AnyPay are independent P1 candidates. They must not be
 treated as interchangeable: each needs its own capability record and onboarding
