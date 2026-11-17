@@ -122,7 +122,7 @@ initialized non-recursively by default.
 
 ## Release scope
 
-The proposed `v0.1.0-alpha.1` release freezes the reviewed Telegram-free
+The `v0.1.0-alpha.1` release freezes the reviewed Telegram-free
 foundation and marks the MDBX adapter as experimental. See
 [RELEASE_NOTES.md](RELEASE_NOTES.md) and
 [`docs/release-smoke.md`](docs/release-smoke.md) for exact scope, limitations,

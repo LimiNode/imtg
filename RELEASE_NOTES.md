@@ -1,7 +1,7 @@
-# imtg v0.1.0-alpha.1 (proposed)
+# imtg v0.1.0-alpha.1
 
-This is a proposed experimental alpha of the Telegram-free imtg foundation.
-It is a release candidate document, not a published Git tag or GitHub Release.
+This is an experimental alpha of the Telegram-free imtg foundation. It does
+not imply stable API or production support.
 
 ## Included
 
@@ -42,9 +42,9 @@ methods use `snake_case`; public types use `CamelCase`.
 
 ## Versioning
 
-The proposed Git tag is `v0.1.0-alpha.1`. The CMake package version remains
-numeric `0.1.0`; the `alpha.1` qualifier belongs to the prerelease tag and does
-not imply stable API or production support.
+The release tag is `v0.1.0-alpha.1`. The CMake package version remains numeric
+`0.1.0`; the `alpha.1` qualifier belongs to the prerelease tag and does not
+imply stable API or production support.
 
 ## Known limitations
 
@@ -59,8 +59,6 @@ not imply stable API or production support.
 
 ## License and attribution
 
-The root package is MIT licensed and currently names `Aster Seker` as the
-copyright holder. This release-preparation change installs that exact
-`LICENSE` file under `share/licenses/imtg/` and does not alter third-party
-notices. The named holder and publication authority must be confirmed before a
-tag or GitHub Release is published.
+The root package is MIT licensed and names `LimiNode` as the copyright holder.
+The package installs that exact `LICENSE` file under `share/licenses/imtg/` and
+does not alter third-party notices.
