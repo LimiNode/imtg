@@ -107,7 +107,8 @@ struct RouterConfig {
     std::size_t max_update_bytes = default_max_update_bytes; ///< Total owned payload bound; zero selects the default.
     std::size_t max_text_bytes = default_max_text_bytes; ///< Text payload bound; zero selects the default.
     std::size_t max_callback_bytes = default_max_callback_bytes; ///< Callback data bound; zero selects the default.
-    std::size_t max_seen_updates = default_max_seen_updates; ///< In-memory deduplication bound; zero selects the default.
+    std::size_t max_seen_updates = default_max_seen_updates; ///< Completed-history bound; zero selects the default.
+    std::string bot_username; ///< Optional owned bot username; addressed commands fail closed when empty.
     ConversationScope conversation_scope = ConversationScope::Chat; ///< Derived session scope.
 };
 
@@ -167,7 +168,9 @@ public:
     UpdateRouter(const UpdateRouter&) = delete;
     UpdateRouter& operator=(const UpdateRouter&) = delete;
 
-    /// \brief Registers a route in deterministic first-match order.
+    /// \brief Registers a route in deterministic order.
+    /// \note Exact callback-data routes take precedence over callback wildcards;
+    ///       routes with equal specificity retain registration order.
     /// \param route Complete filter, policy callbacks and handler.
     /// \return Stable route number, or an invalid route error.
     [[nodiscard]] Result<std::size_t> add_route(Route route);
@@ -180,8 +183,9 @@ public:
     /// \brief Validates, deduplicates and admits one owned update.
     /// \param update Value-owned update from a transport parser or fixture.
     /// \return Admission outcome; accepted handler failures are reported asynchronously.
-    /// \note A valid routed identity is reserved before callback execution. The
-    ///       bounded in-memory deduplication policy therefore does not admit an
+    /// \note A valid routed identity is reserved before callback execution and
+    ///       remains reserved until the callback completes. The bounded completed
+    ///       history therefore cannot evict an in-flight update or admit an
     ///       automatic retry after middleware or handler failure.
     [[nodiscard]] UpdateOutcome receive(Update update);
 
@@ -201,6 +205,7 @@ private:
     [[nodiscard]] RoutePtr select_route(const Update& update) const;
     [[nodiscard]] bool matches(const Route& route, const Update& update) const;
     void forget(const UpdateIdentity& identity);
+    void complete(const UpdateIdentity& identity) noexcept;
 
     ReferenceRuntime& m_runtime;
     const RouterConfig m_config;
@@ -208,6 +213,7 @@ private:
     mutable std::mutex m_mutex;
     std::vector<RoutePtr> m_routes;
     MiddlewareList m_middleware = std::make_shared<const std::vector<Middleware>>();
+    std::unordered_set<UpdateIdentity, UpdateIdentityHash> m_in_flight_updates;
     std::unordered_set<UpdateIdentity, UpdateIdentityHash> m_seen_updates;
     std::deque<UpdateIdentity> m_seen_order;
     bool m_started = false;

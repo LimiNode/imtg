@@ -1,6 +1,6 @@
 #include <imtg/telegram.hpp>
 
-#include <algorithm>
+#include <exception>
 #include <limits>
 #include <utility>
 
@@ -8,18 +8,62 @@ namespace imtg::telegram {
 
 namespace {
 
-std::string normalized_command(std::string_view text)
+constexpr std::size_t max_command_length = 32;
+constexpr std::size_t max_username_length = 32;
+
+struct ParsedCommand {
+    std::string command;
+    std::string target_username;
+    bool valid = false;
+};
+
+bool valid_username_part(std::string_view value) noexcept
+{
+    if (value.empty() || value.size() > max_username_length) return false;
+    for (const auto character : value) {
+        const auto ascii = static_cast<unsigned char>(character);
+        if (!((ascii >= 'a' && ascii <= 'z') || (ascii >= 'A' && ascii <= 'Z')
+              || (ascii >= '0' && ascii <= '9') || ascii == '_')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool valid_command(std::string_view value) noexcept
+{
+    if (value.empty() || value.size() > max_command_length) return false;
+    for (const auto character : value) {
+        const auto ascii = static_cast<unsigned char>(character);
+        if (!((ascii >= 'a' && ascii <= 'z') || (ascii >= '0' && ascii <= '9')
+              || ascii == '_')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+ParsedCommand parse_command(std::string_view text)
 {
     if (text.empty() || text.front() != '/') {
         return {};
     }
     const auto end = text.find_first_of(" \t\r\n");
-    auto command = text.substr(1, end == std::string_view::npos ? text.size() - 1 : end - 1);
-    const auto mention = command.find('@');
-    if (mention != std::string_view::npos) {
-        command = command.substr(0, mention);
+    const auto token = text.substr(1, end == std::string_view::npos ? text.size() - 1 : end - 1);
+    const auto mention = token.find('@');
+    const auto command = mention == std::string_view::npos
+        ? token : token.substr(0, mention);
+    const auto target = mention == std::string_view::npos
+        ? std::string_view{} : token.substr(mention + 1);
+    if (mention != std::string_view::npos
+        && token.find('@', mention + 1) != std::string_view::npos) {
+        return {};
     }
-    return std::string(command);
+    if (!valid_command(command)
+        || (mention != std::string_view::npos && !valid_username_part(target))) {
+        return {};
+    }
+    return ParsedCommand{std::string(command), std::string(target), true};
 }
 
 bool is_bot_command(std::string_view text) noexcept
@@ -36,6 +80,22 @@ RouterConfig normalized_config(RouterConfig config) noexcept
     return config;
 }
 
+bool same_username(std::string_view left, std::string_view right) noexcept
+{
+    if (left.size() != right.size()) return false;
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        const auto lower = [](unsigned char value) {
+            return value >= 'A' && value <= 'Z'
+                ? static_cast<unsigned char>(value - 'A' + 'a') : value;
+        };
+        if (lower(static_cast<unsigned char>(left[index]))
+            != lower(static_cast<unsigned char>(right[index]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::size_t payload_size(const Update& update)
 {
     return std::visit([](const auto& payload) {
@@ -43,6 +103,10 @@ std::size_t payload_size(const Update& update)
         if constexpr (std::is_same_v<Payload, TextMessage>) {
             return payload.text.size();
         } else {
+            if (payload.id.size() > std::numeric_limits<std::size_t>::max()
+                                    - payload.data.size()) {
+                return std::numeric_limits<std::size_t>::max();
+            }
             return payload.id.size() + payload.data.size();
         }
     }, update.payload);
@@ -84,7 +148,8 @@ Result<std::size_t> UpdateRouter::add_route(Route route)
     if (!route.handler) {
         return Error{ErrorCode::InvalidArgument, "telegram route handler is empty"};
     }
-    if (route.kind == UpdateKind::BotCommand && route.command.empty()) {
+    if (route.kind == UpdateKind::BotCommand
+        && !valid_command(route.command)) {
         return Error{ErrorCode::InvalidArgument, "bot-command route needs a command"};
     }
     if (route.kind != UpdateKind::BotCommand && !route.command.empty()) {
@@ -143,6 +208,9 @@ Result<void> UpdateRouter::validate(const Update& update) const
             if (payload.text.size() > m_config.max_text_bytes) {
                 return Error{ErrorCode::InvalidArgument, "telegram text exceeds configured limit"};
             }
+            if (is_bot_command(payload.text) && !parse_command(payload.text).valid) {
+                return Error{ErrorCode::InvalidArgument, "telegram bot command is malformed"};
+            }
         } else {
             if (payload.id.empty() || payload.data.empty()
                 || payload.data.size() > m_config.max_callback_bytes) {
@@ -176,7 +244,14 @@ bool UpdateRouter::matches(const Route& route, const Update& update) const
     if (route.kind == UpdateKind::TextMessage) {
         return !is_bot_command(message.text);
     }
-    return normalized_command(message.text) == route.command;
+    const auto command = parse_command(message.text);
+    if (!command.valid) return false;
+    if (!command.target_username.empty()
+        && (m_config.bot_username.empty()
+            || !same_username(command.target_username, m_config.bot_username))) {
+        return false;
+    }
+    return command.command == route.command;
 }
 
 Result<void> validate_binding(const UpdateBinding& binding, const UpdateContext& context)
@@ -202,18 +277,49 @@ Result<void> validate_binding(const UpdateBinding& binding, const UpdateContext&
 
 UpdateRouter::RoutePtr UpdateRouter::select_route(const Update& update) const
 {
+    RoutePtr wildcard_callback;
     for (const auto& route : m_routes) {
-        if (matches(*route, update)) return route;
+        if (!matches(*route, update)) continue;
+        if (route->kind == UpdateKind::CallbackQuery && route->callback_data.empty()) {
+            if (!wildcard_callback) wildcard_callback = route;
+            continue;
+        }
+        return route;
     }
-    return {};
+    return wildcard_callback;
 }
 
 void UpdateRouter::forget(const UpdateIdentity& identity)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_seen_updates.erase(identity);
-    m_seen_order.erase(std::remove(m_seen_order.begin(), m_seen_order.end(), identity),
-                       m_seen_order.end());
+    m_in_flight_updates.erase(identity);
+}
+
+void UpdateRouter::complete(const UpdateIdentity& identity) noexcept
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_in_flight_updates.find(identity) == m_in_flight_updates.end()) return;
+    try {
+        const auto insertion = m_seen_updates.insert(identity);
+        if (!insertion.second) {
+            m_in_flight_updates.erase(identity);
+            return;
+        }
+        try {
+            m_seen_order.push_back(identity);
+        } catch (...) {
+            m_seen_updates.erase(identity);
+            return;
+        }
+        while (m_seen_order.size() > m_config.max_seen_updates) {
+            m_seen_updates.erase(m_seen_order.front());
+            m_seen_order.pop_front();
+        }
+        m_in_flight_updates.erase(identity);
+    } catch (...) {
+        // Keep the in-flight reservation on allocation failure. A duplicate
+        // must remain rejected rather than becoming an implicit retry.
+    }
 }
 
 UpdateOutcome UpdateRouter::receive(Update update)
@@ -229,7 +335,8 @@ UpdateOutcome UpdateRouter::receive(Update update)
             std::lock_guard<std::mutex> lock(m_mutex);
             if (!m_accepting) return UpdateOutcome::Closed;
             m_started = true;
-            if (m_seen_updates.find(identity) != m_seen_updates.end()) {
+            if (m_in_flight_updates.find(identity) != m_in_flight_updates.end()
+                || m_seen_updates.find(identity) != m_seen_updates.end()) {
                 return UpdateOutcome::Duplicate;
             }
             route = select_route(update);
@@ -237,18 +344,10 @@ UpdateOutcome UpdateRouter::receive(Update update)
             auto conversation = make_conversation_key(update);
             if (!conversation) return UpdateOutcome::Invalid;
             key = conversation.value();
-            const auto insertion = m_seen_updates.insert(identity);
+            const auto insertion = m_in_flight_updates.insert(identity);
             if (!insertion.second) return UpdateOutcome::Duplicate;
-            try {
-                m_seen_order.push_back(identity);
-            } catch (...) {
-                m_seen_updates.erase(identity);
-                throw;
-            }
-            while (m_seen_order.size() > m_config.max_seen_updates) {
-                m_seen_updates.erase(m_seen_order.front());
-                m_seen_order.pop_front();
-            }
+            // The in-flight reservation is the admission record. Completed
+            // history is updated only after the callback returns.
             middleware = m_middleware;
         }
 
@@ -256,7 +355,8 @@ UpdateOutcome UpdateRouter::receive(Update update)
         const auto sink = m_outcome_sink;
         const auto accepted = m_runtime.submit_callback(
             key,
-            [route, middleware, context = std::move(context), sink]() mutable -> Result<void> {
+            [this, identity, route, middleware, context = std::move(context), sink]() mutable
+                -> Result<void> {
                 const auto report = [&sink, &context](UpdateOutcome outcome, const Error& error) {
                     if (!sink) return;
                     try { sink(outcome, context, error); } catch (...) { }
@@ -266,18 +366,21 @@ UpdateOutcome UpdateRouter::receive(Update update)
                         const auto result = policy(context);
                         if (!result) {
                             report(UpdateOutcome::Rejected, result.error());
+                            complete(identity);
                             return result;
                         }
                     }
                     const auto binding = validate_binding(route->binding, context);
                     if (!binding) {
                         report(UpdateOutcome::Unauthorized, binding.error());
+                        complete(identity);
                         return binding;
                     }
                     if (route->authorize) {
                         const auto result = route->authorize(context);
                         if (!result) {
                             report(UpdateOutcome::Unauthorized, result.error());
+                            complete(identity);
                             return result;
                         }
                     }
@@ -285,20 +388,24 @@ UpdateOutcome UpdateRouter::receive(Update update)
                         const auto result = route->check_stale(context);
                         if (!result) {
                             report(UpdateOutcome::Stale, result.error());
+                            complete(identity);
                             return result;
                         }
                     }
                     const auto result = route->handler(context);
                     if (!result) report(UpdateOutcome::HandlerFailed, result.error());
+                    complete(identity);
                     return result;
                 } catch (const std::exception& exception) {
                     const Error error{ErrorCode::HandlerUnavailable, exception.what()};
                     report(UpdateOutcome::HandlerFailed, error);
+                    complete(identity);
                     return error;
                 } catch (...) {
                     const Error error{ErrorCode::HandlerUnavailable,
                                       "telegram route callback threw an unknown exception"};
                     report(UpdateOutcome::HandlerFailed, error);
+                    complete(identity);
                     return error;
                 }
             });
