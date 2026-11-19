@@ -23,6 +23,12 @@ if(IMTG_BUILD_MDBX)
     target_compile_definitions(imtg_storage_tests PRIVATE IMTG_TEST_MDBX=1)
     target_link_libraries(imtg_storage_tests PRIVATE imtg::mdbx)
 endif()
+
+if(IMTG_BUILD_TELEGRAM)
+    add_executable(imtg_telegram_gateway_tests telegram_gateway_tests.cpp)
+    target_link_libraries(imtg_telegram_gateway_tests PRIVATE imtg::telegram)
+    add_test(NAME imtg_telegram_gateway_tests COMMAND imtg_telegram_gateway_tests)
+endif()
 add_test(NAME imtg_storage_tests COMMAND imtg_storage_tests)
 
 add_executable(imtg_session_tests session_tests.cpp)

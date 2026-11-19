@@ -24,7 +24,8 @@ umbrella context.
 The audited current graph is `actions → core`, `storage → core`,
 `sessions → storage`, `reconciliation → sessions`, `ui → actions`, and
 `runtime → ui` (with direct core dependencies where required). The graph is
-acyclic. All eight domains now have root umbrellas; the previous nested
+acyclic. All nine domains now have root umbrellas; the optional `telegram`
+domain depends on `core` and `runtime`; the previous nested
 `core/core.hpp`, `actions/actions.hpp`, `ui/ui.hpp`, and `runtime/runtime.hpp`
 paths remain forwarding compatibility headers. The migration,
 install boundary, and compatibility policy are defined in

@@ -1,6 +1,9 @@
 # ADR 0006: headless routing and application composition
 
-**Status:** Proposed; implementation begins in M3 after independent review.
+**Status:** Accepted for staged M3 implementation; the M3a typed boundary is
+implemented in a Draft slice and remains pending independent review. HTTP
+delivery, urgent deadline lanes and live Telegram integration remain later
+stages.
 
 ## Context
 

@@ -1,8 +1,21 @@
 # Telegram delivery contract
 
 **Semantic owner:** transport/delivery maintainers. **Status:** M2c-c implements
-the merged storage-only reference delivery lifecycle. Gateway,
-worker orchestration, HTTP, and method-specific retry evidence remain planned for M3.
+the merged storage-only reference delivery lifecycle. M3a adds the optional,
+transport-neutral typed update boundary and routes accepted callbacks through
+the existing keyed scheduler. HTTP, worker orchestration, and method-specific
+retry evidence remain planned for M3b.
+
+The M3a boundary owns value-copied update DTOs, shape/size validation,
+bot-scoped update deduplication, deterministic filters and middleware, and
+explicit admission outcomes. It does not parse JSON, retain transport buffers,
+call Telegram, create a second scheduler, or persist deduplication state.
+Deduplication reserves a routed identity before callback execution; a handler
+or policy failure is observable but is not automatically retried by the router.
+Authorization and stale-callback policies run inside the serialized callback
+before the application handler. `Headless` handlers receive no implicit UI or
+render work; interactive handlers remain responsible for invoking the existing
+application/session contracts.
 
 ## Responsibilities
 

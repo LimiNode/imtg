@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build/ci-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON
+        run: cmake -S . -B build/ci-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON -DIMTG_BUILD_TELEGRAM=ON
       - name: Build
         run: cmake --build build/ci-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
       - name: Test
@@ -25,7 +25,7 @@ jobs:
       - name: Verify installed license
         run: cmake -DIMTG_SOURCE_DIR=${{ github.workspace }} -DIMTG_INSTALL_PREFIX=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }} -P cmake/CheckInstalledLicense.cmake
       - name: Configure public-header checks
-        run: cmake -S tests/public_headers -B build/headers-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DIMTG_REQUIRE_COMMERCE=ON -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
+        run: cmake -S tests/public_headers -B build/headers-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DIMTG_REQUIRE_COMMERCE=ON -DIMTG_REQUIRE_TELEGRAM=ON -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build public-header checks
         run: cmake --build build/headers-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
       - name: Configure installed consumer
@@ -52,6 +52,7 @@ jobs:
           cmake -S . -B build/asan-ubsan -DBUILD_TESTING=ON
           -DCMAKE_BUILD_TYPE=Debug
           -DIMTG_BUILD_COMMERCE=ON
+          -DIMTG_BUILD_TELEGRAM=ON
           -DIMTG_BUILD_MDBX=ON
           -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"

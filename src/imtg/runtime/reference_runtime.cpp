@@ -303,11 +303,25 @@ ReferenceRuntime::~ReferenceRuntime()
 
 Result<void> ReferenceRuntime::submit(ConversationKey key, std::string action_token)
 {
+    return submit_task(Task{std::move(key), std::move(action_token), {}});
+}
+
+Result<void> ReferenceRuntime::submit_callback(ConversationKey key, CallbackTask callback)
+{
+    if (!callback) {
+        return Error{ErrorCode::InvalidArgument, "runtime callback task is empty"};
+    }
+    return submit_task(Task{std::move(key), {}, std::move(callback)});
+}
+
+Result<void> ReferenceRuntime::submit_task(Task task)
+{
     std::lock_guard<std::mutex> lock(m_mutex);
+    const auto task_key = task.key;
     if (!m_accepting) {
         return Error{ErrorCode::InvalidState, "runtime is shutting down"};
     }
-    if (action_token.size() > m_config.max_token_size) {
+    if (task.token.size() > m_config.max_token_size) {
         return Error{ErrorCode::InvalidArgument, "action token exceeds configured limit"};
     }
     auto mailbox_it = m_mailboxes.end();
@@ -316,7 +330,7 @@ Result<void> ReferenceRuntime::submit(ConversationKey key, std::string action_to
     bool was_scheduled = false;
     const auto submit_index = m_submit_attempts++;
     try {
-        auto insertion = m_mailboxes.try_emplace(key);
+        auto insertion = m_mailboxes.try_emplace(task_key);
         mailbox_it = insertion.first;
         inserted = insertion.second;
         auto& mailbox = mailbox_it->second;
@@ -333,12 +347,12 @@ Result<void> ReferenceRuntime::submit(ConversationKey key, std::string action_to
         if (submit_index == m_config.fail_queue_insertion_on_submit) {
             throw std::bad_alloc();
         }
-        mailbox.queue.push_back(Task{key, std::move(action_token)});
+        mailbox.queue.push_back(std::move(task));
         ++m_queued_tasks;
         enqueued = true;
         if (!mailbox.scheduled) {
             mailbox.scheduled = true;
-            m_ready.push_back(key);
+            m_ready.push_back(task_key);
             m_condition.notify_one();
         }
     } catch (...) {
@@ -354,7 +368,7 @@ Result<void> ReferenceRuntime::submit(ConversationKey key, std::string action_to
             // fails, only undo the scheduling mutation performed by this call.
             if (enqueued && !was_scheduled && mailbox.queue.empty()) {
                 mailbox.scheduled = false;
-                if (!m_ready.empty() && m_ready.back() == key) {
+                if (!m_ready.empty() && m_ready.back() == task_key) {
                     m_ready.pop_back();
                 }
             }
@@ -462,6 +476,13 @@ FakeReconciler& ReferenceRuntime::reconciler() noexcept
 void ReferenceRuntime::execute(Task task) noexcept
 {
     try {
+        if (task.callback) {
+            const auto result = task.callback();
+            if (!result) {
+                report(task.key, result.error());
+            }
+            return;
+        }
         const auto result = m_actions.invoke(task.token,
             [this, &task](const ActionCommand& command) {
                 if (!m_command) {

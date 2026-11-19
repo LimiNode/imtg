@@ -5,6 +5,7 @@ project(imtg VERSION 0.1.0 LANGUAGES CXX)
 option(IMTG_BUILD_DOCUMENTATION "Build the optional Doxygen documentation check" OFF)
 option(IMTG_BUILD_COMMERCE "Build and install the optional imtg_commerce module" OFF)
 option(IMTG_BUILD_MDBX "Build the optional persistent MDBX storage adapter" OFF)
+option(IMTG_BUILD_TELEGRAM "Build the optional typed Telegram gateway boundary" OFF)
 set(IMTG_MDBX_CONTAINERS_SOURCE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/external/mdbx-containers" CACHE PATH
     "Pinned mdbx-containers source used by the optional MDBX adapter")
@@ -67,14 +68,32 @@ if(IMTG_BUILD_MDBX)
     # boundary after the durable package contract is reviewed.
 endif()
 
+if(IMTG_BUILD_TELEGRAM)
+    add_library(imtg_telegram STATIC
+        src/imtg/telegram/UpdateRouter.cpp)
+    add_library(imtg::telegram ALIAS imtg_telegram)
+    set_target_properties(imtg_telegram PROPERTIES EXPORT_NAME telegram)
+    target_compile_features(imtg_telegram PUBLIC cxx_std_17)
+    target_include_directories(imtg_telegram PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    target_link_libraries(imtg_telegram PUBLIC imtg::core)
+endif()
+
 install(TARGETS imtg_core EXPORT imtgTargets)
 if(IMTG_BUILD_COMMERCE)
     install(TARGETS imtg_commerce EXPORT imtgTargets)
+endif()
+if(IMTG_BUILD_TELEGRAM)
+    install(TARGETS imtg_telegram EXPORT imtgTargets)
 endif()
 include(cmake/ImtgPublicHeaders.cmake)
 set(imtg_install_headers ${IMTG_CORE_PUBLIC_HEADERS})
 if(IMTG_BUILD_COMMERCE)
     list(APPEND imtg_install_headers ${IMTG_COMMERCE_PUBLIC_HEADERS})
+endif()
+if(IMTG_BUILD_TELEGRAM)
+    list(APPEND imtg_install_headers ${IMTG_TELEGRAM_PUBLIC_HEADERS})
 endif()
 foreach(header IN LISTS imtg_install_headers)
     get_filename_component(header_directory "${header}" DIRECTORY)
