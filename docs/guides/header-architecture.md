@@ -223,6 +223,7 @@ src/imtg/
 ├── ui.hpp
 ├── runtime.hpp
 ├── telegram.hpp       # optional transport-neutral gateway
+├── telegram_transport.hpp # optional bounded Bot API transport
 ├── core/             # owned leaves and .cpp files
 ├── actions/
 ├── storage/
@@ -230,7 +231,8 @@ src/imtg/
 ├── reconciliation/
 ├── ui/
 ├── runtime/
-└── telegram/
+├── telegram/
+└── telegram_transport/
 ```
 
 The intended topological order is:
@@ -244,6 +246,7 @@ core
         └── sessions
               └── reconciliation
 telegram ────────┘ (optional; depends on core and runtime)
+telegram_transport → telegram (optional)
 ```
 
 This is a partial order, not a requirement that all domains be merged into one

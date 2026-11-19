@@ -86,6 +86,12 @@ if(IMTG_BUILD_TELEGRAM_TRANSPORT)
         message(FATAL_ERROR
             "IMTG_BUILD_TELEGRAM_TRANSPORT requires IMTG_BUILD_TELEGRAM=ON")
     endif()
+    set(imtg_json_source_dir "${CMAKE_CURRENT_SOURCE_DIR}/external/json")
+    if(NOT EXISTS "${imtg_json_source_dir}/include/nlohmann/json.hpp")
+        message(FATAL_ERROR
+            "IMTG_BUILD_TELEGRAM_TRANSPORT requires the pinned external/json submodule; "
+            "initialize it explicitly with git submodule update --init -- external/json")
+    endif()
     add_library(imtg_telegram_transport STATIC
         src/imtg/telegram_transport/TelegramBotApi.cpp)
     add_library(imtg::telegram_transport ALIAS imtg_telegram_transport)
@@ -94,7 +100,13 @@ if(IMTG_BUILD_TELEGRAM_TRANSPORT)
     target_include_directories(imtg_telegram_transport PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    # JSON syntax is private to the compiled adapter; installed consumers have
+    # no public JSON type, include path, target, or find_package dependency.
+    target_include_directories(imtg_telegram_transport SYSTEM PRIVATE
+        "${imtg_json_source_dir}/include")
     target_link_libraries(imtg_telegram_transport PUBLIC imtg::telegram)
+    install(FILES "${imtg_json_source_dir}/LICENSE.MIT"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/imtg/nlohmann-json")
 endif()
 
 install(TARGETS imtg_core EXPORT imtgTargets)

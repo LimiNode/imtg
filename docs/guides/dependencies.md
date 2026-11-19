@@ -21,3 +21,11 @@ MDBX lookup or download; `IMTG_BUILD_MDBX=ON` requires both initialized
 submodules and uses `MDBXC_DEPS_MODE=BUNDLED` without a FetchContent fallback.
 The optional adapter is tested with a local persistence/reopen consumer; its
 installed-package export remains a later M2d-b boundary.
+
+The optional `IMTG_BUILD_TELEGRAM_TRANSPORT` slice uses nlohmann/json privately
+at `b1bb9fce0c9ae9db5cecf8e3bd78519ac70683ee`, the JSON gitlink selected by
+`kurlyk@b62cd53f672c47b74bb14d762ea9dc59a9df19ce`. It is a flat
+`external/json` submodule, initialized explicitly and non-recursively. Its MIT
+notice is installed with the optional adapter, while its headers and package
+lookup do not enter imtg's installed public contract. Core-only and the base
+Telegram router require neither this parser nor kurlyk.

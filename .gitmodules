@@ -4,3 +4,6 @@
 [submodule "external/libmdbx"]
 	path = external/libmdbx
 	url = https://github.com/erthink/libmdbx.git
+[submodule "external/json"]
+	path = external/json
+	url = https://github.com/nlohmann/json.git

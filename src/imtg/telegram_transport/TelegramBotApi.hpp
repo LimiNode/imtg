@@ -6,7 +6,6 @@
 
 #include <imtg/telegram.hpp>
 
-#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -14,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace imtg::telegram_transport {
@@ -83,7 +83,7 @@ struct HttpResponse {
 struct HttpExchange {
     std::optional<HttpResponse> response; ///< Present when an HTTP response was received.
     std::optional<HttpFailureKind> failure; ///< Present when the adapter failed.
-    bool request_may_have_been_sent = false; ///< True after an ambiguous transport failure.
+    bool request_may_have_been_sent = true; ///< False only with positive evidence that no request was sent.
 };
 
 /// \brief Injectable HTTP boundary used by `TelegramBotApi`.
@@ -94,18 +94,20 @@ public:
     /// \brief Executes one bounded request without owning Telegram credentials.
     /// \param request Request with an authenticated URL and strict response limit.
     /// \param cancellation Cooperative cancellation token.
-    /// \return Response or typed transport failure; implementations must not throw.
+    /// \return Exactly one response or typed failure; implementations must not throw.
+    /// \note Enforce the response body limit while receiving, not after unbounded buffering.
+    ///       Keep `request_may_have_been_sent` true unless non-transmission is established.
     [[nodiscard]] virtual HttpExchange execute(const HttpRequest& request,
                                                const CancellationToken& cancellation) noexcept = 0;
 };
 
 /// \brief High-level classification of one Bot API call.
 enum class TelegramOutcome {
-    Succeeded, ///< Telegram returned a successful HTTP status.
+    Succeeded, ///< A valid `ok=true` envelope confirmed the method-specific result.
     InvalidRequest, ///< Local bounds or required argument failed.
-    ClientError, ///< Telegram returned a 4xx status other than 429.
-    ServerError, ///< Telegram returned a 5xx status.
-    RateLimited, ///< Telegram returned 429; inspect `retry_after_seconds`.
+    ClientError, ///< A valid unsuccessful envelope carries a 4xx API code other than 429.
+    ServerError, ///< A valid unsuccessful envelope carries a 5xx API code.
+    RateLimited, ///< A valid unsuccessful envelope carries code 429; inspect `retry_after_seconds`.
     TransportFailure, ///< No response and no evidence of request acceptance.
     Timeout, ///< Timeout before an ambiguous send was possible.
     Cancelled, ///< Cancellation before an ambiguous send was possible.
@@ -116,8 +118,10 @@ enum class TelegramOutcome {
 struct TelegramResult {
     TelegramOutcome outcome = TelegramOutcome::TransportFailure; ///< Typed call outcome.
     int http_status = 0; ///< Zero when no HTTP response was received.
-    std::optional<std::uint32_t> retry_after_seconds; ///< Parsed bounded Retry-After value.
+    std::optional<std::uint32_t> api_error_code; ///< Numeric Telegram `error_code`, when valid.
+    std::optional<std::uint32_t> retry_after_seconds; ///< Telegram retry delay; never permission to retry.
     std::optional<HttpFailureKind> transport_failure; ///< Underlying adapter failure, if any.
+    std::optional<telegram::MessageId> message_id; ///< Confirmed send/edit identity, scoped to the requested chat.
 
     /// \brief Reports successful Telegram acknowledgement.
     /// \return True only for `TelegramOutcome::Succeeded`.
@@ -137,10 +141,17 @@ struct TelegramBotApiConfig {
 };
 
 /// \brief Bounded Bot API client for the three M3b-a methods.
+///
+/// Available through `<imtg/telegram_transport.hpp>` or this standalone header,
+/// linked with `imtg::telegram_transport`. The client never retries. The borrowed
+/// transport must outlive all calls and provide thread safety if calls overlap.
+/// Credentials and response text are never returned in diagnostics. All HTTP calls
+/// must be made outside storage transactions after confirmed dispatch admission.
 class TelegramBotApi {
 public:
     /// \brief Creates a client borrowing an application-owned HTTP transport.
-    /// \param bot_token Telegram bot token; retained only by this client.
+    /// \param bot_token Telegram bot token; retained only by this client. Calls fail
+    ///        closed unless it has a nonzero decimal bot prefix and a URL-safe secret.
     /// \param transport Injectable HTTP boundary.
     /// \param config Request, response, and timeout limits.
     TelegramBotApi(std::string bot_token,
@@ -180,6 +191,8 @@ public:
 private:
     [[nodiscard]] TelegramResult call(std::string_view method,
                                       std::string body,
+                                      ChatId expected_chat,
+                                      std::optional<std::int64_t> expected_message,
                                       const CancellationToken& cancellation) const noexcept;
 
     std::string m_bot_token;
