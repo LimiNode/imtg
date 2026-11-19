@@ -3,8 +3,8 @@
 **Status:** normative hybrid profile; root-umbrella migration implemented in this slice,
 pending independent review.
 **Scope:** `core`, `actions`, `storage`, `sessions`, `reconciliation`, `ui`,
-`runtime`, the optional `commerce` addendum, and the optional `telegram`
-gateway boundary.
+`runtime`, the optional `commerce` addendum, the optional `telegram` gateway
+boundary, and the optional `logging` diagnostics adapter.
 
 This guide records the current include topology and the selected hybrid
 profile: domain umbrellas plus standalone public components and optional modules
@@ -48,8 +48,8 @@ implementation PRs.
 ### Implemented hybrid entry points
 
 The migration now provides root umbrellas for `core`, `actions`, `storage`,
-`sessions`, `reconciliation`, `ui`, `runtime`, optional `commerce`, and the
-optional `telegram` gateway boundary. Each includes lower-level domain
+`sessions`, `reconciliation`, `ui`, `runtime`, optional `commerce`, the
+optional `telegram` gateway boundary, and the optional `logging` adapter. Each includes lower-level domain
 umbrellas before its local public components. `telegram` depends on `core` and
 `runtime`, but remains outside `imtg_core` and is installed only when its
 optional target is enabled.
@@ -57,7 +57,8 @@ Public leaves remain self-contained. Normal implementation units start with
 their domain umbrella; no runtime algorithm or public declaration is changed.
 
 `cmake/ImtgPublicHeaders.cmake` explicitly enumerates 29 core-package headers,
-seven optional commerce headers, and two optional Telegram gateway headers. No
+seven optional commerce headers, two optional Telegram gateway headers, and two
+optional logging headers. No
 recursive source-header installation remains. Core-only installation excludes
 optional modules; source-only MDBX is not in the public manifest. The
 installed-header fixture compares the complete real header inventory to the
@@ -219,6 +220,7 @@ src/imtg/
 ├── ui.hpp
 ├── runtime.hpp
 ├── telegram.hpp       # optional transport-neutral gateway
+├── logging.hpp        # optional LogIt++ observer adapter
 ├── core/             # owned leaves and .cpp files
 ├── actions/
 ├── storage/
@@ -226,7 +228,8 @@ src/imtg/
 ├── reconciliation/
 ├── ui/
 ├── runtime/
-└── telegram/
+├── telegram/
+└── logging/
 ```
 
 The intended topological order is:
@@ -240,6 +243,7 @@ core
         └── sessions
               └── reconciliation
 telegram ────────┘ (optional; depends on core and runtime)
+logging ─────────┘ (optional; depends on core, runtime and telegram)
 ```
 
 This is a partial order, not a requirement that all domains be merged into one
@@ -257,6 +261,7 @@ own declared public components. The proposed include sets are:
 | `runtime.hpp` | `<imtg/core.hpp>`, `<imtg/actions.hpp>`, `<imtg/ui.hpp>` | `runtime/reference_runtime.hpp` |
 | `commerce.hpp` (optional) | `<imtg/core.hpp>`, `<imtg/storage.hpp>` after those umbrellas land | `commerce/PaymentTypes.hpp`, `PaymentPolicy.hpp`, `PaymentRecords.hpp`, `PaymentTransaction.hpp`, `PaymentProvider.hpp`, `PaymentServices.hpp` |
 | `telegram.hpp` (optional) | `<imtg/core.hpp>`, `<imtg/runtime.hpp>` | `telegram/UpdateRouter.hpp` |
+| `logging.hpp` (optional) | local `logging/LogitAdapter.hpp` | `logging/LogitAdapter.hpp` |
 
 The exact component order is part of each implementation PR and must be stable,
 acyclic, and tested. A component that is intentionally standalone may include
@@ -278,6 +283,7 @@ The intended mapping is:
 | `imtg/runtime/runtime.hpp` | `imtg/runtime.hpp` | relocate umbrella |
 | `imtg/commerce.hpp` (optional) | `imtg/commerce.hpp` | already at the target root; keep excluded from core-only installs |
 | `imtg/telegram.hpp` (optional) | `imtg/telegram.hpp` | typed gateway boundary; installed only with `IMTG_BUILD_TELEGRAM=ON` |
+| `imtg/logging.hpp` (optional) | `imtg/logging.hpp` | LogIt++ observer adapter; installed only with `IMTG_BUILD_LOGIT=ON` |
 
 Component leaf paths such as `imtg/core/identifiers.hpp` and
 `imtg/sessions/session.hpp` remain the owning public paths in the target model;

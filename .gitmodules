@@ -4,3 +4,9 @@
 [submodule "external/libmdbx"]
 	path = external/libmdbx
 	url = https://github.com/erthink/libmdbx.git
+[submodule "external/log-it-cpp"]
+	path = external/log-it-cpp
+	url = https://github.com/LimiNode/log-it-cpp.git
+[submodule "external/time-shield-cpp"]
+	path = external/time-shield-cpp
+	url = https://github.com/LimiNode/time-shield-cpp.git

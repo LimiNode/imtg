@@ -30,6 +30,12 @@ if(IMTG_BUILD_TELEGRAM)
     add_test(NAME imtg_telegram_gateway_tests COMMAND imtg_telegram_gateway_tests)
     set_tests_properties(imtg_telegram_gateway_tests PROPERTIES TIMEOUT 30)
 endif()
+
+if(IMTG_BUILD_LOGIT)
+    add_executable(imtg_logit_adapter_tests logit_adapter_tests.cpp)
+    target_link_libraries(imtg_logit_adapter_tests PRIVATE imtg::logit)
+    add_test(NAME imtg_logit_adapter_tests COMMAND imtg_logit_adapter_tests)
+endif()
 add_test(NAME imtg_storage_tests COMMAND imtg_storage_tests)
 
 add_executable(imtg_session_tests session_tests.cpp)

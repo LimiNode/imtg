@@ -6,6 +6,7 @@ option(IMTG_BUILD_DOCUMENTATION "Build the optional Doxygen documentation check"
 option(IMTG_BUILD_COMMERCE "Build and install the optional imtg_commerce module" OFF)
 option(IMTG_BUILD_MDBX "Build the optional persistent MDBX storage adapter" OFF)
 option(IMTG_BUILD_TELEGRAM "Build the optional typed Telegram gateway boundary" OFF)
+option(IMTG_BUILD_LOGIT "Build the optional LogIt++ diagnostics adapter" OFF)
 set(IMTG_MDBX_CONTAINERS_SOURCE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/external/mdbx-containers" CACHE PATH
     "Pinned mdbx-containers source used by the optional MDBX adapter")
@@ -80,12 +81,85 @@ if(IMTG_BUILD_TELEGRAM)
     target_link_libraries(imtg_telegram PUBLIC imtg::core)
 endif()
 
+if(IMTG_BUILD_LOGIT)
+    if(NOT IMTG_BUILD_TELEGRAM)
+        message(FATAL_ERROR
+            "IMTG_BUILD_LOGIT requires IMTG_BUILD_TELEGRAM=ON so the adapter can bind UpdateRouter::OutcomeSink")
+    endif()
+    if(CMAKE_VERSION VERSION_LESS 3.18)
+        message(FATAL_ERROR
+            "IMTG_BUILD_LOGIT requires CMake 3.18 or newer for the pinned LogIt++ v1.0.2 provider; "
+            "core-only imtg builds still support CMake 3.16")
+    endif()
+    # LogIt++ v1.0.2 predates the C++20 char8_t filesystem API.  Keep the
+    # optional profile on the repository's C++17 baseline; core-only profiles
+    # retain their existing compiler-standard policy.
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED YES)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+    set(IMTG_LOGIT_SOURCE_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/log-it-cpp" CACHE PATH
+        "Pinned LogIt++ source used by the optional diagnostics adapter")
+    set(IMTG_TIME_SHIELD_SOURCE_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/time-shield-cpp" CACHE PATH
+        "Pinned TimeShield source used by the optional LogIt++ adapter")
+    if(NOT EXISTS "${IMTG_LOGIT_SOURCE_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "IMTG_BUILD_LOGIT requires the pinned external/log-it-cpp submodule")
+    endif()
+    if(NOT EXISTS "${IMTG_TIME_SHIELD_SOURCE_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "IMTG_BUILD_LOGIT requires the pinned external/time-shield-cpp submodule")
+    endif()
+
+    # LogIt++ is an optional provider. Keep its own tests, examples and
+    # optional backends out of the imtg build graph; no configure-time download
+    # or nested submodule initialization is permitted.
+    set(TIME_SHIELD_ENABLE_NTP_CLIENT OFF CACHE BOOL "" FORCE)
+    set(TIME_SHIELD_CPP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(TIME_SHIELD_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    add_subdirectory("${IMTG_TIME_SHIELD_SOURCE_DIR}"
+        "${CMAKE_BINARY_DIR}/_deps/time-shield")
+    set(LOGIT_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(LOGIT_CPP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(LOGIT_WITH_CONTEXT OFF CACHE BOOL "" FORCE)
+    set(LOGIT_WITH_OTLP OFF CACHE BOOL "" FORCE)
+    set(LOGIT_WITH_PROMETHEUS OFF CACHE BOOL "" FORCE)
+    set(LOGIT_WITH_PROMETHEUS_SERVER OFF CACHE BOOL "" FORCE)
+    set(LOGIT_WITH_MDBX OFF CACHE BOOL "" FORCE)
+    set(LOGIT_WITH_FMT OFF CACHE BOOL "" FORCE)
+    set(LOGIT_USE_SUBMODULES OFF CACHE BOOL "" FORCE)
+    set(LOGIT_FORCE_ASYNC_OFF OFF CACHE BOOL "" FORCE)
+    add_subdirectory("${IMTG_LOGIT_SOURCE_DIR}"
+        "${CMAKE_BINARY_DIR}/_deps/log-it-cpp")
+
+    add_library(imtg_logit STATIC src/imtg/logging/LogitAdapter.cpp)
+    add_library(imtg::logit ALIAS imtg_logit)
+    set_target_properties(imtg_logit PROPERTIES EXPORT_NAME logit)
+    target_compile_features(imtg_logit PUBLIC cxx_std_17)
+    # The pinned LogIt++ release uses std::filesystem::path::u8string() and
+    # is not C++20-clean on current libstdc++; keep this adapter explicitly
+    # on the project's C++17 contract without changing the global minimum.
+    set_target_properties(imtg_logit PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED YES
+        CXX_EXTENSIONS OFF)
+    target_include_directories(imtg_logit PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    target_link_libraries(imtg_logit PUBLIC imtg::core imtg::telegram
+        log-it-cpp::log-it-cpp)
+endif()
+
 install(TARGETS imtg_core EXPORT imtgTargets)
 if(IMTG_BUILD_COMMERCE)
     install(TARGETS imtg_commerce EXPORT imtgTargets)
 endif()
 if(IMTG_BUILD_TELEGRAM)
     install(TARGETS imtg_telegram EXPORT imtgTargets)
+endif()
+if(IMTG_BUILD_LOGIT)
+    install(TARGETS imtg_logit EXPORT imtgTargets)
 endif()
 include(cmake/ImtgPublicHeaders.cmake)
 set(imtg_install_headers ${IMTG_CORE_PUBLIC_HEADERS})
@@ -94,6 +168,9 @@ if(IMTG_BUILD_COMMERCE)
 endif()
 if(IMTG_BUILD_TELEGRAM)
     list(APPEND imtg_install_headers ${IMTG_TELEGRAM_PUBLIC_HEADERS})
+endif()
+if(IMTG_BUILD_LOGIT)
+    list(APPEND imtg_install_headers ${IMTG_LOGGING_PUBLIC_HEADERS})
 endif()
 foreach(header IN LISTS imtg_install_headers)
     get_filename_component(header_directory "${header}" DIRECTORY)
@@ -122,6 +199,14 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
 
 if(BUILD_TESTING)
     add_subdirectory(tests)
+    if(IMTG_BUILD_LOGIT)
+        add_test(NAME imtg_logit_installed_consumer
+            COMMAND ${CMAKE_COMMAND}
+                -DIMTG_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DIMTG_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckLogitInstalledConsumer.cmake)
+        set_tests_properties(imtg_logit_installed_consumer PROPERTIES TIMEOUT 180)
+    endif()
 endif()
 
 if(IMTG_BUILD_DOCUMENTATION)
