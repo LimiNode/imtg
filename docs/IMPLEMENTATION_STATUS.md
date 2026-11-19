@@ -1,5 +1,9 @@
 # Implementation status
 
+The M3a Telegram entries in this document describe the optional Draft slice
+under review; they do not claim that the current `main` has merged or released
+Telegram support.
+
 Flat dependency wiring is owned by `external/CMakeLists.txt`: the two direct
 pinned sibling submodules provide MDBX without recursive initialization or
 configure-time downloads. The MDBX CTest configuration includes a Git inventory
@@ -21,11 +25,12 @@ establish process-crash durability.
 The Sovetwave header-topology audit is documented in
 [header-architecture.md](guides/header-architecture.md), ADR 0009, and the
 accepted hybrid profile in [ADR 0011](adr/0011-hybrid-public-header-profile.md).
-Eight domains expose root-level umbrellas. All old installed leaf paths remain;
-the nested umbrellas forward to the root entry points. The explicit manifest
-contains 29 core-package and seven optional commerce entry points. Core does not
-include optional adapters or commerce. Installed-header tests check the exact
-package inventory and every supported header as a first include.
+Nine domains expose root-level umbrellas, with `telegram` remaining optional.
+All old installed leaf paths remain; the nested umbrellas forward to the root
+entry points. The explicit manifest contains 29 core-package, seven optional
+commerce, and two optional Telegram entry points. Core does not include
+optional adapters, commerce, or Telegram. Installed-header tests check each
+enabled package inventory and every supported header as a first include.
 
 Integration provenance for the current `main` is explicit: PR #24 merged as
 `8abda4c`, PR #26 as `9e66a04`, PR #29 as `b03c778`, and PR #30 as `a1436bb`.
@@ -41,8 +46,9 @@ package export and transport remain planned for later milestones.
 
 M1 acceptance gates are complete: deterministic rendering, typed/versioned actions, stale-handle rejection, per-conversation ordering, bounded admission and shutdown, observable worker failure, and dispatcher quiescence are covered by the offline test suite and the Debug/Release plus sanitizer CI matrix. M2a adds snapshot/optimistic transaction semantics, schema metadata, commit outcomes, and reusable conformance tests. M2b adds typed sessions, deterministic FSM transitions, processed-update deduplication, and atomic minimal render-intent publication. M2c-a claims/fencing and the M2c-b reconciliation/outbox slice are implemented; canonical `LT1` target scoping, applied-target desired-revision fencing, bounded physical identities, mandatory TX2 context/fencing, fail-closed staging, injected-repository recovery, and deterministic Unknown/interleaving tests are now covered. M2c-c adds the merged storage-only acknowledgement baseline, target reservations, a finite claim budget, typed `UnknownOutcome` success resolution, desired-state fencing at delivery admission, monotonic lease renewal, and deterministic late-success/TX1→TX2→TX1 regressions. Durable adapters and complete cross-backend recovery conformance remain open.
 
-The Telegram application profile work is documentation-only planning. Typed
-gateway routing, headless handlers, payment-priority handling, forms/tickets,
+The Telegram application profile work remains staged planning beyond M3a.
+Typed gateway routing and headless-handler admission are implemented in the
+optional transport-neutral boundary; payment-priority handling, forms/tickets,
 commerce runtime, moderation, durable jobs and the three reference applications
 are not implemented; they are dependency-gated M3–M6 work described in the
 research profiles and roadmap. The optional `imtg_commerce` target now contains
@@ -61,7 +67,7 @@ audit contract must be accepted before a separate GUI target is implemented.
 | Area | Status | Evidence / next proof |
 |---|---|---|
 | Architecture and contracts | `contract-only` | Markdown documents in `docs/`; review links and invariants |
-| Header topology | `implemented` | [Header architecture guide](guides/header-architecture.md), [ADR 0011](adr/0011-hybrid-public-header-profile.md); eight root umbrellas, explicit manifest, compatibility shims, topology CTest and installed first-include tests |
+| Header topology | `implemented` | [Header architecture guide](guides/header-architecture.md), [ADR 0011](adr/0011-hybrid-public-header-profile.md); nine root umbrellas, explicit manifest, compatibility shims, topology CTest and installed first-include tests |
 | CMake `imtg_core` target and C++17 baseline | `implemented` | Root CMake target configures/builds; CTest executes offline core tests |
 | Typed identities and deterministic clock | `implemented` | `src/imtg/core/`; M1a equality/encoding/hash tests |
 | Immediate-Mode UI tree | `partial` | M1b implements immutable tree nodes, stable paths, RAII scopes, duplicate detection, and offline tests; components remain intentionally small |
@@ -71,7 +77,7 @@ audit contract must be accepted before a separate GUI target is implemented.
 | FSM and sessions | `implemented` | [SESSIONS_AND_FSM.md](contracts/SESSIONS_AND_FSM.md); `src/imtg/sessions/`; `imtg_session_tests` covers encoding, transitions, deduplication, conflicts, and atomic TX1 |
 | Storage protocol and in-memory backend | `implemented` | [STORAGE.md](contracts/STORAGE.md); `src/imtg/storage/storage.hpp`; fixture-based `imtg_storage_tests` conformance suite with revision, ABA, schema-gate, ownership, and commit-outcome coverage |
 | Durable repositories and MDBX backend | `partial` | M2d-a optional source-build `imtg_mdbx` target, pinned `mdbx-containers`/`libmdbx`, six-DBI profile, shared conformance and persistence/reopen tests; package export and crash proof remain M2d-b/M2e |
-| Telegram transport / kurlyk | `planned` | M3 adapter tests against fakes and documented API limits |
+| Telegram gateway / transport | `partial` | Optional `imtg::telegram` typed update boundary, bot-scoped deduplication, deterministic filters/middleware, serialized authorization/stale checks and fake-fixture tests; kurlyk, HTTP delivery, deadlines and live transport remain M3b/M3c |
 | Payment provider contracts and capability audit | `partial` | [PAYMENTS.md](contracts/PAYMENTS.md), [PAYMENT_PROVIDER_CAPABILITY_AUDIT.md](research/PAYMENT_PROVIDER_CAPABILITY_AUDIT.md), optional `imtg_commerce` identities, account-scoped eligibility, exact asset-scale validation, evidence binding, shared `CommitResult` payment transactions, explicit refund policies and `imtg_payment_contract_tests`; provider adapters, durable persistence, webhooks and onboarding remain future work |
 | Render intents, reconciliation, and outbox | `partial` | M2c-a claims/fencing, M2c-b canonical `LT1` target scoping, and M2c-c bounded delivery claims, dispatch admission, fenced acknowledgements, monotonic applied-target evidence, retry/Unknown policy, and supersession are merged; durable adapters and full cross-backend recovery remain future work |
 | Localization | `planned` | M4 catalog, fallback, and pluralization tests |

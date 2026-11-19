@@ -4,7 +4,7 @@ Run this procedure from a clean checkout of the exact release candidate. Keep
 all generated files under `build/` and record the compiler, CMake version,
 commit SHA, and command output.
 
-## Core and commerce
+## Core, commerce and Telegram boundary
 
 ```sh
 cmake -S . -B build/release-core -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
@@ -15,6 +15,11 @@ cmake -S . -B build/release-commerce -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON
 cmake --build build/release-commerce --config Release
 ctest --test-dir build/release-commerce -C Release --output-on-failure
+
+cmake -S . -B build/release-telegram -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTING=ON -DIMTG_BUILD_TELEGRAM=ON
+cmake --build build/release-telegram --config Release
+ctest --test-dir build/release-telegram -C Release --output-on-failure
 ```
 
 Install each package to a fresh prefix and run the installed public-header and
@@ -23,6 +28,7 @@ consumer checks:
 ```sh
 cmake --install build/release-core --config Release --prefix build/install-core
 cmake --install build/release-commerce --config Release --prefix build/install-commerce
+cmake --install build/release-telegram --config Release --prefix build/install-telegram
 cmake -S tests/public_headers -B build/release-core-headers \
   -DCMAKE_PREFIX_PATH=$PWD/build/install-core
 cmake --build build/release-core-headers --config Release
@@ -30,6 +36,10 @@ cmake -S tests/public_headers -B build/release-commerce-headers \
   -DCMAKE_PREFIX_PATH=$PWD/build/install-commerce \
   -DIMTG_REQUIRE_COMMERCE=ON
 cmake --build build/release-commerce-headers --config Release
+cmake -S tests/public_headers -B build/release-telegram-headers \
+  -DCMAKE_PREFIX_PATH=$PWD/build/install-telegram \
+  -DIMTG_REQUIRE_TELEGRAM=ON
+cmake --build build/release-telegram-headers --config Release
 cmake -S tests/install_consumer -B build/release-core-consumer \
   -DCMAKE_PREFIX_PATH=$PWD/build/install-core
 cmake --build build/release-core-consumer --config Release
@@ -44,7 +54,8 @@ Confirm that the fresh prefixes contain the explicit public-header manifest,
 the CMake package files, and `share/licenses/imtg/LICENSE`, and that a core-only
 consumer does not require MDBX. The core header build covers 29 installed
 headers; the commerce build covers the complete 36-header inventory (29 core
-plus seven optional commerce headers).
+plus seven optional commerce headers). The Telegram build adds the two
+optional gateway headers and `imtg::telegram` target.
 
 ## MDBX source-build profile
 

@@ -38,3 +38,7 @@ set(IMTG_COMMERCE_PUBLIC_HEADERS
     imtg/commerce/PaymentServices.hpp
     imtg/commerce/PaymentTransaction.hpp
     imtg/commerce/PaymentTypes.hpp)
+
+set(IMTG_TELEGRAM_PUBLIC_HEADERS
+    imtg/telegram.hpp
+    imtg/telegram/UpdateRouter.hpp)
