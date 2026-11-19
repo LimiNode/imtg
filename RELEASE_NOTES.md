@@ -1,7 +1,9 @@
-# imtg v0.1.0-alpha.1
+# imtg v0.1.0-alpha.1 — unpublished foundation snapshot
 
-This is an experimental alpha of the Telegram-free imtg foundation. It does
-not imply stable API or production support.
+This document records the experimental Telegram-free foundation prepared for
+`v0.1.0-alpha.1`. The alpha tag and GitHub Release were not published; this is
+an unreleased technical snapshot and does not imply stable API or production
+support.
 
 ## Included
 
@@ -42,9 +44,10 @@ methods use `snake_case`; public types use `CamelCase`.
 
 ## Versioning
 
-The release tag is `v0.1.0-alpha.1`. The CMake package version remains numeric
-`0.1.0`; the `alpha.1` qualifier belongs to the prerelease tag and does not
-imply stable API or production support.
+The planned release tag was `v0.1.0-alpha.1`, but it was not published. The
+CMake package version remains numeric `0.1.0`; the `alpha.1` qualifier belongs
+to the unreleased preparation snapshot and does not imply stable API or
+production support.
 
 ## Known limitations
 

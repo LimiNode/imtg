@@ -10,8 +10,8 @@ state, and replaceable persistence.
 The reviewed `main` tree contains the Telegram-free M1 foundation and the M2a--M2c
 storage, session/FSM, reconciliation, outbox, and delivery-state baselines.
 M2d-a adds an optional source-build MDBX adapter over the same backend-neutral
-storage protocol. The library is experimental alpha software, not a production
-Telegram framework.
+storage protocol. The library is experimental pre-release software, not a
+production Telegram framework.
 
 Implemented surfaces include deterministic UI/action primitives, a bounded
 reference runtime, snapshot/optimistic transactions, typed sessions and FSM
@@ -122,8 +122,9 @@ initialized non-recursively by default.
 
 ## Release scope
 
-The `v0.1.0-alpha.1` release freezes the reviewed Telegram-free
-foundation and marks the MDBX adapter as experimental. See
+The reviewed `main` snapshot was prepared as the former `v0.1.0-alpha.1`
+foundation, but that tag was not published. It marks the MDBX adapter as
+experimental. See
 [RELEASE_NOTES.md](RELEASE_NOTES.md) and
 [`docs/release-smoke.md`](docs/release-smoke.md) for exact scope, limitations,
 and verification procedures. The roadmap remains authoritative for subsequent
