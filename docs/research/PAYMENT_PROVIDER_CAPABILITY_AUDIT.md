@@ -1,7 +1,7 @@
 # Payment provider capability audit
 
 **Status:** research baseline for the optional `imtg_commerce` module. **Audit
-date:** 2026-11-07. This document is not an approval to onboard a provider and
+date:** 2026-11-16. This document is not an approval to onboard a provider and
 does not claim that any payment adapter is implemented.
 
 ## Scope and evidence rules
@@ -69,7 +69,7 @@ and operational review.
 | AnyPay | P1 | Individual merchants are advertised | Mir/SBP acceptance must be distinguished from other card or payout features | Not a current priority | API/payment links and callbacks are advertised; verify signature and refunds | `needs_verification` | Run a method-by-method acceptance test with an eligible account |
 | ENOT | P2 | The public API lists methods, but individual eligibility is not established here | Mir and SBP appear in API material; acceptance and merchant type need proof | Not a current priority | API/callback surface exists; verify current webhook and status contracts | `needs_verification` | Keep in inventory; do not select for P0 implementation |
 | NOWPayments | P2 | Crypto merchant onboarding | Not the Russian-card/SBP path | Crypto payments | Hosted/API, webhooks, status and refunds depend on provider policy | `claimed` | Separate crypto adapter and compliance review |
-| OxaPay | P2 | Crypto merchant onboarding | Not the Russian-card/SBP path | Crypto payments | Invoices, merchant API and callbacks are advertised | `claimed` | Verify webhook signatures, settlement and refund model |
+| OxaPay | P1 for crypto | Simple registration and crypto merchant onboarding are advertised; exact merchant eligibility, jurisdiction, KYC/AML and payout restrictions require account-level confirmation | Mir and SBP are not confirmed and must remain disabled | BTC, ETH, USDT, USDC, TON and other assets/networks are documented; conversion to USDT requires settlement verification | Merchant Invoice, hosted checkout/payment links, white-label and static-address modes; API v1 invoice/status/history endpoints; HMAC-SHA512 webhooks; sandbox is documented; no public refund endpoint was confirmed | `needs_verification` | Confirm merchant offer and jurisdiction, exact networks/assets, fees/minimums/network costs, idempotency, refund/manual-refund policy, settlement finality and sandbox/live parity |
 | Cryptomus | P2 | Merchant eligibility and jurisdiction require confirmation | Not the Russian-card/SBP path | Crypto payments | Merchant API/invoices and callbacks are advertised | `needs_verification` | Confirm merchant eligibility, KYC and dispute/refund behavior |
 | PayKassa | P2 | Crypto gateway onboarding | Not the Russian-card/SBP path | Crypto payments | Gateway/API and callbacks are advertised | `claimed` | Verify current API, webhook signing and settlement finality |
 | Plisio | P1 for crypto | Personal wallet access is advertised; commercial API eligibility for an ordinary individual needs confirmation | Not the Russian-card/SBP path | Crypto payments | Gateway/API and callbacks are advertised; verify refund and settlement semantics | `needs_verification` | Confirm merchant eligibility, KYC and sandbox/live behavior |
@@ -112,7 +112,14 @@ Official entry points:
 - [AnyPay](https://anypay.io/)
 - [ENOT](https://enot.io/)
 - [NOWPayments](https://nowpayments.io/)
-- [OxaPay](https://oxapay.com/)
+- [OxaPay](https://oxapay.com/ru)
+- [OxaPay pricing](https://oxapay.com/ru/pricing)
+- [OxaPay API documentation](https://docs.oxapay.com/)
+- [OxaPay invoice API](https://docs.oxapay.com/api-reference/payment/generate-invoice)
+- [OxaPay payment information](https://docs.oxapay.com/api-reference/payment/payment-information)
+- [OxaPay payment status table](https://docs.oxapay.com/api-reference/payment/payment-status-table)
+- [OxaPay webhook verification](https://docs.oxapay.com/webhook)
+- [OxaPay terms and privacy policy](https://oxapay.com/terms-privacy-policy)
 - [Cryptomus](https://cryptomus.com/)
 - [PayKassa](https://paykassa.pro/)
 - [Plisio](https://plisio.net/)
@@ -147,6 +154,29 @@ Mir/SBP acceptance, webhook signatures, status lookup or settlement.
 | TabPay | [terms](https://tabpay.org/terms/) | Public offer and API must be checked together with the exact account. Terms appear to address payment aggregation/routing, accepting payments for third parties, third-party resources or API credentials, suspension/holds up to 180 days, and a 100% penalty with a 100,000 RUB minimum; quote and applicability require legal verification. |
 | Paydex | [canonical entry point](https://paydex.pro/) | Merchant eligibility, public offer, API, Mir/SBP acceptance, webhook/signature, status, refund and settlement evidence. `paydex.ru` is not treated as the canonical source and no common operator is assumed. |
 | AnyPay | [official entry point](https://anypay.io/) | Merchant eligibility, public offer, method-by-method Mir/SBP acceptance, API/webhook signature, status, refund and settlement evidence. |
+| OxaPay | [API documentation](https://docs.oxapay.com/); [invoice](https://docs.oxapay.com/api-reference/payment/generate-invoice); [status table](https://docs.oxapay.com/api-reference/payment/payment-status-table); [webhooks](https://docs.oxapay.com/webhook); [terms](https://oxapay.com/terms-privacy-policy) | Merchant eligibility, jurisdiction, KYC/AML and payout constraints; exact asset/network and fee/minimum rules; creation idempotency and `order_id`/`track_id` binding; original-byte HMAC-SHA512 and replay rules; `underpaid`, `manual_accept`, `refunding`, `refunded` and expiry semantics; refund/manual-refund policy; mixed-payment and USDT-conversion finality; sandbox/live parity. |
+
+### OxaPay incremental evidence
+
+The reviewed pricing page advertises 1.5% for Merchant Invoice and Payment Link,
+2% for White Label, and 2% plus a fixed component for Static Address. Individual
+terms are advertised from 0.4%; network, conversion, withdrawal and minimum-amount
+rules remain account- and route-dependent. These are published figures, not a
+merchant quote or settlement guarantee.
+
+The current API v1 evidence covers invoice creation with `track_id`, optional
+`order_id`, callback/return URLs, invoice lifetime and `sandbox`; status and
+history lookup; White Label and Static Address routes; and webhook signing as
+HMAC-SHA512 over the original request body using the Merchant API Key. Payouts
+use a separate key and are not refunds. The public index did not establish a
+provider refund endpoint or a creation idempotency contract, so both remain
+`needs_verification`.
+
+Status mapping must preserve the provider distinction between `paying` and
+`paid`, and must handle `underpaid`, `manual_accept`, `refunding`, `refunded`,
+`expired`, mixed payments and network confirmation before fulfillment. The API
+examples and status table use inconsistent event/type casing; an adapter must
+accept only a validated normalized form and retain the raw payload for audit.
 
 TabPay's terms also make multi-shop, multi-provider and platform use a
 `needs_verification` case. The audit must not treat a REST API or payment page
@@ -203,6 +233,15 @@ decision. Plisio and BTCPay Server are parallel P1 crypto candidates with
 different custody and operating models; CoinGate, CloudPayments and the other
 crypto providers remain P2 or verification work. None of them changes the core
 payment lifecycle or the Russian-card/SBP priority.
+
+OxaPay is a specialized P1 crypto candidate rather than a replacement for a
+Mir/SBP gateway. Its first possible adapter slice would map `track_id` and
+`order_id`, verify the original webhook bytes with HMAC-SHA512, query the
+authoritative status endpoint, and preserve `UnknownOutcome` until settlement
+is proven. `paying` must not be treated as `paid`; `underpaid`, `manual_accept`,
+mixed payments, network confirmations and USDT conversion require explicit
+policy. Refund support remains unavailable by default until a documented
+provider refund or manual-refund procedure is verified.
 
 YooKassa's documented non-resident path is a separate company-and-contract
 scenario, not a substitute for the ordinary-individual-without-IP target. It
