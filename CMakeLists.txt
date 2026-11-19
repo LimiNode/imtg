@@ -98,6 +98,8 @@ install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/imtgConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/imtgConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/imtg)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/imtg")
 
 if(BUILD_TESTING)
     add_subdirectory(tests)

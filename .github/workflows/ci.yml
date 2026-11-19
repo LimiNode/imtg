@@ -22,6 +22,8 @@ jobs:
         run: ctest --test-dir build/ci-${{ matrix.os }}-${{ matrix.build_type }} --build-config ${{ matrix.build_type }} --output-on-failure
       - name: Install
         run: cmake --install build/ci-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --prefix build/install-${{ matrix.os }}-${{ matrix.build_type }}
+      - name: Verify installed license
+        run: cmake -DIMTG_SOURCE_DIR=${{ github.workspace }} -DIMTG_INSTALL_PREFIX=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }} -P cmake/CheckInstalledLicense.cmake
       - name: Configure public-header checks
         run: cmake -S tests/public_headers -B build/headers-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DIMTG_REQUIRE_COMMERCE=ON -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build public-header checks
@@ -30,10 +32,14 @@ jobs:
         run: cmake -S tests/install_consumer -B build/consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build installed consumer
         run: cmake --build build/consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
+      - name: Run installed consumer smoke test
+        run: ctest --test-dir build/consumer-${{ matrix.os }}-${{ matrix.build_type }} --build-config ${{ matrix.build_type }} --output-on-failure
       - name: Configure installed commerce consumer
         run: cmake -S tests/install_commerce_consumer -B build/commerce-consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build installed commerce consumer
         run: cmake --build build/commerce-consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
+      - name: Run installed commerce consumer smoke test
+        run: ctest --test-dir build/commerce-consumer-${{ matrix.os }}-${{ matrix.build_type }} --build-config ${{ matrix.build_type }} --output-on-failure
 
   sanitizers:
     runs-on: ubuntu-latest
@@ -67,6 +73,8 @@ jobs:
         run: ctest --test-dir build/core-only --output-on-failure
       - name: Install core-only package
         run: cmake --install build/core-only --prefix build/install-core-only
+      - name: Verify core-only installed license
+        run: cmake -DIMTG_SOURCE_DIR=${{ github.workspace }} -DIMTG_INSTALL_PREFIX=${{ github.workspace }}/build/install-core-only -P cmake/CheckInstalledLicense.cmake
       - name: Configure core-only public-header boundary
         run: cmake -S tests/public_headers -B build/core-only-headers -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-core-only
       - name: Build core-only public-header boundary
@@ -75,6 +83,8 @@ jobs:
         run: cmake -S tests/install_consumer -B build/core-only-consumer -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-core-only
       - name: Build core-only consumer
         run: cmake --build build/core-only-consumer --parallel
+      - name: Run core-only consumer smoke test
+        run: ctest --test-dir build/core-only-consumer --output-on-failure
 
   mdbx:
     strategy:
@@ -99,10 +109,14 @@ jobs:
         run: ctest --test-dir build/mdbx-${{ matrix.os }}-${{ matrix.build_type }} -C ${{ matrix.build_type }} --output-on-failure
       - name: Install source-only adapter package boundary
         run: cmake --install build/mdbx-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --prefix build/mdbx-install-${{ matrix.os }}-${{ matrix.build_type }}
+      - name: Verify MDBX profile installed license
+        run: cmake -DIMTG_SOURCE_DIR=${{ github.workspace }} -DIMTG_INSTALL_PREFIX=${{ github.workspace }}/build/mdbx-install-${{ matrix.os }}-${{ matrix.build_type }} -P cmake/CheckInstalledLicense.cmake
       - name: Configure installed core consumer without MDBX API
         run: cmake -S tests/install_consumer -B build/mdbx-consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/mdbx-install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build installed core consumer
         run: cmake --build build/mdbx-consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
+      - name: Run installed core consumer smoke test
+        run: ctest --test-dir build/mdbx-consumer-${{ matrix.os }}-${{ matrix.build_type }} --build-config ${{ matrix.build_type }} --output-on-failure
 
   documentation:
     runs-on: ubuntu-latest
