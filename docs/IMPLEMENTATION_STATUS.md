@@ -29,7 +29,7 @@ Ten domains expose root-level umbrellas, with `telegram` and `logging`
 remaining optional.
 All old installed leaf paths remain; the nested umbrellas forward to the root
 entry points. The explicit manifest contains 29 core-package, seven optional
-commerce, and two optional Telegram entry points. Core does not include
+commerce, two optional Telegram, and two optional logging entry points. Core does not include
 optional adapters, commerce, or Telegram. Installed-header tests check each
 enabled package inventory and every supported header as a first include.
 

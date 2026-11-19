@@ -5,12 +5,21 @@
 #include "test_support.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
 namespace {
+
+class ThrowingLogger final : public logit::MemoryLogger {
+public:
+    void log(const logit::LogRecord&, const std::string&) override
+    {
+        throw std::runtime_error("untrusted backend failure");
+    }
+};
 
 imtg::telegram::Update text_update(std::uint64_t update_id,
                                     std::string text)
@@ -87,5 +96,42 @@ int main()
             imtg::telegram::UpdateOutcome::Rejected, text_update(id, "payload"));
     }
     CHECK(LOGIT_GET_BUFFERED_STRINGS(1).size() == 2);
+
+    // Identity disclosure is opt-in, including callbacks retained by value.
+    LOGIT_ADD_MEMORY_LOGGER(4, 4096, 0);
+    imtg::ReferenceRuntime::ErrorFunction retained;
+    {
+        imtg::logging::LogitAdapter private_adapter;
+        retained = private_adapter.runtime_error_sink();
+    }
+    retained(key, imtg::Error{imtg::ErrorCode::RuntimeFailure, "secret"});
+    const auto private_messages = LOGIT_GET_BUFFERED_STRINGS(2);
+    CHECK(private_messages.size() == 1);
+    CHECK(private_messages[0].find("bot_id") == std::string::npos);
+    CHECK(private_messages[0].find("chat_id") == std::string::npos);
+    CHECK(private_messages[0].find("secret") == std::string::npos);
+
+    logit::Logger::get_instance().add_logger(
+        std::make_unique<ThrowingLogger>(),
+        std::make_unique<logit::SimpleLogFormatter>("%v"));
+    imtg::ManualClock clock(imtg::ClockTime{});
+    imtg::PlainTokenCodec codec;
+    imtg::ActionRegistry actions(codec, clock);
+    std::atomic<int> completed{0};
+    imtg::ReferenceRuntime runtime(actions, {}, {}, retained);
+    CHECK(runtime.submit_callback(key, []() -> imtg::Result<void> {
+        return imtg::Error{imtg::ErrorCode::RuntimeFailure, "secret task"};
+    }));
+    CHECK(runtime.submit_callback(key, [&completed]() -> imtg::Result<void> {
+        ++completed;
+        return {};
+    }));
+    CHECK(runtime.shutdown());
+    CHECK(completed == 1);
+    // imtg shutdown must not shut down the application-owned logger.
+    logit::Logger::get_instance().set_logger_enabled(3, false);
+    const auto before = LOGIT_GET_BUFFERED_STRINGS(0).size();
+    adapter.record_runtime_shutdown(imtg::Result<void>());
+    CHECK(LOGIT_GET_BUFFERED_STRINGS(0).size() == before + 1);
     return 0;
 }

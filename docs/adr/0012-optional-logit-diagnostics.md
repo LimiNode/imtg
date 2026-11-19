@@ -47,6 +47,9 @@ Tests use the bounded `MemoryLogger` to prove stable event coverage, retention
 limits, identifier opt-in, and absence of sensitive fixture strings. The
 optional installed-consumer test verifies that exported `imtg::logit`,
 LogIt++, and TimeShield packages resolve together from a clean prefix.
+Consumers request `find_package(imtg CONFIG REQUIRED COMPONENTS logit)`;
+the separate logging export is not loaded by a base core consumer. The C++17
+language setting applies only to adapter and logger fixtures, not globally.
 
 ## Consequences
 

@@ -23,7 +23,7 @@ foreach(entry IN LISTS entries)
     list(APPEND paths "${CMAKE_MATCH_1}")
 endforeach()
 list(SORT paths)
-if(NOT "${paths}" STREQUAL "external/libmdbx;external/mdbx-containers")
+if(NOT "${paths}" STREQUAL "external/libmdbx;external/log-it-cpp;external/mdbx-containers;external/time-shield-cpp")
     message(FATAL_ERROR "Update the dependency audit for the new inventory: ${paths}")
 endif()
 

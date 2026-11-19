@@ -91,12 +91,6 @@ if(IMTG_BUILD_LOGIT)
             "IMTG_BUILD_LOGIT requires CMake 3.18 or newer for the pinned LogIt++ v1.0.2 provider; "
             "core-only imtg builds still support CMake 3.16")
     endif()
-    # LogIt++ v1.0.2 predates the C++20 char8_t filesystem API.  Keep the
-    # optional profile on the repository's C++17 baseline; core-only profiles
-    # retain their existing compiler-standard policy.
-    set(CMAKE_CXX_STANDARD 17)
-    set(CMAKE_CXX_STANDARD_REQUIRED YES)
-    set(CMAKE_CXX_EXTENSIONS OFF)
     set(IMTG_LOGIT_SOURCE_DIR
         "${CMAKE_CURRENT_SOURCE_DIR}/external/log-it-cpp" CACHE PATH
         "Pinned LogIt++ source used by the optional diagnostics adapter")
@@ -149,6 +143,10 @@ if(IMTG_BUILD_LOGIT)
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
     target_link_libraries(imtg_logit PUBLIC imtg::core imtg::telegram
         log-it-cpp::log-it-cpp)
+    install(FILES "${IMTG_LOGIT_SOURCE_DIR}/LICENSE"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/log-it-cpp")
+    install(FILES "${IMTG_TIME_SHIELD_SOURCE_DIR}/LICENSE"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/time-shield-cpp")
 endif()
 
 install(TARGETS imtg_core EXPORT imtgTargets)
@@ -159,7 +157,11 @@ if(IMTG_BUILD_TELEGRAM)
     install(TARGETS imtg_telegram EXPORT imtgTargets)
 endif()
 if(IMTG_BUILD_LOGIT)
-    install(TARGETS imtg_logit EXPORT imtgTargets)
+    install(TARGETS imtg_logit EXPORT imtgLogitTargets)
+    install(EXPORT imtgLogitTargets
+        FILE imtgLogitTargets.cmake
+        NAMESPACE imtg::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/imtg)
 endif()
 include(cmake/ImtgPublicHeaders.cmake)
 set(imtg_install_headers ${IMTG_CORE_PUBLIC_HEADERS})
@@ -204,6 +206,9 @@ if(BUILD_TESTING)
             COMMAND ${CMAKE_COMMAND}
                 -DIMTG_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
                 -DIMTG_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                -DIMTG_CONFIG=$<CONFIG>
+                "-DIMTG_CONSUMER_CXX_FLAGS=${CMAKE_CXX_FLAGS}"
+                "-DIMTG_CONSUMER_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}"
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckLogitInstalledConsumer.cmake)
         set_tests_properties(imtg_logit_installed_consumer PROPERTIES TIMEOUT 180)
     endif()

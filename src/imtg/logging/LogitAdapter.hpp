@@ -43,6 +43,10 @@ struct LogitOptions {
 /// payloads, credentials, HTTP headers, or `Error::message`. LogIt++ owns its
 /// global logger lifecycle; destroying or shutting down an imtg runtime does
 /// not shut down LogIt++.
+/// Use `<imtg/logging.hpp>` or this standalone header and link `imtg::logit`.
+/// Installed consumers request the `logit` CMake component. Callbacks capture
+/// options by value and may outlive the adapter. Applications must select bounded,
+/// non-waiting drop policies and avoid blocking backends on runtime workers.
 class LogitAdapter {
 public:
     /// \brief Creates a value-owned observer adapter.

@@ -1,8 +1,14 @@
 @PACKAGE_INIT@
 
-if(@IMTG_BUILD_LOGIT@)
+include("${CMAKE_CURRENT_LIST_DIR}/imtgTargets.cmake")
+
+# Resolve the logger only when explicitly requested; core consumers of a
+# combined install must still work with no LogIt++ package on their path.
+if("logit" IN_LIST imtg_FIND_COMPONENTS AND @IMTG_BUILD_LOGIT@)
     include(CMakeFindDependencyMacro)
     find_dependency(log-it-cpp 1.0.2 CONFIG)
+    include("${CMAKE_CURRENT_LIST_DIR}/imtgLogitTargets.cmake")
+    set(imtg_logit_FOUND TRUE)
 endif()
 
-include("${CMAKE_CURRENT_LIST_DIR}/imtgTargets.cmake")
+check_required_components(imtg)

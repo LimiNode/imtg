@@ -34,6 +34,8 @@ endif()
 if(IMTG_BUILD_LOGIT)
     add_executable(imtg_logit_adapter_tests logit_adapter_tests.cpp)
     target_link_libraries(imtg_logit_adapter_tests PRIVATE imtg::logit)
+    set_target_properties(imtg_logit_adapter_tests PROPERTIES
+        CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS OFF)
     add_test(NAME imtg_logit_adapter_tests COMMAND imtg_logit_adapter_tests)
 endif()
 add_test(NAME imtg_storage_tests COMMAND imtg_storage_tests)

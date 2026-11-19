@@ -15,6 +15,7 @@ if(IMTG_REQUIRE_TELEGRAM)
 endif()
 option(IMTG_REQUIRE_LOGIT "Check optional LogIt++ headers and target" OFF)
 if(IMTG_REQUIRE_LOGIT)
+    find_package(imtg CONFIG REQUIRED COMPONENTS logit)
     list(APPEND IMTG_PUBLIC_HEADERS ${IMTG_LOGGING_PUBLIC_HEADERS})
 endif()
 
