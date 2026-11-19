@@ -28,6 +28,7 @@ if(IMTG_BUILD_TELEGRAM)
     add_executable(imtg_telegram_gateway_tests telegram_gateway_tests.cpp)
     target_link_libraries(imtg_telegram_gateway_tests PRIVATE imtg::telegram)
     add_test(NAME imtg_telegram_gateway_tests COMMAND imtg_telegram_gateway_tests)
+    set_tests_properties(imtg_telegram_gateway_tests PROPERTIES TIMEOUT 30)
 endif()
 add_test(NAME imtg_storage_tests COMMAND imtg_storage_tests)
 

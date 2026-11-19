@@ -46,6 +46,10 @@ edited messages, chat-member changes, join requests and payment updates are not
 part of this boundary yet. The existing per-`ConversationKey` scheduler and
 bounded queue remain the ownership boundary. A flood produces an observable
 overload result (`QueueFull` or `Closed`) rather than unbounded memory growth.
+The completed-history ring is allocated when the router is constructed;
+completion reuses the admission node and performs no allocation. Failed
+admission rolls back only a reservation owned by that call, never another
+concurrent admission of the same identity.
 
 For commands, `/start` is unaddressed and `/start@this_bot` is accepted only
 when the router is configured with the trusted bot username. An addressed

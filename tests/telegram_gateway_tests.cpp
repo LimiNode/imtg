@@ -303,6 +303,8 @@ int main()
           == imtg::telegram::UpdateOutcome::Duplicate);
     CHECK(queue_router.receive(text_update(11, 9, -101, 42, "two"))
           == imtg::telegram::UpdateOutcome::Accepted);
+    CHECK(queue_router.receive(text_update(10, 9, -101, 42, "one"))
+          == imtg::telegram::UpdateOutcome::Duplicate);
     CHECK(queue_router.receive(text_update(12, 9, -101, 42, "three"))
           == imtg::telegram::UpdateOutcome::QueueFull);
     {
@@ -312,6 +314,10 @@ int main()
     queue_condition.notify_all();
     CHECK(queue_runtime.shutdown());
     CHECK(queue_handled == 2);
+    CHECK(queue_router.receive(text_update(11, 9, -101, 42, "two"))
+          == imtg::telegram::UpdateOutcome::Duplicate);
+    CHECK(queue_router.receive(text_update(10, 9, -101, 42, "one"))
+          == imtg::telegram::UpdateOutcome::Closed);
 
     std::mutex concurrent_mutex;
     std::condition_variable concurrent_condition;

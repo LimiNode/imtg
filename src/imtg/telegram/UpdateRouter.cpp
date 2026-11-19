@@ -139,12 +139,14 @@ struct UpdateRouter::DeduplicationState {
     explicit DeduplicationState(std::size_t max_seen)
         : max_seen_updates(max_seen)
     {
+        seen_order.reserve(max_seen_updates);
     }
 
     mutable std::mutex mutex;
-    std::unordered_set<UpdateIdentity, UpdateIdentityHash> in_flight_updates;
-    std::unordered_set<UpdateIdentity, UpdateIdentityHash> seen_updates;
-    std::deque<UpdateIdentity> seen_order;
+    // One node is allocated at admission and retained through completion.
+    std::unordered_set<UpdateIdentity, UpdateIdentityHash> reserved_updates;
+    std::vector<UpdateIdentity> seen_order;
+    std::size_t next_completed = 0;
     const std::size_t max_seen_updates;
 };
 
@@ -306,34 +308,20 @@ UpdateRouter::RoutePtr UpdateRouter::select_route(const Update& update) const
 void UpdateRouter::forget(const UpdateIdentity& identity)
 {
     std::lock_guard<std::mutex> lock(m_deduplication->mutex);
-    m_deduplication->in_flight_updates.erase(identity);
+    m_deduplication->reserved_updates.erase(identity);
 }
 
 void UpdateRouter::complete(const std::shared_ptr<DeduplicationState>& state,
                             const UpdateIdentity& identity) noexcept
 {
     std::lock_guard<std::mutex> lock(state->mutex);
-    if (state->in_flight_updates.find(identity) == state->in_flight_updates.end()) return;
-    try {
-        const auto insertion = state->seen_updates.insert(identity);
-        if (!insertion.second) {
-            state->in_flight_updates.erase(identity);
-            return;
-        }
-        try {
-            state->seen_order.push_back(identity);
-        } catch (...) {
-            state->seen_updates.erase(identity);
-            return;
-        }
-        while (state->seen_order.size() > state->max_seen_updates) {
-            state->seen_updates.erase(state->seen_order.front());
-            state->seen_order.pop_front();
-        }
-        state->in_flight_updates.erase(identity);
-    } catch (...) {
-        // Keep the in-flight reservation on allocation failure. A duplicate
-        // must remain rejected rather than becoming an implicit retry.
+    if (state->reserved_updates.find(identity) == state->reserved_updates.end()) return;
+    if (state->seen_order.size() < state->max_seen_updates) {
+        state->seen_order.push_back(identity);
+    } else {
+        state->reserved_updates.erase(state->seen_order[state->next_completed]);
+        state->seen_order[state->next_completed] = identity;
+        state->next_completed = (state->next_completed + 1) % state->max_seen_updates;
     }
 }
 
@@ -346,16 +334,15 @@ UpdateOutcome UpdateRouter::receive(Update update)
     RoutePtr route;
     MiddlewareList middleware;
     ConversationKey key;
+    bool reserved = false;
     try {
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             if (!m_accepting) return UpdateOutcome::Closed;
             m_started = true;
             std::lock_guard<std::mutex> deduplication_lock(deduplication->mutex);
-            if (deduplication->in_flight_updates.find(identity)
-                    != deduplication->in_flight_updates.end()
-                || deduplication->seen_updates.find(identity)
-                    != deduplication->seen_updates.end()) {
+            if (deduplication->reserved_updates.find(identity)
+                    != deduplication->reserved_updates.end()) {
                 return UpdateOutcome::Duplicate;
             }
             route = select_route(update);
@@ -363,8 +350,9 @@ UpdateOutcome UpdateRouter::receive(Update update)
             auto conversation = make_conversation_key(update);
             if (!conversation) return UpdateOutcome::Invalid;
             key = conversation.value();
-            const auto insertion = deduplication->in_flight_updates.insert(identity);
+            const auto insertion = deduplication->reserved_updates.insert(identity);
             if (!insertion.second) return UpdateOutcome::Duplicate;
+            reserved = true;
             // The in-flight reservation is the admission record. Completed
             // history is updated only after the callback returns.
             middleware = m_middleware;
@@ -437,7 +425,7 @@ UpdateOutcome UpdateRouter::receive(Update update)
     } catch (...) {
         // Admission is fail-closed: a failed allocation or callback wrapper
         // construction must not consume the deduplication slot permanently.
-        forget(identity);
+        if (reserved) forget(identity);
         return UpdateOutcome::Rejected;
     }
 }
