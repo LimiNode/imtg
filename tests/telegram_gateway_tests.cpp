@@ -132,6 +132,8 @@ int main()
           == imtg::telegram::UpdateOutcome::Invalid);
     CHECK(router.receive(text_update(16, 7, -100, 42, "/START"))
           == imtg::telegram::UpdateOutcome::Invalid);
+    CHECK(router.receive(text_update(17, 7, -100, 42, "/"))
+          == imtg::telegram::UpdateOutcome::Invalid);
 
     imtg::telegram::UpdateRouter invalid_route_router(runtime);
     CHECK(!invalid_route_router.add_route(imtg::telegram::Route{
@@ -444,6 +446,46 @@ int main()
     }
     independent_condition.notify_all();
     CHECK(independent_runtime.shutdown());
+
+    // Accepted callbacks retain completion state independently of the router,
+    // so the router may be destroyed before the runtime drains its work.
+    std::mutex lifetime_mutex;
+    std::condition_variable lifetime_condition;
+    bool lifetime_started = false;
+    bool lifetime_release = false;
+    std::size_t lifetime_handled = 0;
+    imtg::ReferenceRuntime lifetime_runtime(
+        actions, {}, {}, {}, test_runtime_config(2));
+    {
+        imtg::telegram::UpdateRouter lifetime_router(lifetime_runtime);
+        CHECK(lifetime_router.add_route(imtg::telegram::Route{
+            imtg::telegram::UpdateKind::TextMessage, {}, {},
+            imtg::telegram::HandlerMode::Headless, {}, {},
+            [&lifetime_mutex, &lifetime_condition, &lifetime_started,
+             &lifetime_release, &lifetime_handled](const imtg::telegram::UpdateContext&) {
+                std::unique_lock<std::mutex> lock(lifetime_mutex);
+                lifetime_started = true;
+                ++lifetime_handled;
+                lifetime_condition.notify_all();
+                lifetime_condition.wait(lock, [&lifetime_release] {
+                    return lifetime_release;
+                });
+                return imtg::Result<void>();
+            }}));
+        CHECK(lifetime_router.receive(text_update(70, 41, -401, 42, "lifetime"))
+              == imtg::telegram::UpdateOutcome::Accepted);
+        std::unique_lock<std::mutex> lock(lifetime_mutex);
+        CHECK(wait_bounded(lifetime_condition, lock,
+                           [&lifetime_started] { return lifetime_started; }));
+    }
+    {
+        std::lock_guard<std::mutex> lock(lifetime_mutex);
+        lifetime_release = true;
+    }
+    lifetime_condition.notify_all();
+    CHECK(lifetime_runtime.shutdown());
+    CHECK(lifetime_handled == 1);
+
     CHECK(runtime.shutdown());
     return 0;
 }

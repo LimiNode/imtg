@@ -68,7 +68,7 @@ ParsedCommand parse_command(std::string_view text)
 
 bool is_bot_command(std::string_view text) noexcept
 {
-    return text.size() > 1 && text.front() == '/';
+    return !text.empty() && text.front() == '/';
 }
 
 RouterConfig normalized_config(RouterConfig config) noexcept
@@ -135,11 +135,25 @@ std::size_t UpdateRouter::UpdateIdentityHash::operator()(
     return seed;
 }
 
+struct UpdateRouter::DeduplicationState {
+    explicit DeduplicationState(std::size_t max_seen)
+        : max_seen_updates(max_seen)
+    {
+    }
+
+    mutable std::mutex mutex;
+    std::unordered_set<UpdateIdentity, UpdateIdentityHash> in_flight_updates;
+    std::unordered_set<UpdateIdentity, UpdateIdentityHash> seen_updates;
+    std::deque<UpdateIdentity> seen_order;
+    const std::size_t max_seen_updates;
+};
+
 UpdateRouter::UpdateRouter(ReferenceRuntime& runtime,
                            RouterConfig config,
                            OutcomeSink outcome_sink)
     : m_runtime(runtime), m_config(normalized_config(config)),
-      m_outcome_sink(std::move(outcome_sink))
+      m_outcome_sink(std::move(outcome_sink)),
+      m_deduplication(std::make_shared<DeduplicationState>(m_config.max_seen_updates))
 {
 }
 
@@ -291,31 +305,32 @@ UpdateRouter::RoutePtr UpdateRouter::select_route(const Update& update) const
 
 void UpdateRouter::forget(const UpdateIdentity& identity)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_in_flight_updates.erase(identity);
+    std::lock_guard<std::mutex> lock(m_deduplication->mutex);
+    m_deduplication->in_flight_updates.erase(identity);
 }
 
-void UpdateRouter::complete(const UpdateIdentity& identity) noexcept
+void UpdateRouter::complete(const std::shared_ptr<DeduplicationState>& state,
+                            const UpdateIdentity& identity) noexcept
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_in_flight_updates.find(identity) == m_in_flight_updates.end()) return;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    if (state->in_flight_updates.find(identity) == state->in_flight_updates.end()) return;
     try {
-        const auto insertion = m_seen_updates.insert(identity);
+        const auto insertion = state->seen_updates.insert(identity);
         if (!insertion.second) {
-            m_in_flight_updates.erase(identity);
+            state->in_flight_updates.erase(identity);
             return;
         }
         try {
-            m_seen_order.push_back(identity);
+            state->seen_order.push_back(identity);
         } catch (...) {
-            m_seen_updates.erase(identity);
+            state->seen_updates.erase(identity);
             return;
         }
-        while (m_seen_order.size() > m_config.max_seen_updates) {
-            m_seen_updates.erase(m_seen_order.front());
-            m_seen_order.pop_front();
+        while (state->seen_order.size() > state->max_seen_updates) {
+            state->seen_updates.erase(state->seen_order.front());
+            state->seen_order.pop_front();
         }
-        m_in_flight_updates.erase(identity);
+        state->in_flight_updates.erase(identity);
     } catch (...) {
         // Keep the in-flight reservation on allocation failure. A duplicate
         // must remain rejected rather than becoming an implicit retry.
@@ -325,6 +340,7 @@ void UpdateRouter::complete(const UpdateIdentity& identity) noexcept
 UpdateOutcome UpdateRouter::receive(Update update)
 {
     const auto identity = UpdateIdentity{update.bot_id, update.update_id};
+    const auto deduplication = m_deduplication;
     if (!validate(update)) return UpdateOutcome::Invalid;
 
     RoutePtr route;
@@ -335,8 +351,11 @@ UpdateOutcome UpdateRouter::receive(Update update)
             std::lock_guard<std::mutex> lock(m_mutex);
             if (!m_accepting) return UpdateOutcome::Closed;
             m_started = true;
-            if (m_in_flight_updates.find(identity) != m_in_flight_updates.end()
-                || m_seen_updates.find(identity) != m_seen_updates.end()) {
+            std::lock_guard<std::mutex> deduplication_lock(deduplication->mutex);
+            if (deduplication->in_flight_updates.find(identity)
+                    != deduplication->in_flight_updates.end()
+                || deduplication->seen_updates.find(identity)
+                    != deduplication->seen_updates.end()) {
                 return UpdateOutcome::Duplicate;
             }
             route = select_route(update);
@@ -344,7 +363,7 @@ UpdateOutcome UpdateRouter::receive(Update update)
             auto conversation = make_conversation_key(update);
             if (!conversation) return UpdateOutcome::Invalid;
             key = conversation.value();
-            const auto insertion = m_in_flight_updates.insert(identity);
+            const auto insertion = deduplication->in_flight_updates.insert(identity);
             if (!insertion.second) return UpdateOutcome::Duplicate;
             // The in-flight reservation is the admission record. Completed
             // history is updated only after the callback returns.
@@ -355,7 +374,7 @@ UpdateOutcome UpdateRouter::receive(Update update)
         const auto sink = m_outcome_sink;
         const auto accepted = m_runtime.submit_callback(
             key,
-            [this, identity, route, middleware, context = std::move(context), sink]() mutable
+            [deduplication, identity, route, middleware, context = std::move(context), sink]() mutable
                 -> Result<void> {
                 const auto report = [&sink, &context](UpdateOutcome outcome, const Error& error) {
                     if (!sink) return;
@@ -366,21 +385,21 @@ UpdateOutcome UpdateRouter::receive(Update update)
                         const auto result = policy(context);
                         if (!result) {
                             report(UpdateOutcome::Rejected, result.error());
-                            complete(identity);
+                            complete(deduplication, identity);
                             return result;
                         }
                     }
                     const auto binding = validate_binding(route->binding, context);
                     if (!binding) {
                         report(UpdateOutcome::Unauthorized, binding.error());
-                        complete(identity);
+                        complete(deduplication, identity);
                         return binding;
                     }
                     if (route->authorize) {
                         const auto result = route->authorize(context);
                         if (!result) {
                             report(UpdateOutcome::Unauthorized, result.error());
-                            complete(identity);
+                            complete(deduplication, identity);
                             return result;
                         }
                     }
@@ -388,24 +407,24 @@ UpdateOutcome UpdateRouter::receive(Update update)
                         const auto result = route->check_stale(context);
                         if (!result) {
                             report(UpdateOutcome::Stale, result.error());
-                            complete(identity);
+                            complete(deduplication, identity);
                             return result;
                         }
                     }
                     const auto result = route->handler(context);
                     if (!result) report(UpdateOutcome::HandlerFailed, result.error());
-                    complete(identity);
+                    complete(deduplication, identity);
                     return result;
                 } catch (const std::exception& exception) {
                     const Error error{ErrorCode::HandlerUnavailable, exception.what()};
                     report(UpdateOutcome::HandlerFailed, error);
-                    complete(identity);
+                    complete(deduplication, identity);
                     return error;
                 } catch (...) {
                     const Error error{ErrorCode::HandlerUnavailable,
                                       "telegram route callback threw an unknown exception"};
                     report(UpdateOutcome::HandlerFailed, error);
-                    complete(identity);
+                    complete(deduplication, identity);
                     return error;
                 }
             });

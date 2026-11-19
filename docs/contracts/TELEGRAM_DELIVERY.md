@@ -57,6 +57,12 @@ and bounded to the same maximum. Both are checked before routing. Exact callback
 take precedence over wildcard callback routes, with registration order used for
 ties.
 
+`UpdateRouter::close()` stops admission but does not join the runtime. Accepted
+callbacks retain their bounded deduplication state and may finish after the
+router object is destroyed; the owning application still must keep the runtime,
+handler captures and outcome sink valid until `ReferenceRuntime::shutdown()`
+completes. No callback is started after the runtime rejects admission.
+
 Handlers are either interactive or headless. Interactive handlers may use
 session/FSM state and create a render intent. Headless handlers process
 moderation, payment, background or administrative updates without creating a

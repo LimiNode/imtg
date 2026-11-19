@@ -162,6 +162,8 @@ public:
     /// rejection/failure; it must tolerate concurrent calls and must not throw.
     /// \pre `runtime` and every object referenced by route, middleware, or sink
     ///     captures outlive this router and the runtime's final `shutdown()`.
+    ///     Accepted callbacks retain their bounded admission state, so the
+    ///     router itself may be destroyed before that shutdown completes.
     explicit UpdateRouter(ReferenceRuntime& runtime,
                           RouterConfig config = {},
                           OutcomeSink outcome_sink = {});
@@ -193,6 +195,8 @@ public:
     void close() noexcept;
 
 private:
+    struct DeduplicationState;
+
     struct UpdateIdentityHash {
         std::size_t operator()(const UpdateIdentity& value) const noexcept;
     };
@@ -205,17 +209,16 @@ private:
     [[nodiscard]] RoutePtr select_route(const Update& update) const;
     [[nodiscard]] bool matches(const Route& route, const Update& update) const;
     void forget(const UpdateIdentity& identity);
-    void complete(const UpdateIdentity& identity) noexcept;
+    static void complete(const std::shared_ptr<DeduplicationState>& state,
+                         const UpdateIdentity& identity) noexcept;
 
     ReferenceRuntime& m_runtime;
     const RouterConfig m_config;
     OutcomeSink m_outcome_sink;
+    const std::shared_ptr<DeduplicationState> m_deduplication;
     mutable std::mutex m_mutex;
     std::vector<RoutePtr> m_routes;
     MiddlewareList m_middleware = std::make_shared<const std::vector<Middleware>>();
-    std::unordered_set<UpdateIdentity, UpdateIdentityHash> m_in_flight_updates;
-    std::unordered_set<UpdateIdentity, UpdateIdentityHash> m_seen_updates;
-    std::deque<UpdateIdentity> m_seen_order;
     bool m_started = false;
     bool m_accepting = true;
 };
