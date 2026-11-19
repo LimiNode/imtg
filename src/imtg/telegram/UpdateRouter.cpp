@@ -136,7 +136,7 @@ Result<void> UpdateRouter::validate(const Update& update) const
         using Payload = std::decay_t<decltype(payload)>;
         if (payload.chat_id.value == 0 || payload.user_id.value == 0
             || payload.message_id.value <= 0
-            || payload.message_id.chat_id != payload.chat_id) {
+            || !(payload.message_id.chat_id == payload.chat_id)) {
             return Error{ErrorCode::InvalidArgument, "telegram update identity is incomplete"};
         }
         if constexpr (std::is_same_v<Payload, TextMessage>) {
@@ -181,18 +181,18 @@ bool UpdateRouter::matches(const Route& route, const Update& update) const
 
 Result<void> validate_binding(const UpdateBinding& binding, const UpdateContext& context)
 {
-    if (binding.bot_id && context.update.bot_id != *binding.bot_id) {
+    if (binding.bot_id && !(context.update.bot_id == *binding.bot_id)) {
         return Error{ErrorCode::InvalidArgument, "telegram route bot binding mismatched"};
     }
     return std::visit([&binding](const auto& payload) -> Result<void> {
-        if (binding.chat_id && payload.chat_id != *binding.chat_id) {
+        if (binding.chat_id && !(payload.chat_id == *binding.chat_id)) {
             return Error{ErrorCode::InvalidArgument, "telegram route chat binding mismatched"};
         }
-        if (binding.user_id && payload.user_id != *binding.user_id) {
+        if (binding.user_id && !(payload.user_id == *binding.user_id)) {
             return Error{ErrorCode::InvalidArgument, "telegram route user binding mismatched"};
         }
         if (binding.message_id
-            && (payload.message_id.chat_id != binding.message_id->chat_id
+            && (!(payload.message_id.chat_id == binding.message_id->chat_id)
                 || payload.message_id.value != binding.message_id->value)) {
             return Error{ErrorCode::InvalidArgument, "telegram route message binding mismatched"};
         }
