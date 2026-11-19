@@ -49,6 +49,13 @@ asset scales, binds authenticated evidence to payment identities, and exposes
 an atomic payment/event transaction boundary. These are contract and test
 baselines, not durable storage or live provider integration.
 
+Scenario-package support is also documentation-only. The optional
+`imtg_scenarios` direction is recorded in [ADR 0012](adr/0012-optional-scenario-packages.md)
+and [the capability audit](research/TG_STATEMACHINE_BOT_CAPABILITY_AUDIT.md):
+validated graph/resource/schema loading, offline simulation and DOT export may
+be implemented after alpha, while `imtg::Fsm` and the C++ registration path
+remain the implemented state-machine boundary.
+
 The optional `imtg-admin` operator console is also documentation-only. Its
 ImGuiX-based UI and the GUI-shell ideas referenced from `mgc-platform` are not
 dependencies of `imtg_core`; an authenticated operator API, authorization and
@@ -65,6 +72,7 @@ audit contract must be accepted before a separate GUI target is implemented.
 | Controllers and application model | `partial` | M1d reference runtime provides render/command callbacks; richer controller composition remains planned |
 | Conversation scheduler and reference runtime | `partial` | M1d bounded worker pool with per-key serial mailboxes, transactional admission rollback, bounded queues, synchronous commands, fake reconciler, allocation-safe observable fail-stop status, bounded publication/shutdown and notification tests |
 | FSM and sessions | `implemented` | [SESSIONS_AND_FSM.md](contracts/SESSIONS_AND_FSM.md); `src/imtg/sessions/`; `imtg_session_tests` covers encoding, transitions, deduplication, conflicts, and atomic TX1 |
+| Declarative scenario packages and tooling | `planned` | [ADR 0012](adr/0012-optional-scenario-packages.md) and [source audit](research/TG_STATEMACHINE_BOT_CAPABILITY_AUDIT.md); optional loader, validator, offline simulator and DOT export remain after alpha |
 | Storage protocol and in-memory backend | `implemented` | [STORAGE.md](contracts/STORAGE.md); `src/imtg/storage/storage.hpp`; fixture-based `imtg_storage_tests` conformance suite with revision, ABA, schema-gate, ownership, and commit-outcome coverage |
 | Durable repositories and MDBX backend | `partial` | M2d-a optional source-build `imtg_mdbx` target, pinned `mdbx-containers`/`libmdbx`, six-DBI profile, shared conformance and persistence/reopen tests; package export and crash proof remain M2d-b/M2e |
 | Telegram transport / kurlyk | `planned` | M3 adapter tests against fakes and documented API limits |
