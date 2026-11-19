@@ -3,8 +3,9 @@
 **Semantic owner:** transport/delivery maintainers. **Status:** M2c-c implements
 the merged storage-only reference delivery lifecycle. M3a adds the optional,
 transport-neutral typed update boundary and routes accepted callbacks through
-the existing keyed scheduler. HTTP, worker orchestration, and method-specific
-retry evidence remain planned for M3b.
+the existing keyed scheduler. M3b-a adds bounded request construction and
+response interpretation through an injected HTTP boundary. A concrete HTTP
+adapter, worker orchestration, and method-specific retry evidence remain planned.
 
 The M3a boundary owns value-copied update DTOs, shape/size validation,
 bot-scoped update deduplication, deterministic filters and middleware, and
@@ -32,6 +33,38 @@ The pipeline has explicit boundaries:
 6. **Outbox** durably records planned effects in a second transaction and atomically marks or supersedes the render intent. A crash before this transaction leaves the intent eligible for reconciliation again.
 7. **DeliveryWorker** executes Telegram HTTP requests, applies rate limits/backoff, and records outcomes with the current lease/fencing token.
 8. **Acknowledgement/recovery** updates effect state and schedules review for uncertain results.
+
+M3b-a adds an optional `imtg::telegram_transport` boundary with an injected
+`IHttpTransport`. It constructs bounded authenticated form requests for
+`sendMessage`, `editMessageText`, and `answerCallbackQuery`, classifies HTTP
+client/server/429 responses, and exposes timeout/cancellation outcomes. The
+boundary performs no storage work and does not retry a lost response. A
+transport failure that may follow a sent request is `UnknownOutcome`.
+
+An HTTP 2xx status is not success evidence by itself. The bounded JSON envelope
+must have `ok=true` and the method-specific result: a positive `message_id` and
+matching numeric `chat.id` for a send, the same chat/message identity for a
+non-inline edit, or Boolean `true` for a callback answer. The confirmed message
+identity is returned for send/edit acknowledgement. `ok=false` returns the
+numeric `error_code` without exposing the untrusted description. Rate-limit
+delay is read from `parameters.retry_after`, with a numeric `Retry-After` header
+accepted only when coherent with it. Malformed, truncated, duplicate-key,
+over-depth, wrong-scope, or contradictory evidence is `UnknownOutcome`.
+
+The client accepts numeric chat identities and non-inline edits only; it does
+not claim complete Bot API method coverage. Local byte limits are conservative
+and distinct from Telegram's character limits. Form expansion is measured
+before allocation. Tokens are restricted to a 1–20 digit, nonzero decimal bot
+prefix, `:`, and a 1–256 byte ASCII alphanumeric/underscore/hyphen secret. This
+local fail-closed URL grammar is not credential authentication. Unknown or
+contradictory `HttpExchange` evidence never proves non-transmission; an adapter
+may report `request_may_have_been_sent=false` only with positive evidence.
+
+Applications must enforce response-body limits while receiving and bound their
+HTTP adapter admission/cancellation lifecycle. This slice is synchronous and
+does not add a worker, HTTP retry engine, or outbox state machine. The bounded
+JSON parser uses a pinned private dependency; no JSON types or dependency
+lookup escape into the installed public package.
 
 `kurlyk` is a recommended future HTTP adapter, not a core dependency. Telegram's external API cannot provide exactly-once delivery without corresponding guarantees, and arbitrary client idempotency keys must not be assumed.
 

@@ -6,6 +6,7 @@ option(IMTG_BUILD_DOCUMENTATION "Build the optional Doxygen documentation check"
 option(IMTG_BUILD_COMMERCE "Build and install the optional imtg_commerce module" OFF)
 option(IMTG_BUILD_MDBX "Build the optional persistent MDBX storage adapter" OFF)
 option(IMTG_BUILD_TELEGRAM "Build the optional typed Telegram gateway boundary" OFF)
+option(IMTG_BUILD_TELEGRAM_TRANSPORT "Build the optional bounded Telegram Bot API transport" OFF)
 set(IMTG_MDBX_CONTAINERS_SOURCE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/external/mdbx-containers" CACHE PATH
     "Pinned mdbx-containers source used by the optional MDBX adapter")
@@ -80,12 +81,43 @@ if(IMTG_BUILD_TELEGRAM)
     target_link_libraries(imtg_telegram PUBLIC imtg::core)
 endif()
 
+if(IMTG_BUILD_TELEGRAM_TRANSPORT)
+    if(NOT IMTG_BUILD_TELEGRAM)
+        message(FATAL_ERROR
+            "IMTG_BUILD_TELEGRAM_TRANSPORT requires IMTG_BUILD_TELEGRAM=ON")
+    endif()
+    set(imtg_json_source_dir "${CMAKE_CURRENT_SOURCE_DIR}/external/json")
+    if(NOT EXISTS "${imtg_json_source_dir}/include/nlohmann/json.hpp")
+        message(FATAL_ERROR
+            "IMTG_BUILD_TELEGRAM_TRANSPORT requires the pinned external/json submodule; "
+            "initialize it explicitly with git submodule update --init -- external/json")
+    endif()
+    add_library(imtg_telegram_transport STATIC
+        src/imtg/telegram_transport/TelegramBotApi.cpp)
+    add_library(imtg::telegram_transport ALIAS imtg_telegram_transport)
+    set_target_properties(imtg_telegram_transport PROPERTIES EXPORT_NAME telegram_transport)
+    target_compile_features(imtg_telegram_transport PUBLIC cxx_std_17)
+    target_include_directories(imtg_telegram_transport PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    # JSON syntax is private to the compiled adapter; installed consumers have
+    # no public JSON type, include path, target, or find_package dependency.
+    target_include_directories(imtg_telegram_transport SYSTEM PRIVATE
+        "${imtg_json_source_dir}/include")
+    target_link_libraries(imtg_telegram_transport PUBLIC imtg::telegram)
+    install(FILES "${imtg_json_source_dir}/LICENSE.MIT"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/imtg/nlohmann-json")
+endif()
+
 install(TARGETS imtg_core EXPORT imtgTargets)
 if(IMTG_BUILD_COMMERCE)
     install(TARGETS imtg_commerce EXPORT imtgTargets)
 endif()
 if(IMTG_BUILD_TELEGRAM)
     install(TARGETS imtg_telegram EXPORT imtgTargets)
+endif()
+if(IMTG_BUILD_TELEGRAM_TRANSPORT)
+    install(TARGETS imtg_telegram_transport EXPORT imtgTargets)
 endif()
 include(cmake/ImtgPublicHeaders.cmake)
 set(imtg_install_headers ${IMTG_CORE_PUBLIC_HEADERS})
@@ -94,6 +126,9 @@ if(IMTG_BUILD_COMMERCE)
 endif()
 if(IMTG_BUILD_TELEGRAM)
     list(APPEND imtg_install_headers ${IMTG_TELEGRAM_PUBLIC_HEADERS})
+endif()
+if(IMTG_BUILD_TELEGRAM_TRANSPORT)
+    list(APPEND imtg_install_headers ${IMTG_TELEGRAM_TRANSPORT_PUBLIC_HEADERS})
 endif()
 foreach(header IN LISTS imtg_install_headers)
     get_filename_component(header_directory "${header}" DIRECTORY)

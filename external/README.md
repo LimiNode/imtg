@@ -6,14 +6,15 @@ Only direct, pinned Git submodules are managed by imtg here:
 | --- | --- | --- |
 | `libmdbx` | erthink/libmdbx | `5315e9905b525a0a183b76fc787317c51076f944` (v0.13.12) |
 | `mdbx-containers` | LimiNode/mdbx-containers | `4ab32b5eab3cdfce95d1a6c0f05f566019793ec4` |
+| `json` | nlohmann/json | `b1bb9fce0c9ae9db5cecf8e3bd78519ac70683ee` (same pin as reviewed kurlyk baseline) |
 
 The gitlinks are authoritative. Update this audit when changing their pins.
-Neither dependency is required by `imtg::core` or a core-only build.
+No dependency is required by `imtg::core` or a core-only build.
 
 From the repository root, initialize only the direct siblings:
 
 ```sh
-git submodule update --init -- external/libmdbx external/mdbx-containers
+git submodule update --init -- external/libmdbx external/mdbx-containers external/json
 cmake -DIMTG_SOURCE_DIR=. -P cmake/CheckFlatDependencies.cmake
 cmake -S . -B build/mdbx -DIMTG_BUILD_MDBX=ON -DBUILD_TESTING=ON
 cmake --build build/mdbx --config Debug
@@ -34,4 +35,11 @@ Third-party tools, examples and tests are disabled. The MSVC C11 selection is
 owned here for the pinned libmdbx compiler compatibility issue. Adapter code
 and its `imtg::mdbx` target stay owned by imtg, not by this dependency provider.
 The adapter remains source-build-only until M2d-b defines installed dependency
-resolution and exports. No new transport, GUI or payment SDK is acquired here.
+resolution and exports.
+
+`json` is a private MIT-licensed parser for `imtg::telegram_transport` only.
+That option requires explicit non-recursive initialization of `external/json`;
+normal configuration performs no download. Its headers are compiled privately
+without invoking upstream CMake installation, tests or downloads. The optional
+installed package includes its MIT notice but neither JSON headers nor a JSON
+package dependency. The same pin can later be reused by a kurlyk adapter.

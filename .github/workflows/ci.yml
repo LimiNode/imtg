@@ -14,8 +14,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Initialize private JSON dependency
+        run: git submodule update --init -- external/json
       - name: Configure
-        run: cmake -S . -B build/ci-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON -DIMTG_BUILD_TELEGRAM=ON
+        run: cmake -S . -B build/ci-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON -DIMTG_BUILD_TELEGRAM=ON -DIMTG_BUILD_TELEGRAM_TRANSPORT=ON
       - name: Build
         run: cmake --build build/ci-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
       - name: Test
@@ -25,7 +27,7 @@ jobs:
       - name: Verify installed license
         run: cmake -DIMTG_SOURCE_DIR=${{ github.workspace }} -DIMTG_INSTALL_PREFIX=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }} -P cmake/CheckInstalledLicense.cmake
       - name: Configure public-header checks
-        run: cmake -S tests/public_headers -B build/headers-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DIMTG_REQUIRE_COMMERCE=ON -DIMTG_REQUIRE_TELEGRAM=ON -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
+        run: cmake -S tests/public_headers -B build/headers-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DIMTG_REQUIRE_COMMERCE=ON -DIMTG_REQUIRE_TELEGRAM=ON -DIMTG_REQUIRE_TELEGRAM_TRANSPORT=ON -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build public-header checks
         run: cmake --build build/headers-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
       - name: Configure installed consumer
@@ -34,6 +36,12 @@ jobs:
         run: cmake --build build/consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
       - name: Run installed consumer smoke test
         run: ctest --test-dir build/consumer-${{ matrix.os }}-${{ matrix.build_type }} --build-config ${{ matrix.build_type }} --output-on-failure
+      - name: Configure installed transport consumer
+        run: cmake -S tests/install_telegram_transport_consumer -B build/transport-consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
+      - name: Build installed transport consumer
+        run: cmake --build build/transport-consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
+      - name: Run installed transport consumer
+        run: ctest --test-dir build/transport-consumer-${{ matrix.os }}-${{ matrix.build_type }} --build-config ${{ matrix.build_type }} --no-tests=error --output-on-failure
       - name: Configure installed commerce consumer
         run: cmake -S tests/install_commerce_consumer -B build/commerce-consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build installed commerce consumer
@@ -53,6 +61,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug
           -DIMTG_BUILD_COMMERCE=ON
           -DIMTG_BUILD_TELEGRAM=ON
+          -DIMTG_BUILD_TELEGRAM_TRANSPORT=ON
           -DIMTG_BUILD_MDBX=ON
           -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"

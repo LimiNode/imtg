@@ -57,6 +57,27 @@ headers; the commerce build covers the complete 36-header inventory (29 core
 plus seven optional commerce headers). The Telegram build adds the two
 optional gateway headers and `imtg::telegram` target.
 
+The transport profile also installs `imtg::telegram_transport` and two standalone
+transport headers. Its private JSON source pin is needed only for the source
+build, not for the installed consumer:
+
+```sh
+git submodule update --init -- external/json
+cmake -S . -B build/release-transport -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTING=ON -DIMTG_BUILD_TELEGRAM=ON -DIMTG_BUILD_TELEGRAM_TRANSPORT=ON
+cmake --build build/release-transport --config Release
+ctest --test-dir build/release-transport -C Release --output-on-failure
+cmake --install build/release-transport --config Release --prefix build/install-transport
+cmake -S tests/public_headers -B build/release-transport-headers \
+  -DCMAKE_PREFIX_PATH=$PWD/build/install-transport \
+  -DIMTG_REQUIRE_TELEGRAM=ON -DIMTG_REQUIRE_TELEGRAM_TRANSPORT=ON
+cmake --build build/release-transport-headers --config Release
+cmake -S tests/install_telegram_transport_consumer -B build/release-transport-consumer \
+  -DCMAKE_PREFIX_PATH=$PWD/build/install-transport
+cmake --build build/release-transport-consumer --config Release
+ctest --test-dir build/release-transport-consumer -C Release --output-on-failure
+```
+
 ## MDBX source-build profile
 
 ```sh
@@ -67,8 +88,9 @@ cmake --build build/release-mdbx --config Release
 ctest --test-dir build/release-mdbx -C Release --output-on-failure
 ```
 
-Run the flat-dependency audit and verify the exact gitlink revisions before
-accepting the result. Do not expect `imtg::mdbx` in the installed/exported
+For the repository-wide flat-dependency audit, initialize `external/json` too,
+then verify the exact gitlink revisions before accepting the result. Do not
+expect `imtg::mdbx` in the installed/exported
 package; that boundary is deferred to M2d-b.
 
 The install jobs must also run the repository-owned license assertion:
