@@ -42,3 +42,7 @@ set(IMTG_COMMERCE_PUBLIC_HEADERS
 set(IMTG_TELEGRAM_PUBLIC_HEADERS
     imtg/telegram.hpp
     imtg/telegram/UpdateRouter.hpp)
+
+set(IMTG_TELEGRAM_TRANSPORT_PUBLIC_HEADERS
+    imtg/telegram_transport.hpp
+    imtg/telegram_transport/TelegramBotApi.hpp)

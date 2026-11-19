@@ -129,6 +129,12 @@ updates, deduplicates bot-scoped identities, applies deterministic
 filters/middleware and serialized authorization/stale checks, and submits
 handlers through the existing keyed scheduler. No HTTP client, Telegram
 credentials, persistent deduplication or live delivery is included.
+**M3b-a status:** the optional `imtg::telegram_transport` boundary now builds
+bounded authenticated requests for `sendMessage`, `editMessageText`, and
+`answerCallbackQuery` through an injected HTTP transport. It classifies
+client/server/429 responses and timeout, cancellation, and `UnknownOutcome`
+without retries or an idempotency claim. No `kurlyk` dependency or worker is
+included.
 **Acceptance:** fake transport tests cover send/edit/delete/callback-answer,
 429/retry, authorization, duplicate updates, queue overload and
 `UnknownOutcome`; a headless moderation handler and an urgent payment handler

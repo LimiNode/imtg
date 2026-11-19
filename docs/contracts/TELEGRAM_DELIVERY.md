@@ -33,6 +33,13 @@ The pipeline has explicit boundaries:
 7. **DeliveryWorker** executes Telegram HTTP requests, applies rate limits/backoff, and records outcomes with the current lease/fencing token.
 8. **Acknowledgement/recovery** updates effect state and schedules review for uncertain results.
 
+M3b-a adds an optional `imtg::telegram_transport` boundary with an injected
+`IHttpTransport`. It constructs bounded authenticated form requests for
+`sendMessage`, `editMessageText`, and `answerCallbackQuery`, classifies HTTP
+client/server/429 responses, and exposes timeout/cancellation outcomes. The
+boundary performs no storage work and does not retry a lost response. A
+transport failure that may follow a sent request is `UnknownOutcome`.
+
 `kurlyk` is a recommended future HTTP adapter, not a core dependency. Telegram's external API cannot provide exactly-once delivery without corresponding guarantees, and arbitrary client idempotency keys must not be assumed.
 
 ## Gateway and handler modes
