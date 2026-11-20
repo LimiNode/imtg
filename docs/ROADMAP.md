@@ -225,6 +225,16 @@ eligible gateway or explicitly contracted commerce platform; add
 forms/tickets, payment/fulfillment and moderation policy; add durable jobs and
 the three reference applications; then add operations and advanced
 integrations. Research interest is not permission to add speculative core code.
+
+The [2328.io research candidate](research/PAYMENT_PROVIDER_CAPABILITY_AUDIT.md#2328io-crypto-processing-candidate)
+is a possible optional crypto adapter, not a confirmed Mir/SBP acquiring path.
+The [external donation-platform track](research/PAYMENT_PROVIDER_CAPABILITY_AUDIT.md#external-donation-platforms)
+records DonateX, DonatePay.eu and MemeAlerts for later optional event connectors.
+It is separate from order-payment providers and depends on verified source
+identity, authentication, durable deduplication and replay/recovery contracts.
+Neither research track blocks M3 or the first beta; no provider or connector
+implementation is authorized by listing it here.
+
 See [TELEGRAM_APPLICATION_PROFILES.md](research/TELEGRAM_APPLICATION_PROFILES.md)
 for acceptance scenarios, [PAYMENTS.md](contracts/PAYMENTS.md) for payment
 invariants, and [ADR 0006](adr/0006-headless-routing-and-application-composition.md)

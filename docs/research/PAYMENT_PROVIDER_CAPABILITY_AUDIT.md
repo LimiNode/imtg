@@ -4,6 +4,11 @@
 date:** 2026-11-07. This document is not an approval to onboard a provider and
 does not claim that any payment adapter is implemented.
 
+**Addendum recorded:** 2026-11-20 for 2328.io, DonateX, DonatePay.eu and
+MemeAlerts. Earlier entries retain their original review date. The addendum
+distinguishes supplied research from pages independently inspected; neither
+kind of documentation evidence establishes a working merchant integration.
+
 ## Scope and evidence rules
 
 The first application target is a Telegram shop selling permitted physical
@@ -70,6 +75,7 @@ and operational review.
 | ENOT | P2 | The public API lists methods, but individual eligibility is not established here | Mir and SBP appear in API material; acceptance and merchant type need proof | Not a current priority | API/callback surface exists; verify current webhook and status contracts | `needs_verification` | Keep in inventory; do not select for P0 implementation |
 | NOWPayments | P2 | Crypto merchant onboarding | Not the Russian-card/SBP path | Crypto payments | Hosted/API, webhooks, status and refunds depend on provider policy | `claimed` | Separate crypto adapter and compliance review |
 | OxaPay | P2 | Crypto merchant onboarding | Not the Russian-card/SBP path | Crypto payments | Invoices, merchant API and callbacks are advertised | `claimed` | Verify webhook signatures, settlement and refund model |
+| [2328.io](#2328io-crypto-processing-candidate) | P1 research for crypto | Supplied research describes individual merchants, subject to jurisdiction, onboarding and KYC | Mir/SBP acquiring is not confirmed; a RUB invoice price is not RUB payment acceptance | USDT, USDC, BTC, ETH, TON and other assets/networks are reported; verify the exact account route | Reported hosted/API invoices, project-scoped `order_id` idempotency, HMAC webhooks, status lookup and crypto payouts; refund API and full sandbox unconfirmed | `needs_verification` | Verify current API/terms, operator, account eligibility, immutable retry semantics, refund process and a controlled payment/refund/payout cycle |
 | Cryptomus | P2 | Merchant eligibility and jurisdiction require confirmation | Not the Russian-card/SBP path | Crypto payments | Merchant API/invoices and callbacks are advertised | `needs_verification` | Confirm merchant eligibility, KYC and dispute/refund behavior |
 | PayKassa | P2 | Crypto gateway onboarding | Not the Russian-card/SBP path | Crypto payments | Gateway/API and callbacks are advertised | `claimed` | Verify current API, webhook signing and settlement finality |
 | Plisio | P1 for crypto | Personal wallet access is advertised; commercial API eligibility for an ordinary individual needs confirmation | Not the Russian-card/SBP path | Crypto payments | Gateway/API and callbacks are advertised; verify refund and settlement semantics | `needs_verification` | Confirm merchant eligibility, KYC and sandbox/live behavior |
@@ -161,6 +167,246 @@ These scenarios have different seller-of-record, KYC/KYB, settlement,
 chargeback, tax and contractual consequences. Provider domains are recorded
 independently: `tabpay.org`, `paydex.pro` and `formapay.io` must not be
 attributed to one operator without explicit evidence.
+
+## 2328.io crypto processing candidate
+
+**Recorded:** 2026-11-20. **Priority:** P1 research for an optional crypto
+adapter, not a production selection. The supplied research cites the
+[official site](https://2328.io/ru/) and [API documentation](https://2328.io/api).
+Both URLs returned HTTP 403 to the initial unauthenticated documentation fetch.
+That observation is retained as the history of the initial check, not a claim
+that the official documentation is unavailable to other readers.
+
+**Independent-review update, 2026-11-20:** the supplied review reports direct
+inspection of the official [general API](https://2328.io/api/general),
+[payments](https://2328.io/api/payments),
+[authentication](https://2328.io/api/authentication),
+[AML regulations](https://2328.io/aml-regulations) and
+[terms](https://2328.io/terms). These sources confirm the published API and
+the legal restrictions identified below. This is documentation evidence, not
+account onboarding, an official-registry check or a sandbox/live integration
+test. Account eligibility and operational reliability remain unverified.
+The agent's unauthenticated follow-up fetch of those five exact URLs still
+returned HTTP 403; the confirmation above is attributed to the independent
+review, not presented as a successful fetch in this environment.
+
+| Area | Reported capability | Gate before implementation or eligibility |
+|---|---|---|
+| Payment creation | `POST /v1/payment`, hosted checkout and Telegram Mini App deeplink; prices may be denominated in RUB/USD/EUR while the buyer pays crypto | Verify asset/network, quote/settlement currency, expiry and checkout ownership; do not infer Mir, SBP or fiat acquiring |
+| Request authentication | Project UUID and HMAC-SHA256 at `https://api.2328.io/api`; 10 requests/second per project reported | Capture exact signing/encoding rules, rate-limit behavior and immutable signature vectors; secrets stay outside source/logs |
+| Attempt identity | Repeated creation with the same project-scoped `order_id` reportedly returns the existing invoice; `POST /v1/payment/info` accepts `uuid` or `order_id` | Map `order_id` to one `PaymentAttemptId` within the merchant project, not a reusable application order ID; verify key limits, retention and conflicting-payload behavior |
+| Notifications/history | HMAC-SHA256 webhook with `sign` in the JSON object; `POST /v1/payment/list` and `POST /v1/test-webhook/payment` reported | Preserve original bytes and implement the provider's exact canonicalization rules with known-answer vectors, replay and duplicate tests; a synthetic signed event is not a payment |
+| Payout/refund | `POST /v1/payout` for crypto; refund policy/statuses reported, but no public refund initiation API confirmed | Separate payout from refund and bank settlement; leave `refunds`/`partial_refunds` false for an adapter until its supported refund workflow is verified |
+| Test environment | Signed synthetic webhook testing reported; no full payment sandbox confirmed | Do not set `sandbox=true` from webhook tests or infer settlement/withdrawal success; real-money tests require separate authorization |
+
+Documented idempotency is scoped to the original attempt and
+immutable amount/asset/account context. A timeout remains `UnknownOutcome`
+until authoritative lookup resolves that attempt; it does not authorize a new
+`order_id`, provider fallback or a blind retry with changed fields. The existing
+[payment contract](../contracts/PAYMENTS.md) remains authoritative.
+
+The independently reviewed payment documentation confirms that the same
+project and `order_id` return the existing payment; changed retry parameters
+may be ignored. A future adapter must therefore reject conflicting immutable
+fields locally rather than depend on a provider conflict response.
+
+The documented webhook signing recipe removes `sign`, compact-serializes the
+remaining JSON, Base64-encodes it and applies HMAC-SHA256. This is not DonateX's
+HMAC over the original request bytes. Preserve the original payload for audit,
+but freeze the exact 2328 serialization/encoding rules with known-answer
+vectors before implementing verification; do not share a raw-body signing
+algorithm between the two providers.
+
+The research lists `awaiting_confirmation`, `underpaid_check`, `underpaid`,
+`overpaid`, `aml_lock`, `cancel` and refund states. Preserve provider evidence
+and freeze the exact state mapping before an adapter is implemented:
+
+- confirmations still pending must not authorize fulfillment;
+- underpayment, overpayment and AML locks need explicit reconciliation or
+  operator policy, not a default success branch;
+- even `paid` requires authenticated account, attempt, amount and asset
+  matching before local `Succeeded`;
+- payout and refund status are not interchangeable with payment success.
+
+The current `PaymentPolicy::require_refunds` default must not be weakened to
+admit this candidate. A refund policy page or payout endpoint alone does not
+prove that a future adapter can honor the required refund operation.
+
+### 2328.io commercial and legal gates
+
+The supplied research describes an individual-merchant path for selling one's
+own goods/services, subject to provider approval. It reports Level 1 identity
+checks and Level 2 verification, potentially including Sumsub/biometrics, after
+aggregate completed withdrawals equivalent to USD 1,000; risk checks may occur
+earlier. The independent review confirms the published aggregate USD 1,000
+completed-withdrawal threshold for Level 2 before further withdrawals, while
+allowing earlier risk checks. Confirm residency/product eligibility and data
+handling in the exact account agreement. This is not a no-KYC or no-tax claim.
+
+It attributes the operator to `3-102-115916 SOCIEDAD DE RESPONSABILIDAD LIMITADA`,
+trading as Processing Engines in Costa Rica, with a reported registration date
+of 2026-10-22. No official registry entry was independently verified. Treat
+operator identity, licensing/contract scope, custody, settlement times and
+account holds as unresolved onboarding evidence. The advertised fee from 0.3%
+is a claim, not an all-in quote or reliability guarantee.
+
+The research also reports a restriction on accepting payments for undisclosed
+third-party merchants without written approval. A PayWeaver multi-merchant
+deployment therefore needs explicit platform approval, seller/account
+separation and contractual responsibility; one shared merchant account is not
+assumed permissible. No PayWeaver repository or connector is changed here.
+The independently reviewed terms confirm the written-approval requirement;
+public documentation does not establish approval for our deployment.
+
+Before implementation, the commerce/payment maintainers must obtain current
+API and legal pages plus written answers about jurisdictions, refund API or
+supported manual process, fees, payout timing, sandbox and multi-shop use.
+Verify signing/idempotency with offline fixtures first. Account registration,
+real payments/refunds/payouts and provider contact require separate authority.
+External crypto checkout does not replace Telegram Stars for Telegram digital
+goods/services.
+
+## External donation platforms
+
+**Recorded:** 2026-11-20. These are optional application-event research
+candidates, not additional order-payment gateways. Public API documentation
+does not establish merchant eligibility, settlement, refund support or an
+authoritative receipt for an imtg order. No account, OAuth application or
+connector was created, and no authenticated API or real-money test was run.
+
+| Platform | Priority for event-source research | Documented or reported integration surface | Commercial/implementation gate |
+|---|---|---|---|
+| DonateX | P1, first read-only candidate | Official docs describe an External Token for one's own account, OAuth 2.0 with PKCE for multi-user applications, donation history, SignalR and signed webhooks | `needs_verification`: approved application/account, scopes, history retention/gaps and webhook fixtures; do not infer an arbitrary merchant create-payment/refund API |
+| DonatePay.eu | P2 | API-token donation reading is reported in historical integrations, often for donatepay.ru; the current donatepay.eu API contract is unconfirmed | `needs_verification`: current official endpoint, authentication, replay, event identity and terms; no guessed protocol or compatibility with another domain |
+| MemeAlerts | P1 for interactive events, after API access approval | Official developer document describes OAuth 2.0, REST and Centrifugo v5; donation, virtual-coin and interactive events are distinct | `needs_verification`: account/application access, channel scopes, token lifecycle, source IDs and cross-channel deduplication; not a general checkout provider |
+
+### DonateX
+
+The official [authentication](https://donatex.gg/api-docs/authentication),
+[donation](https://donatex.gg/api-docs/donations),
+[realtime](https://donatex.gg/api-docs/realtime) and
+[webhook](https://donatex.gg/api-docs/webhooks) pages were accessible without
+credentials in this update. They document:
+
+- External Token access to the owner's full account without refresh/scopes;
+  multi-user applications use OAuth 2.0 Authorization Code with mandatory
+  PKCE. Access tokens last one hour; `offline_access` enables rotating refresh
+  tokens. Save each new pair atomically, scoped to the original account.
+- `GET /api/v1/donations` has paginated history/date filters and `hideTest`
+  defaults to false. `POST /api/v1/test-donation` creates synthetic events in
+  the normal alert, realtime and webhook paths. Check the donation's `isTest`;
+  do not count all `DonationCreated` events as real financial activity.
+- SignalR emits `DonationCreated`, `DonationRerun` and `GoalUpdated`. Rerun also
+  covers moderation approval; recover missed donations from history and
+  deduplicate by donation `id`, including Created/Rerun overlap.
+- Webhooks currently expose `DonationCreated`, not every realtime event.
+  `X-DonateX-Signature` is lowercase hexadecimal HMAC-SHA256 over raw body
+  bytes; compare in constant time, without JSON reserialization. The
+  subscription ID identifies a subscription, not the underlying donation.
+- Webhooks expect 2xx within 10 seconds, retry up to three times and disable a
+  subscription after five consecutive failed attempts, including retries.
+
+Freeze schemas, signature/replay vectors, history-retention/gap behavior and
+subscription-health recovery before implementation. A durable event inbox
+should acknowledge verified intake promptly and handle reactions separately;
+an alert rerun or a test donation is not a new financial event.
+
+The [official site](https://donatex.gg/) advertises Mir, Visa/Mastercard, SBP
+and SberPay with fees from 6% according to the supplied research. These are
+platform/account claims, not selectable `PaymentMethod` capabilities in imtg.
+Confirm the exact beneficiary type, jurisdiction, KYC, payout schedule,
+fees/refunds and third-party collection restrictions for the intended account.
+
+### DonatePay.eu
+
+The [terms](https://donatepay.eu/terms) were accessible in this update and
+displayed "Last updated: June 2, 2025". They include individual KYC provisions
+and a RUB 100/calendar-day maintenance charge starting the day after assignment
+of Inactive Streamer status, with multiple inactivity triggers and restrictive
+balance provisions. Applicability requires current account/legal review;
+these published terms do not establish the current API.
+Keep [donatepay.eu](https://donatepay.eu/)
+separate from `donatepay.ru`, `donpay.app` and `donationpay.org`. No common
+operator, credential or endpoint compatibility is assumed.
+
+The supplied research reports card/bank and crypto routes, RUB/USD/EUR/UAH/USDT
+options and advertised withdrawal from RUB 50. These are not universal account
+guarantees: capture the applicable method, fee, refund/withdrawal and operator
+agreement before registration or selection. A frontend API-client asset is not
+a public integration specification. Read-only integration remains blocked until
+a current official API and credential contract for this domain is known.
+
+### MemeAlerts
+
+The [developer entry point](https://memealerts.com/developers/api) loads a
+public [API document](https://memealerts.com/api/v1/docs). That document was
+accessible without credentials in this update and describes OAuth 2.0
+Authorization Code and Centrifugo v5 at
+`wss://memealerts.com/connection/websocket`. It specifies one-hour access tokens,
+24-hour connection/subscription tokens and rotating refresh tokens. Refresh
+must be serialized per account; token lifetimes/grace windows are provider
+rules to recheck, not hardcoded library defaults.
+
+The document describes a 60-second refresh grace period, fresh subscription
+tokens on reconnect and omission of channels without the required scopes.
+Coordinate refresh across processes/channels, and treat missing channels as
+an explicit authorization/capability result rather than a silent successful
+subscription. Historical replay/retention guarantees and a synthetic-event
+facility are not established here; do not invent a cursor or `isTest` field.
+
+The document distinguishes `donation` from `coin_purchase`; a donation may be
+fiat or virtual coins. The same donation can appear on both its dedicated
+channel and the general event channel. Deduplicate by original account/event
+identity, not transport channel, and never interpret virtual coins as fiat
+revenue. Delivery may follow premoderation and is not a bank-settlement clock.
+
+The supplied research reports third-party payment processing, an agency model
+and a contractual commission ceiling of 25%. Confirm the current applicable
+agreement, actual rate, payout/refund/KYC rules, API access approval and rights
+to receive third-party events before implementation. A ceiling is not a quote,
+and purchase of virtual coins is not proof of a shop order payment.
+
+### Connector boundary and acceptance gates
+
+These are future acceptance requirements, not a new public interface or an
+implemented event subsystem:
+
+1. Bind credentials and records to the exact source/account. Keep the underlying
+   donation identity separate from a delivery/rerun event identity, using
+   provider-issued IDs where available and documenting any missing-ID gate.
+   Deduplicate donations across channels/reruns by original donation identity
+   and a versioned, normalized fingerprint of immutable financial attributes.
+   Do not compare full transport-payload hashes across envelopes: delivery
+   timestamps, `wasShown` and channel/presentation fields may legitimately
+   change. Retain raw bytes/digests for authentication/audit separately.
+   Conflicting immutable financial attributes require explicit reconciliation,
+   not a new donation; neither mutable envelopes nor account reuse may bypass
+   durable deduplication.
+2. Authenticate webhooks/realtime subscriptions. For webhooks, persist accepted
+   events before a successful HTTP reply. For realtime, use application ACKs
+   and reconnect cursors only if the provider exposes them; otherwise recover
+   through documented history backfill or record an explicit unrecoverable gap.
+   Do not infer replay from SignalR/Centrifugo alone. Define bounded queues and
+   payload/retention limits. Reuse
+   existing storage, delivery and application-event contracts rather than a
+   second orchestration system.
+3. Distinguish real donations, synthetic/test events, alert reruns, goals and
+   virtual-coin purchases. Tests/reruns must not inflate financial reports;
+   no external event automatically creates local `Succeeded` or fulfillment.
+4. Treat messages/media URLs as untrusted; limit or reject media fetches,
+   escape presentation content and keep credentials/private payloads out of
+   ordinary logs. Scope authorization and token rotation to the exact account.
+5. Require offline tests for duplicates across differing channel/rerun envelopes,
+   conflicting immutable financial attributes, missing/malformed fields, invalid
+   authentication, expired/rotated tokens, reconnect/replay, bounded resources
+   and separation from the order-payment ledger. Do not invent a transport or
+   API solely to make a proposed connector appear implemented.
+
+Candidate order is DonateX read-only intake, then MemeAlerts after access
+confirmation, then DonatePay.eu after its API is verified. All remain optional
+and outside `imtg_core`; they do not block M3 or the first beta. PayWeaver
+connectors, OBS delivery and PayWeaver architecture changes require a separate
+task in that project, not changes to imtg's generic payment interfaces.
 
 ## Capability checklist
 
