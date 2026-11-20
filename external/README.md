@@ -10,7 +10,10 @@ Only direct, pinned Git submodules are managed by imtg here:
 | `time-shield-cpp` | LimiNode/time-shield-cpp | `d5f1203f24341e4146af35d5bb36e762056d181f` (v2.0.0) |
 
 The gitlinks are authoritative. Update this audit when changing their pins.
-None is required by `imtg::core` or a core-only build.
+LogIt++ and TimeShield are required implementation dependencies of core.
+MDBX and mdbx-containers remain optional. An existing parent-provided
+`log-it-cpp::log-it-cpp` is reused before checking any local provider path;
+an existing `time_shield::time_shield` is also reused when adding LogIt++.
 
 From the repository root, initialize only the direct siblings:
 
@@ -36,7 +39,10 @@ Third-party tools, examples and tests are disabled. The MSVC C11 selection is
 owned here for the pinned libmdbx compiler compatibility issue. Adapter code
 and its `imtg::mdbx` target stay owned by imtg, not by this dependency provider.
 The adapter remains source-build-only until M2d-b defines installed dependency
-resolution and exports. LogIt++ and TimeShield are enabled only by
-`IMTG_BUILD_LOGIT`; their optional backends and nested gitlinks remain disabled.
-Installed logger consumers use `find_package(imtg CONFIG REQUIRED COMPONENTS logit)`.
-The base package resolves no logging dependency. No GUI or payment SDK is acquired here.
+resolution and exports. LogIt++ optional backends remain at upstream defaults
+unless selected by the application. imtg never overwrites `LOGIT_WITH_*` cache
+settings and never initializes nested gitlinks. Installed consumers use
+`find_package(imtg CONFIG REQUIRED)`; the package resolves LogIt++ unless the
+parent already provided its target. An embedding application owns a compatible
+installed LogIt++/TimeShield package when it provides those targets itself.
+No GUI or payment SDK is acquired here.

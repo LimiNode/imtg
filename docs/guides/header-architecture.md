@@ -220,7 +220,6 @@ src/imtg/
 ├── ui.hpp
 ├── runtime.hpp
 ├── telegram.hpp       # optional transport-neutral gateway
-├── logging.hpp        # optional LogIt++ observer adapter
 ├── core/             # owned leaves and .cpp files
 ├── actions/
 ├── storage/
@@ -228,8 +227,7 @@ src/imtg/
 ├── reconciliation/
 ├── ui/
 ├── runtime/
-├── telegram/
-└── logging/
+└── telegram/
 ```
 
 The intended topological order is:
@@ -243,7 +241,6 @@ core
         └── sessions
               └── reconciliation
 telegram ────────┘ (optional; depends on core and runtime)
-logging ─────────┘ (optional; depends on core, runtime and telegram)
 ```
 
 This is a partial order, not a requirement that all domains be merged into one
@@ -261,7 +258,6 @@ own declared public components. The proposed include sets are:
 | `runtime.hpp` | `<imtg/core.hpp>`, `<imtg/actions.hpp>`, `<imtg/ui.hpp>` | `runtime/reference_runtime.hpp` |
 | `commerce.hpp` (optional) | `<imtg/core.hpp>`, `<imtg/storage.hpp>` after those umbrellas land | `commerce/PaymentTypes.hpp`, `PaymentPolicy.hpp`, `PaymentRecords.hpp`, `PaymentTransaction.hpp`, `PaymentProvider.hpp`, `PaymentServices.hpp` |
 | `telegram.hpp` (optional) | `<imtg/core.hpp>`, `<imtg/runtime.hpp>` | `telegram/UpdateRouter.hpp` |
-| `logging.hpp` (optional) | local `logging/LogitAdapter.hpp` | `logging/LogitAdapter.hpp` |
 
 The exact component order is part of each implementation PR and must be stable,
 acyclic, and tested. A component that is intentionally standalone may include
@@ -283,7 +279,6 @@ The intended mapping is:
 | `imtg/runtime/runtime.hpp` | `imtg/runtime.hpp` | relocate umbrella |
 | `imtg/commerce.hpp` (optional) | `imtg/commerce.hpp` | already at the target root; keep excluded from core-only installs |
 | `imtg/telegram.hpp` (optional) | `imtg/telegram.hpp` | typed gateway boundary; installed only with `IMTG_BUILD_TELEGRAM=ON` |
-| `imtg/logging.hpp` (optional) | `imtg/logging.hpp` | LogIt++ observer adapter; installed only with `IMTG_BUILD_LOGIT=ON` |
 
 Component leaf paths such as `imtg/core/identifiers.hpp` and
 `imtg/sessions/session.hpp` remain the owning public paths in the target model;
@@ -324,4 +319,3 @@ The original audit was documentation-only. The implemented entry-point addendum
 above is verified by topology CTest, standalone installed-header builds,
 independent consumers, core-only/commerce builds, and Doxygen. Report the actual
 results per reviewed HEAD; this guide alone is not evidence of a passing CI run.
-

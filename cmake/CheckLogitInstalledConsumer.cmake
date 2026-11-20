@@ -24,12 +24,13 @@ execute_process(
     COMMAND "${CMAKE_COMMAND}" --install "${IMTG_BINARY_DIR}" --config "${IMTG_CONFIG}" --prefix "${install_prefix}"
     RESULT_VARIABLE install_result)
 if(NOT install_result EQUAL 0)
-    message(FATAL_ERROR "Optional LogIt++ install failed: ${install_result}")
+    message(FATAL_ERROR "LogIt++ install failed: ${install_result}")
 endif()
 
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -S "${IMTG_SOURCE_DIR}/tests/logit_install_consumer"
-        -B "${consumer_binary_dir}" -DCMAKE_PREFIX_PATH=${install_prefix}
+        -B "${consumer_binary_dir}" -G "${IMTG_GENERATOR}" -DCMAKE_PREFIX_PATH=${install_prefix}
+        -DCMAKE_CXX_COMPILER=${IMTG_CXX_COMPILER}
         -DCMAKE_BUILD_TYPE=${IMTG_CONFIG}
         "-DCMAKE_CXX_FLAGS=${IMTG_CONSUMER_CXX_FLAGS}"
         "-DCMAKE_EXE_LINKER_FLAGS=${IMTG_CONSUMER_LINKER_FLAGS}"

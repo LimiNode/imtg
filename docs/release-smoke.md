@@ -4,6 +4,14 @@ Run this procedure from a clean checkout of the exact release candidate. Keep
 all generated files under `build/` and record the compiler, CMake version,
 commit SHA, and command output.
 
+All source-build profiles require CMake 3.18 or newer and the direct LogIt++
+and TimeShield providers, unless the embedding application supplies their
+targets first:
+
+```sh
+git submodule update --init -- external/log-it-cpp external/time-shield-cpp
+```
+
 ## Core, commerce and Telegram boundary
 
 ```sh
@@ -55,17 +63,11 @@ the CMake package files, and `share/licenses/imtg/LICENSE`, and that a core-only
 consumer does not require MDBX. The core header build covers 29 installed
 headers; the commerce build covers the complete 36-header inventory (29 core
 plus seven optional commerce headers). The Telegram build adds the two
-optional gateway headers and `imtg::telegram` target. The optional LogIt++
-profile adds two diagnostics headers and installs its pinned LogIt++ and
-TimeShield packages for the independent consumer check:
-
-```sh
-git submodule update --init -- external/log-it-cpp external/time-shield-cpp
-cmake -S . -B build/release-logit -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_TESTING=ON -DIMTG_BUILD_TELEGRAM=ON -DIMTG_BUILD_LOGIT=ON
-cmake --build build/release-logit --config Release
-ctest --test-dir build/release-logit -C Release --output-on-failure
-```
+optional gateway headers and `imtg::telegram` target. All profiles install
+LogIt++ and TimeShield packages for core's implementation link dependency.
+CTest also builds and runs an independent installed logger consumer and parent
+target-reuse fixtures with context enabled. No vendor types or logger headers
+enter core's public API, and no observer logging adapter is installed.
 
 ## MDBX source-build profile
 

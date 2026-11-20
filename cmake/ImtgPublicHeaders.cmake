@@ -42,7 +42,3 @@ set(IMTG_COMMERCE_PUBLIC_HEADERS
 set(IMTG_TELEGRAM_PUBLIC_HEADERS
     imtg/telegram.hpp
     imtg/telegram/UpdateRouter.hpp)
-
-set(IMTG_LOGGING_PUBLIC_HEADERS
-    imtg/logging.hpp
-    imtg/logging/LogitAdapter.hpp)

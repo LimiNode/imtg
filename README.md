@@ -90,9 +90,14 @@ decisions are recorded in [`docs/adr/`](docs/adr/).
 
 ## Building
 
-Keep all generated output under the ignored root `build/` directory:
+CMake 3.18 or newer is required. LogIt++ and TimeShield are mandatory
+implementation dependencies, not public-header dependencies. An embedding
+application may provide `log-it-cpp::log-it-cpp` (and its configuration) first;
+otherwise initialize the pinned flat providers. Keep all generated output
+under the ignored root `build/` directory:
 
 ```text
+git submodule update --init -- external/log-it-cpp external/time-shield-cpp
 cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
 cmake --build build/debug
 ctest --test-dir build/debug --output-on-failure
@@ -114,6 +119,12 @@ The pinned revisions and non-recursive initialization procedure are documented
 in [`external/README.md`](external/README.md). MDBX remains source-build-only
 in this release: the installed package exports core and optional commerce
 targets, but not `imtg::mdbx`.
+
+Internal runtime/router diagnostics contain only fixed event codes and enum
+codes, never update text, tokens, callback payloads, error messages, or
+identifiers. The application selects LogIt++ backends and bounded queue/drop
+policy, then flushes/shuts down the logger after imtg quiesces. See
+[ADR 0012](docs/adr/0012-optional-logit-diagnostics.md).
 
 Public headers and their implementations are co-located under
 `src/imtg/<domain>/`, while consumer include paths remain `<imtg/...>`. Git

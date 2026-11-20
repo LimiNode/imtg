@@ -1,59 +1,81 @@
-# ADR 0012: optional LogIt++ diagnostics boundary
+# ADR 0012: required internal LogIt++ diagnostics
 
-**Status:** Accepted for the optional M3 diagnostics slice.
-**Scope:** LogIt++ dependency ownership, observer adapters, and installed package boundaries.
-**Owner:** application/integration layer; `imtg_core` remains independent.
-**Review trigger:** a new diagnostic event, logger backend, or lifecycle policy.
+**Status:** Accepted; supersedes the optional-observer-only draft of this ADR.
+**Scope:** implementation dependency, configuration ownership, sanitization and packaging.
+**Owner:** core maintainers; application owns logger configuration and lifecycle.
+**Review trigger:** new event, backend dependency, ABI-affecting logger option or lifecycle policy.
 
 ## Context
 
-`ReferenceRuntime` and the optional `telegram::UpdateRouter` already expose
-non-throwing observers. Applications need bounded, sanitized operational
-events, but the core package must remain usable without a logging framework.
-LogIt++ v1.0.2 is header-only and requires TimeShield 2.0.x; its CMake project
-requires CMake 3.18 even though imtg's core baseline remains CMake 3.16.
+The original draft adapted runtime/router observers through an optional
+`imtg::logit` module. That did not provide internal core diagnostics and
+duplicated errors once internal logging was added. LogIt++ is the standard
+logger for LimiNode projects; retaining a dependency-free core is no longer a
+goal. The public imtg domain API must still remain independent of vendor types.
 
 ## Decision
 
-The optional `IMTG_BUILD_LOGIT` profile provides `imtg::logit` and the
-self-contained `<imtg/logging.hpp>` entry point. It binds
-`ReferenceRuntime::ErrorFunction` and `telegram::UpdateRouter::OutcomeSink`,
-and provides an explicit `record_update_admission()` call for synchronous
-`receive()` results. The adapter emits fixed event codes and only emits
-numeric bot/chat/update identifiers when `LogitOptions::include_safe_identifiers`
-is true.
+LogIt++ is a required implementation dependency of `imtg::core` and the optional
+Telegram router. Real LogIt++ calls in their `.cpp` files emit fixed event codes
+and numeric enum codes, without payloads, credentials, error/exception messages
+or identifiers. The event/lifetime contract owns the exact diagnostic boundary.
 
-The direct sibling submodules are pinned to:
+The unmerged `LogitAdapter`, `<imtg/logging.hpp>`, `imtg::logit` and
+`IMTG_BUILD_LOGIT` surface is removed, not retained as a no-op compatibility
+layer. `ReferenceRuntime::ErrorFunction` and `UpdateRouter::OutcomeSink` remain
+unchanged application notifications. A router callback error is logged once
+by the runtime; applications choose whether their own observers add records.
+
+LogIt++ backends, levels, formatting, context, bounded queue/drop policy and
+flush/shutdown belong to the application. imtg does not register a backend,
+change global options or call `LOGIT_SHUTDOWN()`. Calls happen outside imtg
+mutexes and catch logger exceptions. These guards do not bound a blocking
+backend; worker-safe backends and non-waiting queue policies are application
+requirements. Application-provided diagnostic context must also be sanitized.
+
+## Dependency resolution and package boundary
+
+An existing `log-it-cpp::log-it-cpp` target wins before checking imtg's provider
+paths or defaulting any dependency setting. Otherwise imtg adds its pinned
+flat provider, reusing an existing `time_shield::time_shield` target or adding
+the pinned TimeShield sibling. Missing required targets fail configure clearly.
+No configure-time downloads, recursive submodules, generalized resolver or
+raw vendor include-directory fallback is introduced.
+
+The direct submodule pins are:
 
 - LogIt++ `659c38eef86cb3cbab448fb76852641830a89430` (v1.0.2);
 - TimeShield `d5f1203f24341e4146af35d5bb36e762056d181f` (v2.0.0).
 
-Normal configuration performs no downloads and does not initialize nested
-LogIt++ submodules. Context/MDC, OTLP, Prometheus, MDBX and fmt backends remain
-disabled. The optional target is not part of `imtg_core` or base
-`imtg::telegram`; core-only builds need neither LogIt++ nor TimeShield.
+Dependency test/example and NTP defaults are lightweight and never forced.
+All `LOGIT_WITH_*` settings belong to the application; a single shared target
+propagates compatible includes, definitions and transitives, including the
+context-dependent `LogRecord` layout.
 
-LogIt++ queue and logger lifecycle belong to the owning application. imtg does
-not call `LOGIT_SHUTDOWN()` from runtime or router shutdown, and logger
-failures are swallowed at the observer boundary. Applications must configure
-bounded queue/retention policy and flush or shut down LogIt++ after imtg has
-quiesced.
+The project now requires CMake 3.18, matching the pinned provider. The local
+verification tool version is reported separately; a newer CMake run is not
+proof of a minimum-version run. imtg's logging implementation and logger
+fixtures compile as C++17 because the pinned provider's filesystem
+`u8string()` usage is not C++20-clean on current libstdc++.
 
-## Sanitization and evidence
+The static implementation links LogIt++ privately; its installed link-only
+dependency is resolved by `find_package(imtg CONFIG REQUIRED)` unless the parent
+already supplied the target. Standalone installs include the pinned provider
+packages and license files. Parents supplying targets own installation and
+compatible configuration of those packages. Upstream optional-backend
+packaging restrictions remain upstream restrictions; imtg does not override
+user configuration to conceal them.
 
-The adapter never logs bot tokens, callback data, text, payment credentials,
-provider secrets, HTTP headers, prompts, response bodies, or `Error::message`.
-Tests use the bounded `MemoryLogger` to prove stable event coverage, retention
-limits, identifier opt-in, and absence of sensitive fixture strings. The
-optional installed-consumer test verifies that exported `imtg::logit`,
-LogIt++, and TimeShield packages resolve together from a clean prefix.
-Consumers request `find_package(imtg CONFIG REQUIRED COMPONENTS logit)`;
-the separate logging export is not loaded by a base core consumer. The C++17
-language setting applies only to adapter and logger fixtures, not globally.
+## Verification and consequences
 
-## Consequences
+MemoryLogger tests exercise actual internal events, sanitization, exactly-once
+task failure, bounded retention, throwing backend isolation, reentrant status
+inspection outside runtime locks, preserved observers and logger usability
+after imtg shutdown. The independent installed core consumer executes a failing
+task and observes its diagnostic. Parent fixtures provide both dependencies
+with context enabled and unavailable imtg provider paths, or only TimeShield
+with imtg adding LogIt++; each builds and executes the same consumer.
 
-Applications may use LogIt++, another logger, or no logger at all. The adapter
-does not provide a second queue, formatter, scheduler, or tracing abstraction.
-The current event set is intentionally narrow; adding a new event requires a
-stable code, a sanitization review, and a deterministic test.
+No second logger interface, formatter, queue or scheduler is introduced.
+Actual output remains optional because the application may register no backend,
+but the implementation dependency is always present.
