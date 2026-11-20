@@ -174,6 +174,7 @@ const char* log_event_code(LogEvent event) noexcept
     case LogEvent::UpdateHandlerFailed: return "telegram.update.handler_failed";
     case LogEvent::RuntimeTaskFailed: return "runtime.task_failed";
     case LogEvent::RuntimeShutdown: return "runtime.shutdown";
+    case LogEvent::RuntimeShutdownFailed: return "runtime.shutdown_failed";
     case LogEvent::RuntimeFailStop: return "runtime.fail_stop";
     }
     return "imtg.unknown";
@@ -215,8 +216,10 @@ void LogitAdapter::record_runtime_shutdown(const Result<void>& result) const noe
 {
     if (result) {
         emit(LogEvent::RuntimeShutdown, m_options, nullptr);
-    } else {
+    } else if (result.error().code == ErrorCode::RuntimeFailure) {
         emit(LogEvent::RuntimeFailStop, m_options, nullptr, error_code_name(result.error().code));
+    } else {
+        emit(LogEvent::RuntimeShutdownFailed, m_options, nullptr, error_code_name(result.error().code));
     }
 }
 

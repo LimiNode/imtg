@@ -64,9 +64,12 @@ int main()
     adapter.record_runtime_shutdown(
         imtg::Result<void>(imtg::Error{imtg::ErrorCode::RuntimeFailure,
                                        "untrusted exception"}));
+    adapter.record_runtime_shutdown(
+        imtg::Result<void>(imtg::Error{imtg::ErrorCode::InvalidState,
+                                       "cannot wait from worker"}));
 
     const auto messages = LOGIT_GET_BUFFERED_STRINGS(0);
-    CHECK(messages.size() == 8);
+    CHECK(messages.size() == 9);
     const auto contains = [&messages](const std::string& value) {
         return std::any_of(messages.begin(), messages.end(),
                            [&value](const std::string& message) {
@@ -81,6 +84,7 @@ int main()
     CHECK(contains("runtime.task_failed"));
     CHECK(contains("runtime.shutdown"));
     CHECK(contains("runtime.fail_stop"));
+    CHECK(contains("runtime.shutdown_failed"));
     CHECK(!contains("secret"));
     CHECK(!contains("private"));
     CHECK(!contains("token"));

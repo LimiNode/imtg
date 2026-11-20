@@ -26,6 +26,7 @@ enum class LogEvent {
     UpdateHandlerFailed,
     RuntimeTaskFailed,
     RuntimeShutdown,
+    RuntimeShutdownFailed,
     RuntimeFailStop,
 };
 
@@ -70,7 +71,7 @@ public:
     void record_update_admission(telegram::UpdateOutcome outcome,
                                  const telegram::Update& update) const noexcept;
 
-    /// \brief Records runtime shutdown or fail-stop completion.
+    /// \brief Records completed shutdown, internal fail-stop, or rejected shutdown.
     /// \param result Shutdown result returned by `ReferenceRuntime::shutdown`.
     /// \note This method never calls LogIt++ shutdown.
     void record_runtime_shutdown(const Result<void>& result) const noexcept;
