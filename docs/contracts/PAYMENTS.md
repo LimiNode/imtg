@@ -44,6 +44,15 @@ goods and services. A Telegram `pre_checkout_query` approval is not a local
 `Paid` transition; only an authoritative, deduplicated `successful_payment`
 event can establish that state.
 
+External donation platforms are a separate application-event boundary, not
+automatically an `IPaymentProvider`. A donation notification, alert rerun,
+synthetic test event or virtual-coin purchase must not create a local order
+payment in `Succeeded` or authorize fulfillment. Such events may drive optional
+bot reactions, but an actual order payment still requires this contract's
+account, attempt, exact amount/asset and authoritative evidence checks. See the
+[donation-platform research](../research/PAYMENT_PROVIDER_CAPABILITY_AUDIT.md#external-donation-platforms).
+This distinction adds no public provider enum, connector or event API.
+
 ## Commercial integration models
 
 Payment processing and commerce intermediation are separate boundaries. The
