@@ -173,9 +173,22 @@ attributed to one operator without explicit evidence.
 **Recorded:** 2026-11-20. **Priority:** P1 research for an optional crypto
 adapter, not a production selection. The supplied research cites the
 [official site](https://2328.io/ru/) and [API documentation](https://2328.io/api).
-Both URLs returned HTTP 403 to the unauthenticated documentation fetch in this
-update. The following details are therefore recorded from that research, not
-claimed as independently reverified API or legal facts.
+Both URLs returned HTTP 403 to the initial unauthenticated documentation fetch.
+That observation is retained as the history of the initial check, not a claim
+that the official documentation is unavailable to other readers.
+
+**Independent-review update, 2026-11-20:** the supplied review reports direct
+inspection of the official [general API](https://2328.io/api/general),
+[payments](https://2328.io/api/payments),
+[authentication](https://2328.io/api/authentication),
+[AML regulations](https://2328.io/aml-regulations) and
+[terms](https://2328.io/terms). These sources confirm the published API and
+the legal restrictions identified below. This is documentation evidence, not
+account onboarding, an official-registry check or a sandbox/live integration
+test. Account eligibility and operational reliability remain unverified.
+The agent's unauthenticated follow-up fetch of those five exact URLs still
+returned HTTP 403; the confirmation above is attributed to the independent
+review, not presented as a successful fetch in this environment.
 
 | Area | Reported capability | Gate before implementation or eligibility |
 |---|---|---|
@@ -186,11 +199,23 @@ claimed as independently reverified API or legal facts.
 | Payout/refund | `POST /v1/payout` for crypto; refund policy/statuses reported, but no public refund initiation API confirmed | Separate payout from refund and bank settlement; leave `refunds`/`partial_refunds` false for an adapter until its supported refund workflow is verified |
 | Test environment | Signed synthetic webhook testing reported; no full payment sandbox confirmed | Do not set `sandbox=true` from webhook tests or infer settlement/withdrawal success; real-money tests require separate authorization |
 
-Documented idempotency, if verified, is scoped to the original attempt and
+Documented idempotency is scoped to the original attempt and
 immutable amount/asset/account context. A timeout remains `UnknownOutcome`
 until authoritative lookup resolves that attempt; it does not authorize a new
 `order_id`, provider fallback or a blind retry with changed fields. The existing
 [payment contract](../contracts/PAYMENTS.md) remains authoritative.
+
+The independently reviewed payment documentation confirms that the same
+project and `order_id` return the existing payment; changed retry parameters
+may be ignored. A future adapter must therefore reject conflicting immutable
+fields locally rather than depend on a provider conflict response.
+
+The documented webhook signing recipe removes `sign`, compact-serializes the
+remaining JSON, Base64-encodes it and applies HMAC-SHA256. This is not DonateX's
+HMAC over the original request bytes. Preserve the original payload for audit,
+but freeze the exact 2328 serialization/encoding rules with known-answer
+vectors before implementing verification; do not share a raw-body signing
+algorithm between the two providers.
 
 The research lists `awaiting_confirmation`, `underpaid_check`, `underpaid`,
 `overpaid`, `aml_lock`, `cancel` and refund states. Preserve provider evidence
@@ -213,7 +238,9 @@ The supplied research describes an individual-merchant path for selling one's
 own goods/services, subject to provider approval. It reports Level 1 identity
 checks and Level 2 verification, potentially including Sumsub/biometrics, after
 aggregate completed withdrawals equivalent to USD 1,000; risk checks may occur
-earlier. Confirm the current threshold, residency/product eligibility and data
+earlier. The independent review confirms the published aggregate USD 1,000
+completed-withdrawal threshold for Level 2 before further withdrawals, while
+allowing earlier risk checks. Confirm residency/product eligibility and data
 handling in the exact account agreement. This is not a no-KYC or no-tax claim.
 
 It attributes the operator to `3-102-115916 SOCIEDAD DE RESPONSABILIDAD LIMITADA`,
@@ -228,6 +255,8 @@ third-party merchants without written approval. A PayWeaver multi-merchant
 deployment therefore needs explicit platform approval, seller/account
 separation and contractual responsibility; one shared merchant account is not
 assumed permissible. No PayWeaver repository or connector is changed here.
+The independently reviewed terms confirm the written-approval requirement;
+public documentation does not establish approval for our deployment.
 
 Before implementation, the commerce/payment maintainers must obtain current
 API and legal pages plus written answers about jurisdictions, refund API or
@@ -353,9 +382,12 @@ implemented event subsystem:
    Conflicting immutable financial attributes require explicit reconciliation,
    not a new donation; neither mutable envelopes nor account reuse may bypass
    durable deduplication.
-2. Authenticate webhooks/realtime subscriptions and persist accepted events
-   before acknowledging delivery. Define bounded queues, payload/retention
-   limits, reconnect cursors, history replay and unrecoverable gaps. Reuse
+2. Authenticate webhooks/realtime subscriptions. For webhooks, persist accepted
+   events before a successful HTTP reply. For realtime, use application ACKs
+   and reconnect cursors only if the provider exposes them; otherwise recover
+   through documented history backfill or record an explicit unrecoverable gap.
+   Do not infer replay from SignalR/Centrifugo alone. Define bounded queues and
+   payload/retention limits. Reuse
    existing storage, delivery and application-event contracts rather than a
    second orchestration system.
 3. Distinguish real donations, synthetic/test events, alert reruns, goals and
