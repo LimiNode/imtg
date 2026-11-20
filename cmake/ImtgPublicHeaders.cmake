@@ -46,3 +46,6 @@ set(IMTG_TELEGRAM_PUBLIC_HEADERS
 set(IMTG_TELEGRAM_TRANSPORT_PUBLIC_HEADERS
     imtg/telegram_transport.hpp
     imtg/telegram_transport/TelegramBotApi.hpp)
+
+set(IMTG_TELEGRAM_KURLYK_PUBLIC_HEADERS
+    imtg/telegram_transport/KurlykHttpTransport.hpp)

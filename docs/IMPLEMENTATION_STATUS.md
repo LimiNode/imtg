@@ -1,14 +1,15 @@
 # Implementation status
 
-The M3a Telegram entries in this document describe the optional Draft slice
+The M3 Telegram entries in this document describe the optional Draft slices
 under review; they do not claim that the current `main` has merged or released
 Telegram support.
 
-Flat dependency wiring is owned by `external/CMakeLists.txt`: the two direct
-pinned sibling submodules provide MDBX without recursive initialization or
-configure-time downloads. The MDBX CTest configuration includes a Git inventory
-check. See [dependency boundary](../external/README.md). This does not complete
-M2d-b installed export or M2e crash recovery.
+Flat dependency wiring is owned by `external/CMakeLists.txt` for MDBX and
+`cmake/ImtgKurlykDependency.cmake` for the optional outgoing HTTP adapter.
+Direct pinned siblings or parent-owned targets are used without recursive
+initialization or configure-time downloads. The Git inventory check includes
+the network profile; see [dependency boundary](../external/README.md). This
+does not complete M2d-b installed export or M2e crash recovery.
 
 M2c-a, M2c-b, and M2c-c are merged in `main`. M2d-a MDBX source-build
 foundation and the flat dependency boundary are merged in PRs #24 and #26.
@@ -25,10 +26,11 @@ establish process-crash durability.
 The Sovetwave header-topology audit is documented in
 [header-architecture.md](guides/header-architecture.md), ADR 0009, and the
 accepted hybrid profile in [ADR 0011](adr/0011-hybrid-public-header-profile.md).
-Nine domains expose root-level umbrellas, with `telegram` remaining optional.
+The main domains expose root-level umbrellas, with Telegram modules remaining optional.
 All old installed leaf paths remain; the nested umbrellas forward to the root
 entry points. The explicit manifest contains 29 core-package, seven optional
-commerce, and two optional Telegram entry points. Core does not include
+commerce, two optional Telegram, two generic Bot API transport and one
+standalone kurlyk adapter entry points. Core does not include
 optional adapters, commerce, or Telegram. Installed-header tests check each
 enabled package inventory and every supported header as a first include.
 
@@ -67,7 +69,7 @@ audit contract must be accepted before a separate GUI target is implemented.
 | Area | Status | Evidence / next proof |
 |---|---|---|
 | Architecture and contracts | `contract-only` | Markdown documents in `docs/`; review links and invariants |
-| Header topology | `implemented` | [Header architecture guide](guides/header-architecture.md), [ADR 0011](adr/0011-hybrid-public-header-profile.md); nine root umbrellas, explicit manifest, compatibility shims, topology CTest and installed first-include tests |
+| Header topology | `implemented` | [Header architecture guide](guides/header-architecture.md), [ADR 0011](adr/0011-hybrid-public-header-profile.md); domain umbrellas and independently enabled optional components, explicit manifest, compatibility shims, topology CTest and installed first-include tests |
 | CMake `imtg_core` target and C++17 baseline | `implemented` | Root CMake target configures/builds; CTest executes offline core tests |
 | Typed identities and deterministic clock | `implemented` | `src/imtg/core/`; M1a equality/encoding/hash tests |
 | Immediate-Mode UI tree | `partial` | M1b implements immutable tree nodes, stable paths, RAII scopes, duplicate detection, and offline tests; components remain intentionally small |
@@ -77,7 +79,7 @@ audit contract must be accepted before a separate GUI target is implemented.
 | FSM and sessions | `implemented` | [SESSIONS_AND_FSM.md](contracts/SESSIONS_AND_FSM.md); `src/imtg/sessions/`; `imtg_session_tests` covers encoding, transitions, deduplication, conflicts, and atomic TX1 |
 | Storage protocol and in-memory backend | `implemented` | [STORAGE.md](contracts/STORAGE.md); `src/imtg/storage/storage.hpp`; fixture-based `imtg_storage_tests` conformance suite with revision, ABA, schema-gate, ownership, and commit-outcome coverage |
 | Durable repositories and MDBX backend | `partial` | M2d-a optional source-build `imtg_mdbx` target, pinned `mdbx-containers`/`libmdbx`, six-DBI profile, shared conformance and persistence/reopen tests; package export and crash proof remain M2d-b/M2e |
-| Telegram gateway / transport | `partial` | Optional `imtg::telegram` typed update boundary plus `imtg::telegram_transport` bounded Bot API requests for `sendMessage`, `editMessageText`, and `answerCallbackQuery`; JSON response interpretation confirms scoped result identities and returns API error codes/retry delay; fake tests cover malformed/contradictory responses, limits, timeout/cancellation and `UnknownOutcome`; kurlyk, worker orchestration and live transport remain future work |
+| Telegram gateway / transport | `partial` | Optional `imtg::telegram` typed update boundary, generic `imtg::telegram_transport` request/result validation, and standalone `imtg::telegram_kurlyk` outgoing HTTP adapter; fake and real loopback tests cover limits, malformed/lost responses, cancellation, no retry and isolated request groups; installed consumer, parent-target reuse and headers are checked. Worker/outbox orchestration, incoming webhook, durable inbox and live Telegram remain unimplemented |
 | Payment provider contracts and capability audit | `partial` | [PAYMENTS.md](contracts/PAYMENTS.md), [PAYMENT_PROVIDER_CAPABILITY_AUDIT.md](research/PAYMENT_PROVIDER_CAPABILITY_AUDIT.md), optional `imtg_commerce` identities, account-scoped eligibility, exact asset-scale validation, evidence binding, shared `CommitResult` payment transactions, explicit refund policies and `imtg_payment_contract_tests`; provider adapters, durable persistence, webhooks and onboarding remain future work |
 | Render intents, reconciliation, and outbox | `partial` | M2c-a claims/fencing, M2c-b canonical `LT1` target scoping, and M2c-c bounded delivery claims, dispatch admission, fenced acknowledgements, monotonic applied-target evidence, retry/Unknown policy, and supersession are merged; durable adapters and full cross-backend recovery remain future work |
 | Localization | `planned` | M4 catalog, fallback, and pluralization tests |

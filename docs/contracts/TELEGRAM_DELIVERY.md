@@ -4,8 +4,9 @@
 the merged storage-only reference delivery lifecycle. M3a adds the optional,
 transport-neutral typed update boundary and routes accepted callbacks through
 the existing keyed scheduler. M3b-a adds bounded request construction and
-response interpretation through an injected HTTP boundary. A concrete HTTP
-adapter, worker orchestration, and method-specific retry evidence remain planned.
+response interpretation through an injected HTTP boundary. A separate Draft
+slice adds the optional concrete kurlyk HTTP adapter; worker/outbox
+orchestration and method-specific retry evidence remain planned.
 
 The M3a boundary owns value-copied update DTOs, shape/size validation,
 bot-scoped update deduplication, deterministic filters and middleware, and
@@ -66,7 +67,86 @@ does not add a worker, HTTP retry engine, or outbox state machine. The bounded
 JSON parser uses a pinned private dependency; no JSON types or dependency
 lookup escape into the installed public package.
 
-`kurlyk` is a recommended future HTTP adapter, not a core dependency. Telegram's external API cannot provide exactly-once delivery without corresponding guarantees, and arbitrary client idempotency keys must not be assumed.
+`kurlyk` is an optional HTTP implementation dependency, not a core dependency.
+Telegram's external API cannot provide exactly-once delivery without
+corresponding guarantees, and arbitrary client idempotency keys must not be assumed.
+
+### Optional outgoing kurlyk implementation
+
+Enable `IMTG_BUILD_TELEGRAM`, `IMTG_BUILD_TELEGRAM_TRANSPORT` and
+`IMTG_BUILD_TELEGRAM_KURLYK`. Include the standalone
+`<imtg/telegram_transport/KurlykHttpTransport.hpp>` and link
+`imtg::telegram_kurlyk`; an installed consumer requests the `telegram_kurlyk`
+component. Neither the generic transport umbrella nor core includes this
+implementation. Source integration uses the exact flat dependency pins in
+[external](../../external/README.md), including the receive-body corrective
+and offline provider resolution in upstream kurlyk #50/#51. These upstream
+Draft changes require independent acceptance before merge.
+
+`KurlykHttpTransport` copies request data into an isolated kurlyk group and
+always sets a positive `max_response_body_bytes`. It disables redirects,
+automatic retry, streaming, verbose output and debug headers, while retaining
+TLS verification. The body limit is enforced by kurlyk's libcurl write
+callback before accumulation, not by truncating an already buffered response.
+It does not bound kurlyk's header buffers or the entire process; the
+application owns shared worker admission/concurrency policy. No second worker,
+HTTP client implementation or logger interface is created.
+
+The adapter translation unit disables kurlyk automatic initialization. The
+application initializes the shared worker in asynchronous mode before calls,
+keeps it progressing until all callers and pending cancellations finish, and
+deinitializes it last. It may opt into kurlyk's own auto-initializer in its
+application code instead; imtg neither installs one nor stops global networking.
+Do not call this synchronous boundary from the kurlyk worker, or while holding
+a storage transaction. Its callbacks capture owned completion state only.
+
+Cancellation is checked before submission and during waiting. Cancellation or
+deadline after admission queues cancellation of that call's group and returns
+without waiting for worker quiescence. Late completion cannot access the
+borrowed request/token or destroyed transport. Reclamation requires worker
+progress; the timeout is not a promise to preempt another application's
+blocking kurlyk callback. The upstream receive timeout is finite as well.
+One call's cancellation cannot cancel another group's exchange.
+
+Pre-cancellation, local rejection and explicit kurlyk admission rejection prove
+non-transmission. Once submission starts, any exceptional/ambiguous failure
+conservatively preserves `request_may_have_been_sent=true`. A lost response,
+receive-limit abort or cancellation cannot undo a remote operation. HTTP 429
+and other completed error statuses are returned as responses for the existing
+Bot API interpreter; backend transport errors are typed failures without
+backend text, URLs, tokens or payloads. The adapter never retries them.
+
+On Windows the pinned kurlyk TLS implementation resolves an empty `ca_file`
+to `curl-ca-bundle.crt` beside the executable. Provision and maintain an
+appropriate PEM trust bundle there before enabling HTTPS. The pinned binary
+siblings and imtg install do not supply it. Other platforms use the backend's
+system trust configuration. Never disable peer/host verification as a
+workaround. Current deterministic tests use plain HTTP loopback and establish
+neither HTTPS trust deployment nor successful live Telegram delivery.
+
+### Next-stage incoming webhook boundary
+
+The optional general HTTP-server foundation is an independent upstream kurlyk
+Draft (#52), not an imtg webhook implementation. Its bounded loopback listener
+and abortive stop do not establish TLS/public deployment, durable intake or
+Telegram update handling. A later imtg adapter must:
+
+- authenticate `X-Telegram-Bot-Api-Secret-Token` before runtime admission;
+- derive `bot_id` from trusted endpoint configuration, never incoming JSON;
+- decode bounded JSON into the existing typed DTO/router and reuse the keyed
+  runtime and deduplication, not create another scheduler;
+- reject overload explicitly (for example HTTP 503), and ensure invalid
+  secrets never reach runtime;
+- make polling and webhook intake mutually exclusive for one bot;
+- acknowledge with 2xx only after the declared responsibility boundary. A
+  crash-surviving mode requires persisted inbox admission before the reply;
+  successful RAM admission alone cannot promise survival after process loss.
+
+`setWebhook`, `deleteWebhook` and `getWebhookInfo` are outgoing Bot API methods,
+separate from the incoming listener and deferred beyond the current three
+implemented methods. Public HTTPS/TLS configuration belongs to the application
+(direct TLS backend or reverse proxy). No durable inbox or webhook registration
+is implemented in the current slice.
 
 ## Gateway and handler modes
 

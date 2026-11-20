@@ -4,7 +4,8 @@
 pending independent review.
 **Scope:** `core`, `actions`, `storage`, `sessions`, `reconciliation`, `ui`,
 `runtime`, the optional `commerce` addendum, the optional `telegram` gateway
-boundary, and the optional `telegram_transport` boundary.
+boundary, the optional `telegram_transport` boundary, and its standalone
+optional kurlyk adapter.
 
 This guide records the current include topology and the selected hybrid
 profile: domain umbrellas plus standalone public components and optional modules
@@ -67,6 +68,15 @@ installed-header fixture compares the complete real header inventory to the
 manifest and compiles every entry first. Optional fixtures link their headers
 to the corresponding `imtg::commerce`, `imtg::telegram`, or
 `imtg::telegram_transport` target.
+
+`<imtg/telegram_transport/KurlykHttpTransport.hpp>` is a separate standalone
+optional component. It is installed only with
+`IMTG_BUILD_TELEGRAM_KURLYK=ON` and links through `imtg::telegram_kurlyk`.
+Its implementation starts with that header, not the generic transport umbrella.
+The public header depends only on the generic imtg transport contract; vendor
+headers stay implementation-only. Neither `telegram_transport.hpp` nor any core
+umbrella includes this adapter. Its manifest entry, topology exception,
+installed first-include check and independent consumer cover this boundary.
 
 The nested `core/core.hpp`, `actions/actions.hpp`, `actions/registry.hpp`,
 `ui/ui.hpp`, and `runtime/runtime.hpp` paths remain forwarding compatibility

@@ -1,0 +1,36 @@
+cmake_minimum_required(VERSION 3.21)
+project(imtg_parent_kurlyk LANGUAGES CXX)
+
+find_package(kurlyk CONFIG REQUIRED)
+add_library(imtg_parent_json INTERFACE)
+add_library(nlohmann_json::nlohmann_json ALIAS imtg_parent_json)
+target_include_directories(imtg_parent_json INTERFACE "${IMTG_SOURCE_DIR}/external/json/include")
+target_compile_definitions(imtg_parent_json INTERFACE JSON_DIAGNOSTICS=1)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(IMTG_BUILD_TELEGRAM ON CACHE BOOL "" FORCE)
+set(IMTG_BUILD_TELEGRAM_TRANSPORT ON CACHE BOOL "" FORCE)
+set(IMTG_BUILD_TELEGRAM_KURLYK ON CACHE BOOL "" FORCE)
+# A parent target must be used without inspecting imtg's provider path.
+set(IMTG_KURLYK_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/not-a-provider" CACHE PATH "" FORCE)
+set(IMTG_JSON_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/not-a-json-provider" CACHE PATH "" FORCE)
+set(KURLYK_ALLOW_DOWNLOADS OFF CACHE BOOL "" FORCE)
+add_subdirectory("${IMTG_SOURCE_DIR}" imtg)
+if(NOT IMTG_KURLYK_SOURCE_DIR STREQUAL "${CMAKE_CURRENT_BINARY_DIR}/not-a-provider")
+    message(FATAL_ERROR "imtg modified the parent's provider selection")
+endif()
+get_target_property(json_definitions imtg_parent_json INTERFACE_COMPILE_DEFINITIONS)
+if(NOT IMTG_JSON_SOURCE_DIR STREQUAL "${CMAKE_CURRENT_BINARY_DIR}/not-a-json-provider"
+        OR NOT json_definitions STREQUAL "JSON_DIAGNOSTICS=1")
+    message(FATAL_ERROR "imtg modified the parent's JSON provider or configuration")
+endif()
+
+add_executable(imtg_parent_kurlyk ../install_telegram_kurlyk_consumer/main.cpp)
+target_link_libraries(imtg_parent_kurlyk PRIVATE imtg::telegram_kurlyk)
+target_compile_features(imtg_parent_kurlyk PRIVATE cxx_std_17)
+if(IMTG_RUNTIME_DLLS)
+    add_custom_command(TARGET imtg_parent_kurlyk POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${IMTG_RUNTIME_DLLS}
+            $<TARGET_FILE_DIR:imtg_parent_kurlyk>)
+endif()
+enable_testing()
+add_test(NAME imtg_parent_kurlyk COMMAND imtg_parent_kurlyk)
