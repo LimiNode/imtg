@@ -336,4 +336,3 @@ The original audit was documentation-only. The implemented entry-point addendum
 above is verified by topology CTest, standalone installed-header builds,
 independent consumers, core-only/commerce builds, and Doxygen. Report the actual
 results per reviewed HEAD; this guide alone is not evidence of a passing CI run.
-

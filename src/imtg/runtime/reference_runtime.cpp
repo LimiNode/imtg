@@ -1,5 +1,7 @@
 #include <imtg/runtime.hpp>
 
+#include <logit.hpp>
+
 #include <exception>
 #include <algorithm>
 #include <stdexcept>
@@ -275,6 +277,7 @@ ReferenceRuntime::ReferenceRuntime(ActionRegistry& actions,
         for (auto& worker : m_workers) {
             if (worker.joinable()) worker.join();
         }
+        try { LOGIT_ERROR("runtime.startup_failed"); } catch (...) { }
         throw;
     }
 }
@@ -316,69 +319,79 @@ Result<void> ReferenceRuntime::submit_callback(ConversationKey key, CallbackTask
 
 Result<void> ReferenceRuntime::submit_task(Task task)
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    const auto task_key = task.key;
-    if (!m_accepting) {
-        return Error{ErrorCode::InvalidState, "runtime is shutting down"};
-    }
-    if (task.token.size() > m_config.max_token_size) {
-        return Error{ErrorCode::InvalidArgument, "action token exceeds configured limit"};
-    }
-    auto mailbox_it = m_mailboxes.end();
-    bool inserted = false;
-    bool enqueued = false;
-    bool was_scheduled = false;
-    const auto submit_index = m_submit_attempts++;
-    try {
-        auto insertion = m_mailboxes.try_emplace(task_key);
-        mailbox_it = insertion.first;
-        inserted = insertion.second;
-        auto& mailbox = mailbox_it->second;
-        if (mailbox.queue.size() >= m_config.max_queued_tasks_per_conversation
-            || m_queued_tasks >= m_config.max_queued_tasks_total) {
-            if (inserted && mailbox.queue.empty() && !mailbox.scheduled) m_mailboxes.erase(mailbox_it);
-            return Error{ErrorCode::QueueFull, "session queue is full"};
+    const auto result = [&]() -> Result<void> {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        const auto task_key = task.key;
+        if (!m_accepting) {
+            return Error{ErrorCode::InvalidState, "runtime is shutting down"};
         }
-        if (inserted && m_mailboxes.size() > m_config.max_active_mailboxes) {
-            m_mailboxes.erase(mailbox_it);
-            return Error{ErrorCode::QueueFull, "active mailbox limit is full"};
+        if (task.token.size() > m_config.max_token_size) {
+            return Error{ErrorCode::InvalidArgument, "action token exceeds configured limit"};
         }
-        was_scheduled = mailbox.scheduled;
-        if (submit_index == m_config.fail_queue_insertion_on_submit) {
-            throw std::bad_alloc();
-        }
-        mailbox.queue.push_back(std::move(task));
-        ++m_queued_tasks;
-        enqueued = true;
-        if (!mailbox.scheduled) {
-            mailbox.scheduled = true;
-            m_ready.push_back(task_key);
-            m_condition.notify_one();
-        }
-    } catch (...) {
-        if (mailbox_it != m_mailboxes.end()) {
+        auto mailbox_it = m_mailboxes.end();
+        bool inserted = false;
+        bool enqueued = false;
+        bool was_scheduled = false;
+        const auto submit_index = m_submit_attempts++;
+        try {
+            auto insertion = m_mailboxes.try_emplace(task_key);
+            mailbox_it = insertion.first;
+            inserted = insertion.second;
             auto& mailbox = mailbox_it->second;
-            if (enqueued) {
-                if (!mailbox.queue.empty()) {
-                    mailbox.queue.pop_back();
-                    --m_queued_tasks;
-                }
+            if (mailbox.queue.size() >= m_config.max_queued_tasks_per_conversation
+                || m_queued_tasks >= m_config.max_queued_tasks_total) {
+                if (inserted && mailbox.queue.empty() && !mailbox.scheduled) m_mailboxes.erase(mailbox_it);
+                return Error{ErrorCode::QueueFull, "session queue is full"};
             }
-            // A failed insertion never changes scheduling. If a later mutation
-            // fails, only undo the scheduling mutation performed by this call.
-            if (enqueued && !was_scheduled && mailbox.queue.empty()) {
-                mailbox.scheduled = false;
-                if (!m_ready.empty() && m_ready.back() == task_key) {
-                    m_ready.pop_back();
-                }
-            }
-            if (inserted && mailbox.queue.empty() && !mailbox.scheduled) {
+            if (inserted && m_mailboxes.size() > m_config.max_active_mailboxes) {
                 m_mailboxes.erase(mailbox_it);
+                return Error{ErrorCode::QueueFull, "active mailbox limit is full"};
             }
+            was_scheduled = mailbox.scheduled;
+            if (submit_index == m_config.fail_queue_insertion_on_submit) {
+                throw std::bad_alloc();
+            }
+            mailbox.queue.push_back(std::move(task));
+            ++m_queued_tasks;
+            enqueued = true;
+            if (!mailbox.scheduled) {
+                mailbox.scheduled = true;
+                m_ready.push_back(task_key);
+                m_condition.notify_one();
+            }
+        } catch (...) {
+            if (mailbox_it != m_mailboxes.end()) {
+                auto& mailbox = mailbox_it->second;
+                if (enqueued) {
+                    if (!mailbox.queue.empty()) {
+                        mailbox.queue.pop_back();
+                        --m_queued_tasks;
+                    }
+                }
+                // A failed insertion never changes scheduling. If a later mutation
+                // fails, only undo the scheduling mutation performed by this call.
+                if (enqueued && !was_scheduled && mailbox.queue.empty()) {
+                    mailbox.scheduled = false;
+                    if (!m_ready.empty() && m_ready.back() == task_key) {
+                        m_ready.pop_back();
+                    }
+                }
+                if (inserted && mailbox.queue.empty() && !mailbox.scheduled) {
+                    m_mailboxes.erase(mailbox_it);
+                }
+            }
+            return Error{ErrorCode::QueueFull, "runtime admission allocation failed"};
         }
-        return Error{ErrorCode::QueueFull, "runtime admission allocation failed"};
+        return Result<void>();
+    }();
+    // Backend code runs only after admission has released the runtime lock.
+    if (!result) {
+        try {
+            LOGIT_WARN_TAG("runtime.admission_rejected",
+                LOGIT_TAG("error_code", static_cast<int>(result.error().code)));
+        } catch (...) { }
     }
-    return Result<void>();
+    return result;
 }
 
 void ReferenceRuntime::request_shutdown() noexcept
@@ -393,9 +406,10 @@ Result<void> ReferenceRuntime::shutdown()
 {
     request_shutdown();
     if (is_worker_thread()) {
+        try { LOGIT_WARN("runtime.shutdown_rejected"); } catch (...) { }
         return Error{ErrorCode::InvalidState, "cannot wait for runtime from worker"};
     }
-    std::lock_guard<std::mutex> join_lock(m_join_mutex);
+    std::unique_lock<std::mutex> join_lock(m_join_mutex);
     if (m_joined) {
         return failure_status();
     }
@@ -405,7 +419,16 @@ Result<void> ReferenceRuntime::shutdown()
         }
     }
     m_joined = true;
-    return failure_status();
+    const auto result = failure_status();
+    join_lock.unlock();
+    try {
+        if (result) {
+            LOGIT_INFO("runtime.shutdown");
+        } else {
+            LOGIT_ERROR("runtime.shutdown_failed");
+        }
+    } catch (...) { }
+    return result;
 }
 
 Result<void> ReferenceRuntime::failure_status() const
@@ -443,6 +466,7 @@ void ReferenceRuntime::worker_loop() noexcept
         }
         const auto completed_key = task.key;
         execute(std::move(task));
+        bool fail_stop = false;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             auto found = m_mailboxes.find(completed_key);
@@ -460,10 +484,14 @@ void ReferenceRuntime::worker_loop() noexcept
                     m_accepting = false;
                     m_shutdown_requested = true;
                     m_condition.notify_all();
+                    fail_stop = true;
                 }
             } else if (found != m_mailboxes.end()) {
                 m_mailboxes.erase(found);
             }
+        }
+        if (fail_stop) {
+            try { LOGIT_ERROR("runtime.fail_stop"); } catch (...) { }
         }
     }
 }
@@ -522,6 +550,10 @@ void ReferenceRuntime::execute(Task task) noexcept
 
 void ReferenceRuntime::report(const ConversationKey& key, const Error& error) const noexcept
 {
+    try {
+        LOGIT_ERROR_TAG("runtime.task_failed",
+            LOGIT_TAG("error_code", static_cast<int>(error.code)));
+    } catch (...) { }
     if (m_error) {
         try {
             m_error(key, error);

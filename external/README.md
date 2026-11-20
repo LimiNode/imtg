@@ -7,6 +7,8 @@ Only direct, pinned Git submodules are managed by imtg here:
 | `libmdbx` | erthink/libmdbx | `5315e9905b525a0a183b76fc787317c51076f944` (v0.13.12) |
 | `mdbx-containers` | LimiNode/mdbx-containers | `4ab32b5eab3cdfce95d1a6c0f05f566019793ec4` |
 | `json` | nlohmann/json | `b1bb9fce0c9ae9db5cecf8e3bd78519ac70683ee` (same pin as reviewed kurlyk baseline) |
+| `log-it-cpp` | LimiNode/log-it-cpp | `659c38eef86cb3cbab448fb76852641830a89430` (v1.0.2) |
+| `time-shield-cpp` | LimiNode/time-shield-cpp | `d5f1203f24341e4146af35d5bb36e762056d181f` (v2.0.0) |
 | `kurlyk` | LimiNode/kurlyk | `72373420175a8414f84307f3b1f59709ce234e5a` (corrective #51, based on response-limit #50) |
 | `asio` | chriskohlhoff/asio | `03cf5f86a780dd102f1cdd3a59d1244d12143e46` |
 | `Simple-WebSocket-Server` | LimiNode/Simple-WebSocket-Server | `de7cb7c39edd6b4178adcc3f5f17d219720b3cdb` |
@@ -15,7 +17,10 @@ Only direct, pinned Git submodules are managed by imtg here:
 | `openssl-win64` | LimiNode/openssl-win64-v3.5.8 | `d7528b3ade4da0ab445c8bdb34b65907595d27f5` |
 
 The gitlinks are authoritative. Update this audit when changing their pins.
-No dependency is required by `imtg::core` or a core-only build.
+This local integration additionally includes #38: LogIt++ and TimeShield are
+required implementation dependencies of core. Existing parent targets are
+reused before own source paths, and parent `LOGIT_WITH_*` choices are preserved.
+This local validation is not a merge or release claim for `main`.
 
 From the repository root, initialize only the direct siblings:
 

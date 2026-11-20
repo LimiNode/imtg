@@ -41,6 +41,12 @@ The implementation preserves public leaf paths and runtime behavior. Installatio
 uses the explicit `cmake/ImtgPublicHeaders.cmake` manifest; topology and installed
 first-include checks cover the boundary and compatibility paths.
 
+LogIt++ is a required implementation dependency, confined to `.cpp` files.
+No vendor types or includes enter the core public headers. Applications own
+the backend/configuration, bounded queue/drop policy, and logger shutdown;
+existing runtime/router observers remain application notification channels.
+See [ADR 0012](adr/0012-optional-logit-diagnostics.md).
+
 The runtime is organized as:
 
 1. an `UpdateGateway` performs stateless validation, normalizes external input, validates token syntax/integrity, and derives the `ConversationKey`;

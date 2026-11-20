@@ -25,3 +25,9 @@
 [submodule "external/openssl-win64"]
 	path = external/openssl-win64
 	url = https://github.com/LimiNode/openssl-win64-v3.5.8.git
+[submodule "external/log-it-cpp"]
+	path = external/log-it-cpp
+	url = https://github.com/LimiNode/log-it-cpp.git
+[submodule "external/time-shield-cpp"]
+	path = external/time-shield-cpp
+	url = https://github.com/LimiNode/time-shield-cpp.git

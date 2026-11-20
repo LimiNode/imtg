@@ -23,7 +23,7 @@ foreach(entry IN LISTS entries)
     list(APPEND paths "${CMAKE_MATCH_1}")
 endforeach()
 list(SORT paths)
-if(NOT "${paths}" STREQUAL "external/Simple-Web-Server;external/Simple-WebSocket-Server;external/asio;external/curl-win64-mingw;external/json;external/kurlyk;external/libmdbx;external/mdbx-containers;external/openssl-win64")
+if(NOT "${paths}" STREQUAL "external/Simple-Web-Server;external/Simple-WebSocket-Server;external/asio;external/curl-win64-mingw;external/json;external/kurlyk;external/libmdbx;external/log-it-cpp;external/mdbx-containers;external/openssl-win64;external/time-shield-cpp")
     message(FATAL_ERROR "Update the dependency audit for the new inventory: ${paths}")
 endif()
 

@@ -1,5 +1,7 @@
 #include <imtg/telegram.hpp>
 
+#include <logit.hpp>
+
 #include <exception>
 #include <limits>
 #include <utility>
@@ -327,113 +329,130 @@ void UpdateRouter::complete(const std::shared_ptr<DeduplicationState>& state,
 
 UpdateOutcome UpdateRouter::receive(Update update)
 {
-    const auto identity = UpdateIdentity{update.bot_id, update.update_id};
-    const auto deduplication = m_deduplication;
-    if (!validate(update)) return UpdateOutcome::Invalid;
+    const auto outcome = [&]() -> UpdateOutcome {
+        const auto identity = UpdateIdentity{update.bot_id, update.update_id};
+        const auto deduplication = m_deduplication;
+        if (!validate(update)) return UpdateOutcome::Invalid;
 
-    RoutePtr route;
-    MiddlewareList middleware;
-    ConversationKey key;
-    bool reserved = false;
-    try {
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            if (!m_accepting) return UpdateOutcome::Closed;
-            m_started = true;
-            std::lock_guard<std::mutex> deduplication_lock(deduplication->mutex);
-            if (deduplication->reserved_updates.find(identity)
-                    != deduplication->reserved_updates.end()) {
-                return UpdateOutcome::Duplicate;
-            }
-            route = select_route(update);
-            if (!route) return UpdateOutcome::Rejected;
-            auto conversation = make_conversation_key(update);
-            if (!conversation) return UpdateOutcome::Invalid;
-            key = conversation.value();
-            const auto insertion = deduplication->reserved_updates.insert(identity);
-            if (!insertion.second) return UpdateOutcome::Duplicate;
-            reserved = true;
-            // The in-flight reservation is the admission record. Completed
-            // history is updated only after the callback returns.
-            middleware = m_middleware;
-        }
-
-        UpdateContext context{std::move(update), key, route->mode};
-        const auto sink = m_outcome_sink;
-        const auto accepted = m_runtime.submit_callback(
-            key,
-            [deduplication, identity, route, middleware, context = std::move(context), sink]() mutable
-                -> Result<void> {
-                const auto report = [&sink, &context](UpdateOutcome outcome, const Error& error) {
-                    if (!sink) return;
-                    try { sink(outcome, context, error); } catch (...) { }
-                };
-                try {
-                    for (const auto& policy : *middleware) {
-                        const auto result = policy(context);
-                        if (!result) {
-                            report(UpdateOutcome::Rejected, result.error());
-                            complete(deduplication, identity);
-                            return result;
-                        }
-                    }
-                    const auto binding = validate_binding(route->binding, context);
-                    if (!binding) {
-                        report(UpdateOutcome::Unauthorized, binding.error());
-                        complete(deduplication, identity);
-                        return binding;
-                    }
-                    if (route->authorize) {
-                        const auto result = route->authorize(context);
-                        if (!result) {
-                            report(UpdateOutcome::Unauthorized, result.error());
-                            complete(deduplication, identity);
-                            return result;
-                        }
-                    }
-                    if (route->check_stale) {
-                        const auto result = route->check_stale(context);
-                        if (!result) {
-                            report(UpdateOutcome::Stale, result.error());
-                            complete(deduplication, identity);
-                            return result;
-                        }
-                    }
-                    const auto result = route->handler(context);
-                    if (!result) report(UpdateOutcome::HandlerFailed, result.error());
-                    complete(deduplication, identity);
-                    return result;
-                } catch (const std::exception& exception) {
-                    const Error error{ErrorCode::HandlerUnavailable, exception.what()};
-                    report(UpdateOutcome::HandlerFailed, error);
-                    complete(deduplication, identity);
-                    return error;
-                } catch (...) {
-                    const Error error{ErrorCode::HandlerUnavailable,
-                                      "telegram route callback threw an unknown exception"};
-                    report(UpdateOutcome::HandlerFailed, error);
-                    complete(deduplication, identity);
-                    return error;
+        RoutePtr route;
+        MiddlewareList middleware;
+        ConversationKey key;
+        bool reserved = false;
+        try {
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                if (!m_accepting) return UpdateOutcome::Closed;
+                m_started = true;
+                std::lock_guard<std::mutex> deduplication_lock(deduplication->mutex);
+                if (deduplication->reserved_updates.find(identity)
+                        != deduplication->reserved_updates.end()) {
+                    return UpdateOutcome::Duplicate;
                 }
-            });
-        if (accepted) return UpdateOutcome::Accepted;
-        forget(identity);
-        return accepted.error().code == ErrorCode::QueueFull
-            ? UpdateOutcome::QueueFull
-            : accepted.error().code == ErrorCode::InvalidState
-                ? UpdateOutcome::Closed : UpdateOutcome::Rejected;
-    } catch (...) {
-        // Admission is fail-closed: a failed allocation or callback wrapper
-        // construction must not consume the deduplication slot permanently.
-        if (reserved) forget(identity);
-        return UpdateOutcome::Rejected;
-    }
+                route = select_route(update);
+                if (!route) return UpdateOutcome::Rejected;
+                auto conversation = make_conversation_key(update);
+                if (!conversation) return UpdateOutcome::Invalid;
+                key = conversation.value();
+                const auto insertion = deduplication->reserved_updates.insert(identity);
+                if (!insertion.second) return UpdateOutcome::Duplicate;
+                reserved = true;
+                // The in-flight reservation is the admission record. Completed
+                // history is updated only after the callback returns.
+                middleware = m_middleware;
+            }
+
+            UpdateContext context{std::move(update), key, route->mode};
+            const auto sink = m_outcome_sink;
+            const auto accepted = m_runtime.submit_callback(
+                key,
+                [deduplication, identity, route, middleware, context = std::move(context), sink]() mutable
+                    -> Result<void> {
+                    const auto report = [&sink, &context](UpdateOutcome outcome, const Error& error) {
+                        if (!sink) return;
+                        try { sink(outcome, context, error); } catch (...) { }
+                    };
+                    try {
+                        for (const auto& policy : *middleware) {
+                            const auto result = policy(context);
+                            if (!result) {
+                                report(UpdateOutcome::Rejected, result.error());
+                                complete(deduplication, identity);
+                                return result;
+                            }
+                        }
+                        const auto binding = validate_binding(route->binding, context);
+                        if (!binding) {
+                            report(UpdateOutcome::Unauthorized, binding.error());
+                            complete(deduplication, identity);
+                            return binding;
+                        }
+                        if (route->authorize) {
+                            const auto result = route->authorize(context);
+                            if (!result) {
+                                report(UpdateOutcome::Unauthorized, result.error());
+                                complete(deduplication, identity);
+                                return result;
+                            }
+                        }
+                        if (route->check_stale) {
+                            const auto result = route->check_stale(context);
+                            if (!result) {
+                                report(UpdateOutcome::Stale, result.error());
+                                complete(deduplication, identity);
+                                return result;
+                            }
+                        }
+                        const auto result = route->handler(context);
+                        if (!result) report(UpdateOutcome::HandlerFailed, result.error());
+                        complete(deduplication, identity);
+                        return result;
+                    } catch (const std::exception& exception) {
+                        const Error error{ErrorCode::HandlerUnavailable, exception.what()};
+                        report(UpdateOutcome::HandlerFailed, error);
+                        complete(deduplication, identity);
+                        return error;
+                    } catch (...) {
+                        const Error error{ErrorCode::HandlerUnavailable,
+                                          "telegram route callback threw an unknown exception"};
+                        report(UpdateOutcome::HandlerFailed, error);
+                        complete(deduplication, identity);
+                        return error;
+                    }
+                });
+            if (accepted) return UpdateOutcome::Accepted;
+            forget(identity);
+            return accepted.error().code == ErrorCode::QueueFull
+                ? UpdateOutcome::QueueFull
+                : accepted.error().code == ErrorCode::InvalidState
+                    ? UpdateOutcome::Closed : UpdateOutcome::Rejected;
+        } catch (...) {
+            // Admission is fail-closed: a failed allocation or callback wrapper
+            // construction must not consume the deduplication slot permanently.
+            if (reserved) forget(identity);
+            return UpdateOutcome::Rejected;
+        }
+    }();
+    // Do not pass update payloads, identities or error messages to the logger.
+    try {
+        if (outcome == UpdateOutcome::Accepted) {
+            LOGIT_INFO_TAG("telegram.update.admission",
+                LOGIT_TAG("outcome", static_cast<int>(outcome)));
+        } else {
+            LOGIT_WARN_TAG("telegram.update.admission",
+                LOGIT_TAG("outcome", static_cast<int>(outcome)));
+        }
+    } catch (...) { }
+    return outcome;
 }
 
 void UpdateRouter::close() noexcept
 {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_accepting = false;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_accepting) return;
+        m_accepting = false;
+    }
+    try { LOGIT_INFO("telegram.router.closed"); } catch (...) { }
 }
 
 } // namespace imtg::telegram

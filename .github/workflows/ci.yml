@@ -14,8 +14,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Initialize private JSON dependency
-        run: git submodule update --init -- external/json
+      - name: Initialize combined implementation dependencies
+        run: git submodule update --init -- external/json external/log-it-cpp external/time-shield-cpp
       - name: Configure
         run: cmake -S . -B build/ci-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON -DIMTG_BUILD_TELEGRAM=ON -DIMTG_BUILD_TELEGRAM_TRANSPORT=ON
       - name: Build
@@ -75,6 +75,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Initialize required implementation dependencies
+        run: git submodule update --init -- external/log-it-cpp external/time-shield-cpp
       - name: Configure core-only build
         run: cmake -S . -B build/core-only -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=OFF
       - name: Build core-only target
@@ -132,6 +134,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Initialize required implementation dependencies
+        run: git submodule update --init -- external/log-it-cpp external/time-shield-cpp
       - name: Install Doxygen and Graphviz
         run: sudo apt-get update && sudo apt-get install --yes doxygen graphviz
       - name: Configure documentation

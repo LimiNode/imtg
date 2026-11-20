@@ -151,7 +151,6 @@ persisted inbox; RAM runtime admission alone never promises crash survival.
 The server foundation does not delay review of the outgoing adapter and adds
 no Telegram behavior by itself. See the
 [delivery contract](contracts/TELEGRAM_DELIVERY.md).
-
 **Acceptance:** fake transport tests cover send/edit/delete/callback-answer,
 429/retry, authorization, duplicate updates, queue overload and
 `UnknownOutcome`; a headless moderation handler and an urgent payment handler

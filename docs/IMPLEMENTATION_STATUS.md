@@ -1,5 +1,10 @@
 # Implementation status
 
+Local integration validation combines outgoing #41 with mandatory logging #38.
+The implementation uses LogIt++ privately in core/router, preserves semantic
+error hooks and application logger ownership, and retains optional Telegram
+modules. This note describes the isolated validation tree, not merged `main`.
+
 The M3 Telegram entries in this document describe the optional Draft slices
 under review; they do not claim that the current `main` has merged or released
 Telegram support.

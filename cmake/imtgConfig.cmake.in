@@ -1,5 +1,9 @@
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+if(NOT TARGET log-it-cpp::log-it-cpp)
+    find_dependency(log-it-cpp 1.0.2 CONFIG)
+endif()
 include("${CMAKE_CURRENT_LIST_DIR}/imtgTargets.cmake")
 
 if("telegram_kurlyk" IN_LIST imtg_FIND_COMPONENTS AND @IMTG_BUILD_TELEGRAM_KURLYK@)
