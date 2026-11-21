@@ -74,6 +74,7 @@ Initialize only direct submodules, then audit before configuring:
 git submodule update --init
 cmake -DIMTG_SOURCE_DIR=. -P cmake/CheckFlatDependencies.cmake
 cmake -S . -B build/combined -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON \
   -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON -DIMTG_BUILD_MDBX=ON \
   -DIMTG_BUILD_TELEGRAM=ON -DIMTG_BUILD_TELEGRAM_TRANSPORT=ON \
   -DIMTG_BUILD_TELEGRAM_KURLYK=ON -DKURLYK_ALLOW_DOWNLOADS=OFF \
@@ -92,3 +93,29 @@ assert an exported imtg::mdbx target.
 CI success must be established from the new exact HEAD's workflow results,
 not inferred from earlier standalone PR jobs. No local sanitizer/TSan, live
 HTTPS/Telegram, public webhook or process-crash durability result is claimed.
+
+## Published-tree CI evidence
+
+Exact publication HEAD `9c2db22532d42c5d1da441bdbc53ae8065efd5cd` completed:
+
+- [Normal CI 44918585884](https://github.com/LimiNode/imtg/actions/runs/44918585884):
+  **17/17 jobs success**, including combined Linux Debug/Release, ordinary and
+  MDBX platform matrices, core-only, documentation and ASan/UBSan.
+- [Adapter CI 44918585871](https://github.com/LimiNode/imtg/actions/runs/44918585871):
+  **7/7 jobs success**, including platform builds and ASan/UBSan.
+
+A subsequent follow-up explicitly pins C++17 in the combined command and adds
+this evidence/plan progress. Its exact HEAD and CI are tracked separately in
+the PR; the successful runs above are evidence for 9c2db22 only. Local sanitizer
+unavailability is separate from these successful hosted sanitizer jobs.
+
+The follow-up's unchanged production source was also rebuilt locally with an
+explicit required C++17 standard: Debug **20/20**, Release **20/20** CTest PASS,
+including installed headers/consumers, parent reuse and flat audit. Debug took
+93.58 seconds; Release took 284.44 seconds. These are fresh build directories
+for this publication, subsequently reconfigured/rebuilt with explicit C++17,
+not a second clean build claim. MinGW needs the three pinned CURL/OpenSSL
+runtime DLL paths in IMTG_KURLYK_RUNTIME_DLLS when explicit library paths are
+supplied; the first local launch without those runtime paths failed, and the
+reported passing runs followed corrected local configuration. No product
+source workaround or disabled test was introduced.

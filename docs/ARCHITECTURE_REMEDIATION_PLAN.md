@@ -39,6 +39,21 @@ combine behavior changes with large file moves. The tables describe work to
 perform, not completed acceptance. New evidence is recorded per PR; a passing
 individual PR is not combined-tree evidence.
 
+## First implementation batch
+
+| Slice | Published Draft | Scope and remaining gate |
+| --- | --- | --- |
+| A | [imtg #42](https://github.com/LimiNode/imtg/pull/42) | Original composition is GitHub-accessible; combined CI added; exact source/run evidence is linked from the PR |
+| B2 | [imtg #43](https://github.com/LimiNode/imtg/pull/43), `a3d206d` | Fail-closed MDBX staging and net-no-op generations implemented; test-only MSVC max-macro follow-up included; independent review remains |
+| B1 | [imtg #44](https://github.com/LimiNode/imtg/pull/44), `5970f8d3` | Callback retirement, close quiescence and subscribe allocation failures implemented; independent review remains |
+| C | [kurlyk #53](https://github.com/LimiNode/kurlyk/pull/53), `c59795c8` | Structural completion stacked on #52; review/incorporate before merging #52 |
+
+The remaining rows are planned, not implemented by this batch. The next storage
+work is D1 provider resolution, then D2 table reuse after B2 acceptance; B3–B6
+and E1 can be reviewed independently. This plan does not authorize merging the
+Draft stack or claiming the separate corrective branches were tested as one
+new combined tree.
+
 ## MDBX decision (supersedes the earlier upstream proposal)
 
 Pinned `mdbx-containers@4ab32b5eab3cdfce95d1a6c0f05f566019793ec4` already
