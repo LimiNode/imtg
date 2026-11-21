@@ -136,6 +136,7 @@ public:
                                       ActionContext::DispatchSink sink) const;
 
     /// \brief Removes one route and permanently stales handles to its generation.
+    /// \note Does not join existing invocations. Removed handler captures are released outside the registry mutex.
     /// \param action_id Route to unregister.
     /// \return Success or `UnknownAction` when absent.
     [[nodiscard]] Result<void> unregister_action(const ActionId& action_id);
