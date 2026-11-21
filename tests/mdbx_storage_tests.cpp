@@ -70,6 +70,20 @@ public:
     bool triggered() const noexcept { return allocation_failure::triggered; }
 };
 
+// I/O must not consume an allocation selected by the failure sweep.
+void allocation_progress(const char* operation, std::size_t index, const char* phase)
+{
+    std::cerr << "[ allocation ] operation=" << operation << " index=" << index
+              << " phase=" << phase << std::endl;
+}
+
+void run_test(const char* name, void (*test)())
+{
+    std::cerr << "[ run ] " << name << std::endl;
+    test();
+    std::cerr << "[ passed ] " << name << std::endl;
+}
+
 imtg::StorageSchema stable_schema()
 {
     return imtg::StorageSchema{1, {{"meta", 1}, {"sessions", 1},
@@ -225,11 +239,16 @@ void test_allocation_failure_rolls_back_staging()
         CreateAbsent, CreateTombstone, WriteStored, WritePending,
         EraseStored, EraseCreated, EraseRecreated,
     };
+    const char* const operation_names[] = {
+        "create_absent", "create_tombstone", "write_stored", "write_pending",
+        "erase_stored", "erase_created", "erase_recreated"};
     const std::string payload(1024, 'x');
     for (const auto operation : {Operation::CreateAbsent, Operation::CreateTombstone,
                                 Operation::WriteStored, Operation::WritePending,
                                 Operation::EraseStored, Operation::EraseCreated,
                                 Operation::EraseRecreated}) {
+        const auto* operation_name = operation_names[static_cast<std::size_t>(operation)];
+        std::cerr << "[ allocation ] operation=" << operation_name << " begin" << std::endl;
         const auto path = test_path("allocation-failure");
         auto backend = open_backend(path);
         const bool stored = operation == Operation::WriteStored
@@ -249,6 +268,7 @@ void test_allocation_failure_rolls_back_staging()
         bool reached_success = false;
         // Sweep every C++ allocation, including encoding after shadow-state mutation.
         for (std::size_t index = 0; index != 64; ++index) {
+            allocation_progress(operation_name, index, "setup");
             auto work = begin(*backend);
             CHECK(work.transaction()->create_if_absent("outbox", "must-rollback", "staged"));
             imtg::StorageRevision visible_revision = 1;
@@ -265,6 +285,7 @@ void test_allocation_failure_rolls_back_staging()
             bool caught = false;
             bool injected = false;
             bool succeeded = false;
+            allocation_progress(operation_name, index, "inject");
             {
                 AllocationFailure failure(index);
                 try {
@@ -289,6 +310,7 @@ void test_allocation_failure_rolls_back_staging()
                 }
                 injected = failure.triggered();
             }
+            allocation_progress(operation_name, index, "returned");
             if (!injected) {
                 CHECK(succeeded && !caught && index != 0);
                 work.rollback();
@@ -302,6 +324,7 @@ void test_allocation_failure_rolls_back_staging()
             const auto page = work.transaction()->scan("sessions", {}, 10);
             CHECK(!page && page.error().code == imtg::ErrorCode::InvalidState);
             CHECK(work.commit().outcome == imtg::CommitOutcome::Failed);
+            allocation_progress(operation_name, index, "verify");
             auto verify = begin(*backend, imtg::TransactionMode::ReadOnly);
             const auto target = verify.transaction()->read("sessions", "target");
             CHECK(target && static_cast<bool>(target.value()) == stored);
@@ -314,6 +337,7 @@ void test_allocation_failure_rolls_back_staging()
             const auto visible = verify.transaction()->scan("sessions", {}, 10);
             CHECK(visible && visible.value().size() == (stored ? 1 : 0));
             CHECK(verify.commit().outcome == imtg::CommitOutcome::Committed);
+            allocation_progress(operation_name, index, "verified");
         }
         CHECK(reached_success);
         CHECK(backend->close());
@@ -686,17 +710,17 @@ void test_repositories_tx1_tx2_delivery_and_reopen()
 int main()
 {
     try {
-        test_persistence_and_read_your_writes();
-        test_snapshot_and_atomic_records();
-        test_tombstones_cas_and_scans();
-        test_allocation_failure_rolls_back_staging();
-        test_schema_gate_and_read_only();
-        test_thread_ownership();
-        test_namespace_isolation_and_binary_pagination();
-        test_public_meta_and_sparse_scans();
-        test_close_with_live_transactions();
-        test_unprefixed_draft_is_rejected();
-        test_repositories_tx1_tx2_delivery_and_reopen();
+        run_test("persistence_and_read_your_writes", test_persistence_and_read_your_writes);
+        run_test("snapshot_and_atomic_records", test_snapshot_and_atomic_records);
+        run_test("tombstones_cas_and_scans", test_tombstones_cas_and_scans);
+        run_test("allocation_failure_rolls_back_staging", test_allocation_failure_rolls_back_staging);
+        run_test("schema_gate_and_read_only", test_schema_gate_and_read_only);
+        run_test("thread_ownership", test_thread_ownership);
+        run_test("namespace_isolation_and_binary_pagination", test_namespace_isolation_and_binary_pagination);
+        run_test("public_meta_and_sparse_scans", test_public_meta_and_sparse_scans);
+        run_test("close_with_live_transactions", test_close_with_live_transactions);
+        run_test("unprefixed_draft_is_rejected", test_unprefixed_draft_is_rejected);
+        run_test("repositories_tx1_tx2_delivery_and_reopen", test_repositories_tx1_tx2_delivery_and_reopen);
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
