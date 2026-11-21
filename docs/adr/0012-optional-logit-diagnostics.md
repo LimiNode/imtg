@@ -48,6 +48,9 @@ The direct submodule pins are:
 - TimeShield `d5f1203f24341e4146af35d5bb36e762056d181f` (v2.0.0).
 
 Dependency test/example and NTP defaults are lightweight and never forced.
+The NTP/test/example defaults are set only when the option is undefined,
+preserving parent normal variables as well as cache entries under older CMake
+policies.
 All `LOGIT_WITH_*` settings belong to the application; a single shared target
 propagates compatible includes, definitions and transitives, including the
 context-dependent `LogRecord` layout.
@@ -75,6 +78,12 @@ after imtg shutdown. The independent installed core consumer executes a failing
 task and observes its diagnostic. Parent fixtures provide both dependencies
 with context enabled and unavailable imtg provider paths, or only TimeShield
 with imtg adding LogIt++; each builds and executes the same consumer.
+Additional embedding modes let imtg create the providers with parent-selected
+TimeShield NTP and both providers' tests/examples enabled through normal
+variables or cache entries under the old CMP0126 behavior. They check the
+effective option values, actual NTP target definition and test/example targets,
+then build and run only the imtg consumer; no provider tests, examples or NTP
+service are started.
 
 No second logger interface, formatter, queue or scheduler is introduced.
 Actual output remains optional because the application may register no backend,
