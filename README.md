@@ -68,8 +68,10 @@ Telegram update -> stateless gateway -> conversation scheduler
                                   renderer/reconciler -> outbox -> delivery
 ```
 
-The core owns contracts and deterministic orchestration. `kurlyk` is a planned
-transport integration. MDBX through `mdbx-containers` is an optional
+The core owns contracts and deterministic orchestration. This Draft slice adds
+an optional outgoing `imtg::telegram_kurlyk` transport over pinned kurlyk;
+incoming webhook and live Telegram acceptance remain future work. MDBX through
+`mdbx-containers` is an optional
 source-build adapter and is not a core dependency.
 
 ## Documentation map
@@ -89,6 +91,14 @@ Normative contracts live in [`docs/contracts/`](docs/contracts/). Significant
 decisions are recorded in [`docs/adr/`](docs/adr/).
 
 ## Building
+
+For the separately enabled outgoing HTTP adapter, its flat dependencies,
+installed component and worker lifecycle, see
+[dependencies](docs/guides/dependencies.md) and the
+[delivery contract](docs/contracts/TELEGRAM_DELIVERY.md). On Windows the pinned
+kurlyk TLS backend requires an application-provisioned `curl-ca-bundle.crt`
+beside the executable. Do not disable certificate verification to bypass a
+missing trust bundle. Plain HTTP loopback tests are not HTTPS acceptance.
 
 Keep all generated output under the ignored root `build/` directory:
 

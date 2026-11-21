@@ -43,14 +43,19 @@ Reviewed against official Telegram documentation on 2026-11-20:
 
 - deterministic fake transports can exercise delivery policy without network
   access or credentials;
-- `kurlyk` remains a future application-owned adapter rather than a core
-  dependency;
+- `kurlyk` is an application-owned optional adapter rather than a core
+  dependency; the concrete Draft integration is recorded in
+  [ADR 0014](0014-kurlyk-http-implementation-boundary.md);
 - lost `sendMessage` responses cannot silently create a duplicate send;
 - method-specific retry and outbox acknowledgement remain later M3b/M3c work.
 
-The reviewed `kurlyk@b62cd53f672c47b74bb14d762ea9dc59a9df19ce`
+### Initial upstream blocking evidence
+
+The originally reviewed `kurlyk@b62cd53f672c47b74bb14d762ea9dc59a9df19ce`
 [receive handler](https://github.com/LimiNode/kurlyk/blob/b62cd53f672c47b74bb14d762ea9dc59a9df19ce/include/kurlyk/http/HttpRequestManager/HttpRequestHandler.hpp#L197)
 appends chunks to the complete response before invoking the streaming callback.
 It has no receive-time body cap, so streaming cancellation alone does not meet
-this boundary's hard response limit. A concrete kurlyk adapter remains deferred
-until an upstream bounded receive/abort facility can enforce that invariant.
+this boundary's hard response limit. This initially deferred the concrete
+adapter. Upstream corrective #50 now supplies the required receive/abort
+facility; the dependent Draft implementation follows ADR 0014 and remains
+gated on independent acceptance of that upstream change and flat-provider #51.

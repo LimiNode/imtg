@@ -1,0 +1,97 @@
+name: kurlyk-adapter
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        build_type: [Debug, Release]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Install Linux system providers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes ninja-build libcurl4-openssl-dev libssl-dev
+      - name: Select macOS system providers
+        if: runner.os == 'macOS'
+        run: echo "CMAKE_PREFIX_PATH=$(brew --prefix curl);$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+      - name: Audit flat dependencies
+        run: cmake -DIMTG_SOURCE_DIR=${{ github.workspace }} -P cmake/CheckFlatDependencies.cmake
+      - name: Configure optional adapter offline
+        run: >-
+          cmake -S . -B build/kurlyk -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_PREFIX_PATH="${{ env.CMAKE_PREFIX_PATH }}"
+          -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON
+          -DIMTG_BUILD_TELEGRAM=ON -DIMTG_BUILD_TELEGRAM_TRANSPORT=ON
+          -DIMTG_BUILD_TELEGRAM_KURLYK=ON -DKURLYK_ALLOW_DOWNLOADS=OFF
+      - name: Build
+        run: cmake --build build/kurlyk --parallel 3
+      - name: Test loopback, installed package, headers and parent reuse
+        run: ctest --test-dir build/kurlyk --output-on-failure
+
+  windows-mingw:
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-curl
+            mingw-w64-ucrt-x86_64-openssl
+      - name: Audit flat dependencies
+        run: cmake -DIMTG_SOURCE_DIR="$GITHUB_WORKSPACE" -P cmake/CheckFlatDependencies.cmake
+      - name: Configure optional adapter offline
+        run: >-
+          cmake -S . -B build/kurlyk -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON
+          -DIMTG_BUILD_TELEGRAM=ON -DIMTG_BUILD_TELEGRAM_TRANSPORT=ON
+          -DIMTG_BUILD_TELEGRAM_KURLYK=ON -DKURLYK_ALLOW_DOWNLOADS=OFF
+      - name: Build
+        run: cmake --build build/kurlyk --parallel 3
+      - name: Test loopback, installed package, headers and parent reuse
+        run: ctest --test-dir build/kurlyk --output-on-failure
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Install system providers
+        run: sudo apt-get update && sudo apt-get install --yes ninja-build libcurl4-openssl-dev libssl-dev
+      - name: Configure ASan/UBSan
+        run: >-
+          cmake -S . -B build/kurlyk -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON
+          -DIMTG_BUILD_TELEGRAM=ON -DIMTG_BUILD_TELEGRAM_TRANSPORT=ON
+          -DIMTG_BUILD_TELEGRAM_KURLYK=ON -DKURLYK_ALLOW_DOWNLOADS=OFF
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Build
+        run: cmake --build build/kurlyk --parallel 3
+      - name: Test
+        run: ctest --test-dir build/kurlyk --output-on-failure
