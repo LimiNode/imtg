@@ -52,6 +52,15 @@ or weakening the allocation-failure regressions. MSVC Debug CRT assertion report
 go to captured stderr instead of a modal dialog; native assertion termination is
 not disabled. No assertion is yet established as the cause of the observed hang.
 
+The MDBX provider corrective reuses existing targets, including explicitly loaded
+local/system packages, before inspecting explicit or pinned source paths. It
+performs no implicit package lookup. Defaults no longer overwrite
+parent normal/cache dependency choices, and unresolved native providers fail
+before the containers source can enter a nested/download fallback. The
+`imtg_mdbx_Embedding` fixture builds and executes source/imported/package parent
+consumers and verifies unused-path bypass, option preservation and absent-provider
+failure. This does not complete the installed MDBX adapter package boundary.
+
 The Sovetwave header-topology audit is documented in
 [header-architecture.md](guides/header-architecture.md), ADR 0009, and the
 accepted hybrid profile in [ADR 0011](adr/0011-hybrid-public-header-profile.md).
