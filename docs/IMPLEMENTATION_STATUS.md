@@ -48,7 +48,9 @@ job cancellation at 16:02:52 UTC. The cause is not established; this is not a pa
 Debug result. The test now has a 180-second CTest timeout and flushed subtest,
 operation and allocation-index progress outside allocation-injection scopes;
 these diagnostics bound and localize a repeat without changing storage behavior
-or weakening the allocation-failure regressions.
+or weakening the allocation-failure regressions. MSVC Debug CRT assertion reports
+go to captured stderr instead of a modal dialog; native assertion termination is
+not disabled. No assertion is yet established as the cause of the observed hang.
 
 The Sovetwave header-topology audit is documented in
 [header-architecture.md](guides/header-architecture.md), ADR 0009, and the

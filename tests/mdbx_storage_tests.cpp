@@ -19,6 +19,10 @@
 #include <thread>
 #include <vector>
 
+#if defined(_MSC_VER) && defined(_DEBUG)
+#include <crtdbg.h>
+#endif
+
 namespace allocation_failure {
 
 thread_local std::size_t remaining = (std::numeric_limits<std::size_t>::max)();
@@ -709,6 +713,11 @@ void test_repositories_tx1_tx2_delivery_and_reopen()
 
 int main()
 {
+#if defined(_MSC_VER) && defined(_DEBUG)
+    // Capture native assertion reports instead of opening an unattended dialog.
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+#endif
     try {
         run_test("persistence_and_read_your_writes", test_persistence_and_read_your_writes);
         run_test("snapshot_and_atomic_records", test_snapshot_and_atomic_records);
