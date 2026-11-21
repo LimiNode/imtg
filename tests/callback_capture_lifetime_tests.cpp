@@ -52,13 +52,16 @@ void subscription_allocation_failure(int fail_after)
 {
     imtg::NotificationDispatcher dispatcher;
     bool cleanup_completed = false;
-    auto capture = std::make_shared<SubscribingCapture>(dispatcher, cleanup_completed);
-    imtg::NotificationDispatcher::Callback callback = [capture](const imtg::Notification&) {};
-    capture.reset();
+    const auto prepare_callback = [&] {
+        auto capture = std::make_shared<SubscribingCapture>(dispatcher, cleanup_completed);
+        imtg::NotificationDispatcher::Callback callback = [capture](const imtg::Notification&) {};
+        g_fail_allocation_after = fail_after;
+        return callback;
+    };
     bool threw = false;
-    g_fail_allocation_after = fail_after;
     try {
-        (void)dispatcher.subscribe(std::move(callback));
+        // A moved-from std::function may retain its target; keep no caller owner.
+        (void)dispatcher.subscribe(prepare_callback());
     } catch (const std::bad_alloc&) {
         threw = true;
     }
