@@ -17,9 +17,21 @@ exceptions. Unavoidable nested dependencies require a documented reason and expl
 Do not add speculative submodules. M2d-a pins sibling `external/mdbx-containers`
 and `external/libmdbx` submodules and provides them to CMake as one optional
 dependency boundary. `IMTG_BUILD_MDBX=OFF` remains the default and performs no
-MDBX lookup or download; `IMTG_BUILD_MDBX=ON` requires both initialized
-submodules and uses `MDBXC_DEPS_MODE=SYSTEM` to consume the supplied sibling
-target without a FetchContent fallback.
+MDBX lookup or download. With `IMTG_BUILD_MDBX=ON`, an existing
+`mdbx_containers::mdbx_containers` target wins before any source-path checks.
+A parent may explicitly obtain it through `find_package()`; imtg does not
+perform implicit package discovery. Otherwise `IMTG_MDBX_CONTAINERS_SOURCE_DIR`
+selects an explicit source provider or defaults to the pinned flat sibling.
+That source provider reuses an existing compatible libmdbx target before
+`IMTG_LIBMDBX_SOURCE_DIR`, which defaults to `external/libmdbx`.
+Without parent targets or explicit sources, both flat submodules must be
+initialized. The native target is resolved before adding containers, so no
+nested-source or FetchContent fallback can run; missing providers fail closed.
+Optional dependency builds default to disabled and `MDBXC_DEPS_MODE` defaults
+to `SYSTEM` only when unset. Parent normal/cache options and modes are preserved.
+The pinned libmdbx source fallback requires CMake 3.19 or newer for its version
+metadata parser; this does not raise the core CMake 3.18 minimum or affect
+existing-target reuse.
 The optional adapter is tested with a local persistence/reopen consumer; its
 installed-package export remains a later M2d-b boundary.
 

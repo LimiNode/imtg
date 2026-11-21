@@ -8,10 +8,6 @@ option(IMTG_BUILD_MDBX "Build the optional persistent MDBX storage adapter" OFF)
 option(IMTG_BUILD_TELEGRAM "Build the optional typed Telegram gateway boundary" OFF)
 option(IMTG_BUILD_TELEGRAM_TRANSPORT "Build the optional bounded Telegram Bot API transport" OFF)
 option(IMTG_BUILD_TELEGRAM_KURLYK "Build the optional kurlyk HTTP transport implementation" OFF)
-set(IMTG_MDBX_CONTAINERS_SOURCE_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/external/mdbx-containers" CACHE PATH
-    "Pinned mdbx-containers source used by the optional MDBX adapter")
-
 include(GNUInstallDirs)
 include(CTest)
 include(CMakePackageConfigHelpers)
