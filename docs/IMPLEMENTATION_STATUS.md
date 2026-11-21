@@ -25,10 +25,11 @@ establish process-crash durability.
 The Sovetwave header-topology audit is documented in
 [header-architecture.md](guides/header-architecture.md), ADR 0009, and the
 accepted hybrid profile in [ADR 0011](adr/0011-hybrid-public-header-profile.md).
-Nine domains expose root-level umbrellas, with `telegram` remaining optional.
+Ten domains expose root-level umbrellas, with `telegram` and `logging`
+remaining optional.
 All old installed leaf paths remain; the nested umbrellas forward to the root
 entry points. The explicit manifest contains 29 core-package, seven optional
-commerce, and two optional Telegram entry points. Core does not include
+commerce, two optional Telegram, and two optional logging entry points. Core does not include
 optional adapters, commerce, or Telegram. Installed-header tests check each
 enabled package inventory and every supported header as a first include.
 
@@ -67,7 +68,7 @@ audit contract must be accepted before a separate GUI target is implemented.
 | Area | Status | Evidence / next proof |
 |---|---|---|
 | Architecture and contracts | `contract-only` | Markdown documents in `docs/`; review links and invariants |
-| Header topology | `implemented` | [Header architecture guide](guides/header-architecture.md), [ADR 0011](adr/0011-hybrid-public-header-profile.md); nine root umbrellas, explicit manifest, compatibility shims, topology CTest and installed first-include tests |
+| Header topology | `implemented` | [Header architecture guide](guides/header-architecture.md), [ADR 0011](adr/0011-hybrid-public-header-profile.md); ten root umbrellas, explicit manifest, compatibility shims, topology CTest and installed first-include tests |
 | CMake `imtg_core` target and C++17 baseline | `implemented` | Root CMake target configures/builds; CTest executes offline core tests |
 | Typed identities and deterministic clock | `implemented` | `src/imtg/core/`; M1a equality/encoding/hash tests |
 | Immediate-Mode UI tree | `partial` | M1b implements immutable tree nodes, stable paths, RAII scopes, duplicate detection, and offline tests; components remain intentionally small |
@@ -78,6 +79,7 @@ audit contract must be accepted before a separate GUI target is implemented.
 | Storage protocol and in-memory backend | `implemented` | [STORAGE.md](contracts/STORAGE.md); `src/imtg/storage/storage.hpp`; fixture-based `imtg_storage_tests` conformance suite with revision, ABA, schema-gate, ownership, and commit-outcome coverage |
 | Durable repositories and MDBX backend | `partial` | M2d-a optional source-build `imtg_mdbx` target, pinned `mdbx-containers`/`libmdbx`, six-DBI profile, shared conformance and persistence/reopen tests; package export and crash proof remain M2d-b/M2e |
 | Telegram gateway / transport | `partial` | Optional `imtg::telegram` typed update boundary, bot-scoped deduplication, deterministic filters/middleware, serialized authorization/stale checks and fake-fixture tests; kurlyk, HTTP delivery, deadlines and live transport remain M3b/M3c |
+| Internal diagnostics | `implemented` | Required implementation dependency on pinned LogIt++ v1.0.2/TimeShield 2.0.0, sanitized internal runtime/router events, preserved application observers, bounded MemoryLogger/error-isolation tests, parent target reuse with context enabled, and a clean installed core consumer; application owns backends, queue/drop policy and logger shutdown |
 | Payment provider contracts and capability audit | `partial` | [PAYMENTS.md](contracts/PAYMENTS.md), [PAYMENT_PROVIDER_CAPABILITY_AUDIT.md](research/PAYMENT_PROVIDER_CAPABILITY_AUDIT.md), optional `imtg_commerce` identities, account-scoped eligibility, exact asset-scale validation, evidence binding, shared `CommitResult` payment transactions, explicit refund policies and `imtg_payment_contract_tests`; provider adapters, durable persistence, webhooks and onboarding remain future work |
 | Render intents, reconciliation, and outbox | `partial` | M2c-a claims/fencing, M2c-b canonical `LT1` target scoping, and M2c-c bounded delivery claims, dispatch admission, fenced acknowledgements, monotonic applied-target evidence, retry/Unknown policy, and supersession are merged; durable adapters and full cross-backend recovery remain future work |
 | Localization | `planned` | M4 catalog, fallback, and pluralization tests |

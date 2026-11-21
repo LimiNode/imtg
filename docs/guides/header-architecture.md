@@ -3,8 +3,8 @@
 **Status:** normative hybrid profile; root-umbrella migration implemented in this slice,
 pending independent review.
 **Scope:** `core`, `actions`, `storage`, `sessions`, `reconciliation`, `ui`,
-`runtime`, the optional `commerce` addendum, and the optional `telegram`
-gateway boundary.
+`runtime`, the optional `commerce` addendum, the optional `telegram` gateway
+boundary, and the optional `logging` diagnostics adapter.
 
 This guide records the current include topology and the selected hybrid
 profile: domain umbrellas plus standalone public components and optional modules
@@ -48,8 +48,8 @@ implementation PRs.
 ### Implemented hybrid entry points
 
 The migration now provides root umbrellas for `core`, `actions`, `storage`,
-`sessions`, `reconciliation`, `ui`, `runtime`, optional `commerce`, and the
-optional `telegram` gateway boundary. Each includes lower-level domain
+`sessions`, `reconciliation`, `ui`, `runtime`, optional `commerce`, the
+optional `telegram` gateway boundary, and the optional `logging` adapter. Each includes lower-level domain
 umbrellas before its local public components. `telegram` depends on `core` and
 `runtime`, but remains outside `imtg_core` and is installed only when its
 optional target is enabled.
@@ -57,7 +57,8 @@ Public leaves remain self-contained. Normal implementation units start with
 their domain umbrella; no runtime algorithm or public declaration is changed.
 
 `cmake/ImtgPublicHeaders.cmake` explicitly enumerates 29 core-package headers,
-seven optional commerce headers, and two optional Telegram gateway headers. No
+seven optional commerce headers, two optional Telegram gateway headers, and two
+optional logging headers. No
 recursive source-header installation remains. Core-only installation excludes
 optional modules; source-only MDBX is not in the public manifest. The
 installed-header fixture compares the complete real header inventory to the
@@ -318,4 +319,3 @@ The original audit was documentation-only. The implemented entry-point addendum
 above is verified by topology CTest, standalone installed-header builds,
 independent consumers, core-only/commerce builds, and Doxygen. Report the actual
 results per reviewed HEAD; this guide alone is not evidence of a passing CI run.
-

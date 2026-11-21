@@ -30,6 +30,17 @@ if(IMTG_BUILD_TELEGRAM)
     add_test(NAME imtg_telegram_gateway_tests COMMAND imtg_telegram_gateway_tests)
     set_tests_properties(imtg_telegram_gateway_tests PROPERTIES TIMEOUT 30)
 endif()
+
+add_executable(imtg_logging_tests logging_tests.cpp)
+target_link_libraries(imtg_logging_tests PRIVATE imtg::core log-it-cpp::log-it-cpp)
+set_target_properties(imtg_logging_tests PROPERTIES
+    CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS OFF)
+if(IMTG_BUILD_TELEGRAM)
+    target_compile_definitions(imtg_logging_tests PRIVATE IMTG_TEST_TELEGRAM=1)
+    target_link_libraries(imtg_logging_tests PRIVATE imtg::telegram)
+endif()
+add_test(NAME imtg_logging_tests COMMAND imtg_logging_tests)
+set_tests_properties(imtg_logging_tests PROPERTIES TIMEOUT 30)
 add_test(NAME imtg_storage_tests COMMAND imtg_storage_tests)
 
 add_executable(imtg_session_tests session_tests.cpp)

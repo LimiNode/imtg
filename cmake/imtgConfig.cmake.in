@@ -1,3 +1,9 @@
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+if(NOT TARGET log-it-cpp::log-it-cpp)
+    find_dependency(log-it-cpp 1.0.2 CONFIG)
+endif()
 include("${CMAKE_CURRENT_LIST_DIR}/imtgTargets.cmake")
+
+check_required_components(imtg)

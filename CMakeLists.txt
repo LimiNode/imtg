@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.18)
 
 project(imtg VERSION 0.1.0 LANGUAGES CXX)
 
@@ -13,6 +13,7 @@ set(IMTG_MDBX_CONTAINERS_SOURCE_DIR
 include(GNUInstallDirs)
 include(CTest)
 include(CMakePackageConfigHelpers)
+include(cmake/ImtgLogitDependency.cmake)
 
 add_library(imtg_core STATIC
     src/imtg/core/identifiers.cpp
@@ -30,6 +31,9 @@ add_library(imtg::core ALIAS imtg_core)
 set_target_properties(imtg_core PROPERTIES EXPORT_NAME core)
 
 target_compile_features(imtg_core PUBLIC cxx_std_17)
+set_target_properties(imtg_core PROPERTIES
+    CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS OFF)
+target_link_libraries(imtg_core PRIVATE log-it-cpp::log-it-cpp)
 target_include_directories(imtg_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
@@ -74,10 +78,12 @@ if(IMTG_BUILD_TELEGRAM)
     add_library(imtg::telegram ALIAS imtg_telegram)
     set_target_properties(imtg_telegram PROPERTIES EXPORT_NAME telegram)
     target_compile_features(imtg_telegram PUBLIC cxx_std_17)
+    set_target_properties(imtg_telegram PROPERTIES
+        CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS OFF)
     target_include_directories(imtg_telegram PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-    target_link_libraries(imtg_telegram PUBLIC imtg::core)
+    target_link_libraries(imtg_telegram PUBLIC imtg::core PRIVATE log-it-cpp::log-it-cpp)
 endif()
 
 install(TARGETS imtg_core EXPORT imtgTargets)
@@ -122,6 +128,20 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
 
 if(BUILD_TESTING)
     add_subdirectory(tests)
+    foreach(check IN ITEMS InstalledConsumer Embedding)
+        add_test(NAME imtg_logit_${check}
+            COMMAND ${CMAKE_COMMAND}
+                -DIMTG_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                -DIMTG_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                -DIMTG_CONFIG=$<CONFIG>
+                "-DIMTG_GENERATOR=${CMAKE_GENERATOR}"
+                -DIMTG_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+                "-DIMTG_CONSUMER_CXX_FLAGS=${CMAKE_CXX_FLAGS}"
+                "-DIMTG_CONSUMER_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckLogit${check}.cmake)
+        set_tests_properties(imtg_logit_${check} PROPERTIES TIMEOUT 180)
+    endforeach()
+    set_tests_properties(imtg_logit_Embedding PROPERTIES TIMEOUT 360)
 endif()
 
 if(IMTG_BUILD_DOCUMENTATION)
