@@ -21,18 +21,18 @@
 
 namespace allocation_failure {
 
-thread_local std::size_t remaining = std::numeric_limits<std::size_t>::max();
+thread_local std::size_t remaining = (std::numeric_limits<std::size_t>::max)();
 thread_local bool triggered = false;
 
 bool fail_now() noexcept
 {
-    if (remaining == std::numeric_limits<std::size_t>::max()) return false;
+    if (remaining == (std::numeric_limits<std::size_t>::max)()) return false;
     if (remaining != 0) {
         --remaining;
         return false;
     }
     // Fail once so rollback and the caller's diagnostics can allocate normally.
-    remaining = std::numeric_limits<std::size_t>::max();
+    remaining = (std::numeric_limits<std::size_t>::max)();
     triggered = true;
     return true;
 }
@@ -64,7 +64,7 @@ public:
 
     ~AllocationFailure()
     {
-        allocation_failure::remaining = std::numeric_limits<std::size_t>::max();
+        allocation_failure::remaining = (std::numeric_limits<std::size_t>::max)();
     }
 
     bool triggered() const noexcept { return allocation_failure::triggered; }
