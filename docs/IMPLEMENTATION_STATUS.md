@@ -1,5 +1,12 @@
 # Implementation status
 
+The [architecture remediation plan](ARCHITECTURE_REMEDIATION_PLAN.md) orders
+the 2026-11-21 audit work before further Telegram/webhook expansion. The
+integration publication preserves original composition `467f6f46`; a dedicated
+Linux Debug/Release CI job enables all modules simultaneously and checks the
+flat boundary before configure. See [source and local evidence](research/M3_COMPOSITION_EVIDENCE_2026_11_21.md).
+This does not mark the behavioral or structural remediation as complete.
+
 Local integration validation combines outgoing #41 with mandatory logging #38.
 The implementation uses LogIt++ privately in core/router, preserves semantic
 error hooks and application logger ownership, and retains optional Telegram

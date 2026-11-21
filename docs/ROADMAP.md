@@ -113,6 +113,11 @@ atomicity remain deferred.
 
 ## M3 — Telegram gateway and delivery
 
+The [architecture remediation plan](ARCHITECTURE_REMEDIATION_PLAN.md) is the
+ordered acceptance gate for the audited foundation before expanding incoming
+Telegram/webhook functionality. It preserves the existing milestone contracts
+and separates behavioral corrections, structural changes and protocol coverage.
+
 Add the verified Telegram boundary for typed message, edited-message,
 callback-query, chat-member, join-request and payment updates; declarative
 filters/middleware; headless and interactive handlers; permission checks;
