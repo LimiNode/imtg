@@ -27,8 +27,9 @@ namespace imtg::telegram_transport {
 class KurlykHttpTransport final : public IHttpTransport {
 public:
     /// \brief Sets the finite request-body bound applied before submission.
-    /// \param max_request_bytes Maximum body size; must be nonzero.
-    /// \throws std::invalid_argument If the bound is zero.
+    /// \param max_request_bytes Maximum body size; must be positive and no
+    ///        greater than LONG_MAX, as required by the pinned kurlyk backend.
+    /// \throws std::invalid_argument If the bound is zero or exceeds LONG_MAX.
     explicit KurlykHttpTransport(std::size_t max_request_bytes = 16 * 1024);
 
     /// \brief Performs one request with a mandatory receive-time body limit.
