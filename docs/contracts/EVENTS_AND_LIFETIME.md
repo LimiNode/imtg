@@ -28,4 +28,27 @@ Exceptions are caught at the dispatcher boundary, associated with the event/subs
 
 M1d's `NotificationDispatcher` is the reference implementation of this boundary. It has no `event-hub-cpp` dependency; a future adapter may map the same semantics after review. Nested publication tracks per-thread publication depth and rejects recursive delivery beyond a fixed bound; callback failures are reported to an injectable error sink. `close_and_wait()` tracks active publication scopes separately from selected callbacks, rejects self-wait from either a callback or its error sink, and waits until both callbacks and error reporting have completed; callbacks already selected by the current publication are allowed to finish. `ReferenceRuntime` uses a bounded worker pool with per-`ConversationKey` serial mailboxes and global/per-key admission limits. Admission rollback is transactional under the runtime mutex and never removes an earlier accepted task when a later insertion fails. `request_shutdown()` closes intake and drains queued work; a callback may request it, but only an external coordinator completes joins. If an internal requeue allocation fails, the runtime enters an observable allocation-safe fail-stop state: accepted queued work is counted as discarded, new submissions are rejected, and `shutdown()` returns a `RuntimeFailure`. Destruction is an external-owner operation: the runtime must be destroyed from a non-worker thread after shutdown; destruction from a callback is unsupported and rejected by the ownership contract.
 
+## Internal diagnostics
+
+LogIt++ is a required implementation dependency, not a public API dependency.
+Runtime `.cpp` code records startup failure, rejected admission, task failure,
+fail-stop and completed/rejected shutdown. Router `.cpp` code records admission
+outcomes and intake closure. Calls occur outside imtg mutexes and catch logger
+failures without changing task results or observer delivery. Records contain
+only fixed event codes and enum codes; payloads, identifiers, tokens and
+`Error::message` are excluded. The application may add its own LogIt++ context;
+it is responsible for sanitizing that context and any formatter/backend.
+
+`ReferenceRuntime::ErrorFunction` and `UpdateRouter::OutcomeSink` remain
+notification channels. Router handler/policy errors are logged once by the
+runtime when their callback returns an error; no automatic observer adapter
+repeats them. Applications that additionally log observers own that duplication.
+
+The application configures LogIt++ backends, bounded queue capacity and a
+non-waiting drop policy before starting imtg, avoids blocking/reentrant lifecycle
+backends on workers, then flushes/shuts down LogIt++ only after imtg quiesces.
+imtg never calls `LOGIT_SHUTDOWN()`, changes global backend/queue settings, or
+adds its own logging queue or formatter. Catching exceptions does not make a
+blocking backend non-blocking. See [ADR 0012](../adr/0012-optional-logit-diagnostics.md).
+
 **Verification:** tests for removal versus in-flight completion, lifetime guards, cancellation points, self-requested shutdown, worker drain/destruction ordering, bounded queues/backpressure, cycle limits, exception isolation, and restart with deferred work. **Dependencies:** event-hub integration review, scheduler, storage/outbox, and technical journal.

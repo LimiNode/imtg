@@ -68,8 +68,10 @@ Telegram update -> stateless gateway -> conversation scheduler
                                   renderer/reconciler -> outbox -> delivery
 ```
 
-The core owns contracts and deterministic orchestration. `kurlyk` is a planned
-transport integration. MDBX through `mdbx-containers` is an optional
+The core owns contracts and deterministic orchestration. This Draft slice adds
+an optional outgoing `imtg::telegram_kurlyk` transport over pinned kurlyk;
+incoming webhook and live Telegram acceptance remain future work. MDBX through
+`mdbx-containers` is an optional
 source-build adapter and is not a core dependency.
 
 ## Documentation map
@@ -90,9 +92,18 @@ decisions are recorded in [`docs/adr/`](docs/adr/).
 
 ## Building
 
+For the separately enabled outgoing HTTP adapter, its flat dependencies,
+installed component and worker lifecycle, see
+[dependencies](docs/guides/dependencies.md) and the
+[delivery contract](docs/contracts/TELEGRAM_DELIVERY.md). On Windows the pinned
+kurlyk TLS backend requires an application-provisioned `curl-ca-bundle.crt`
+beside the executable. Do not disable certificate verification to bypass a
+missing trust bundle. Plain HTTP loopback tests are not HTTPS acceptance.
+
 Keep all generated output under the ignored root `build/` directory:
 
 ```text
+git submodule update --init -- external/log-it-cpp external/time-shield-cpp
 cmake -S . -B build/debug -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
 cmake --build build/debug
 ctest --test-dir build/debug --output-on-failure
@@ -114,6 +125,12 @@ The pinned revisions and non-recursive initialization procedure are documented
 in [`external/README.md`](external/README.md). MDBX remains source-build-only
 in this release: the installed package exports core and optional commerce
 targets, but not `imtg::mdbx`.
+
+Internal runtime/router diagnostics contain only fixed event codes and enum
+codes, never update text, tokens, callback payloads, error messages, or
+identifiers. The application selects LogIt++ backends and bounded queue/drop
+policy, then flushes/shuts down the logger after imtg quiesces. See
+[ADR 0012](docs/adr/0012-optional-logit-diagnostics.md).
 
 Public headers and their implementations are co-located under
 `src/imtg/<domain>/`, while consumer include paths remain `<imtg/...>`. Git

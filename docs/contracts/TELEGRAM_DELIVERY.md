@@ -1,8 +1,26 @@
 # Telegram delivery contract
 
 **Semantic owner:** transport/delivery maintainers. **Status:** M2c-c implements
-the merged storage-only reference delivery lifecycle. Gateway,
-worker orchestration, HTTP, and method-specific retry evidence remain planned for M3.
+the merged storage-only reference delivery lifecycle. M3a adds the optional,
+transport-neutral typed update boundary and routes accepted callbacks through
+the existing keyed scheduler. M3b-a adds bounded request construction and
+response interpretation through an injected HTTP boundary. A separate Draft
+slice adds the optional concrete kurlyk HTTP adapter; worker/outbox
+orchestration and method-specific retry evidence remain planned.
+
+The M3a boundary owns value-copied update DTOs, shape/size validation,
+bot-scoped update deduplication, deterministic filters and middleware, and
+explicit admission outcomes. It does not parse JSON, retain transport buffers,
+call Telegram, create a second scheduler, or persist deduplication state.
+Admission keeps a provisional in-flight reservation separate from bounded
+completed history: a running update cannot be evicted by newer completions, and
+failed runtime admission rolls back only its own reservation. A handler or
+policy failure is observable but is not automatically retried by the router.
+Authorization and stale-callback policies run inside the serialized callback
+before the application handler. `Accepted` means that the callback was admitted
+to the keyed runtime, not that authorization or handler execution succeeded.
+`Headless` handlers receive no implicit UI or render work; interactive handlers
+remain responsible for invoking the existing application/session contracts.
 
 ## Responsibilities
 
@@ -17,17 +35,157 @@ The pipeline has explicit boundaries:
 7. **DeliveryWorker** executes Telegram HTTP requests, applies rate limits/backoff, and records outcomes with the current lease/fencing token.
 8. **Acknowledgement/recovery** updates effect state and schedules review for uncertain results.
 
-`kurlyk` is a recommended future HTTP adapter, not a core dependency. Telegram's external API cannot provide exactly-once delivery without corresponding guarantees, and arbitrary client idempotency keys must not be assumed.
+M3b-a adds an optional `imtg::telegram_transport` boundary with an injected
+`IHttpTransport`. It constructs bounded authenticated form requests for
+`sendMessage`, `editMessageText`, and `answerCallbackQuery`, classifies HTTP
+client/server/429 responses, and exposes timeout/cancellation outcomes. The
+boundary performs no storage work and does not retry a lost response. A
+transport failure that may follow a sent request is `UnknownOutcome`.
+
+An HTTP 2xx status is not success evidence by itself. The bounded JSON envelope
+must have `ok=true` and the method-specific result: a positive `message_id` and
+matching numeric `chat.id` for a send, the same chat/message identity for a
+non-inline edit, or Boolean `true` for a callback answer. The confirmed message
+identity is returned for send/edit acknowledgement. `ok=false` returns the
+numeric `error_code` without exposing the untrusted description. Rate-limit
+delay is read from `parameters.retry_after`, with a numeric `Retry-After` header
+accepted only when coherent with it. Malformed, truncated, duplicate-key,
+over-depth, wrong-scope, or contradictory evidence is `UnknownOutcome`.
+
+The client accepts numeric chat identities and non-inline edits only; it does
+not claim complete Bot API method coverage. Local byte limits are conservative
+and distinct from Telegram's character limits. Form expansion is measured
+before allocation. Tokens are restricted to a 1–20 digit, nonzero decimal bot
+prefix, `:`, and a 1–256 byte ASCII alphanumeric/underscore/hyphen secret. This
+local fail-closed URL grammar is not credential authentication. Unknown or
+contradictory `HttpExchange` evidence never proves non-transmission; an adapter
+may report `request_may_have_been_sent=false` only with positive evidence.
+
+Applications must enforce response-body limits while receiving and bound their
+HTTP adapter admission/cancellation lifecycle. This slice is synchronous and
+does not add a worker, HTTP retry engine, or outbox state machine. The bounded
+JSON parser uses a pinned private dependency; no JSON types or dependency
+lookup escape into the installed public package.
+
+`kurlyk` is an optional HTTP implementation dependency, not a core dependency.
+Telegram's external API cannot provide exactly-once delivery without
+corresponding guarantees, and arbitrary client idempotency keys must not be assumed.
+
+### Optional outgoing kurlyk implementation
+
+Enable `IMTG_BUILD_TELEGRAM`, `IMTG_BUILD_TELEGRAM_TRANSPORT` and
+`IMTG_BUILD_TELEGRAM_KURLYK`. Include the standalone
+`<imtg/telegram_transport/KurlykHttpTransport.hpp>` and link
+`imtg::telegram_kurlyk`; an installed consumer requests the `telegram_kurlyk`
+component. Neither the generic transport umbrella nor core includes this
+implementation. Source integration uses the exact flat dependency pins in
+[external](../../external/README.md), including the receive-body corrective
+and offline provider resolution in upstream kurlyk #50/#51. These upstream
+Draft changes require independent acceptance before merge.
+
+`KurlykHttpTransport` copies request data into an isolated kurlyk group and
+always sets a positive `max_response_body_bytes`. It disables redirects,
+automatic retry, streaming, verbose output and debug headers, while retaining
+TLS verification. The body limit is enforced by kurlyk's libcurl write
+callback before accumulation, not by truncating an already buffered response.
+It does not bound kurlyk's header buffers or the entire process; the
+application owns shared worker admission/concurrency policy. No second worker,
+HTTP client implementation or logger interface is created.
+
+The outgoing request-body bound defaults to 16 KiB and must be positive and
+no greater than `LONG_MAX`. Construction rejects an unrepresentable bound:
+the pinned kurlyk backend passes the body length to `CURLOPT_POSTFIELDSIZE`
+as `long`. Every submitted body is checked against that bound before copying
+or submission, so this conversion cannot truncate its size. Boundary tests
+construct limits only; they do not allocate a `LONG_MAX`-sized payload.
+
+The adapter translation unit disables kurlyk automatic initialization. The
+application initializes the shared worker in asynchronous mode before calls,
+keeps it progressing until all callers and pending cancellations finish, and
+deinitializes it last. It may opt into kurlyk's own auto-initializer in its
+application code instead; imtg neither installs one nor stops global networking.
+Do not call this synchronous boundary from the kurlyk worker, or while holding
+a storage transaction. Its callbacks capture owned completion state only.
+
+Cancellation is checked before submission and during waiting. Cancellation or
+deadline after admission queues cancellation of that call's group and returns
+without waiting for worker quiescence. Late completion cannot access the
+borrowed request/token or destroyed transport. Reclamation requires worker
+progress; the timeout is not a promise to preempt another application's
+blocking kurlyk callback. The upstream receive timeout is finite as well.
+One call's cancellation cannot cancel another group's exchange.
+
+Pre-cancellation, local rejection and explicit kurlyk admission rejection prove
+non-transmission. Once submission starts, any exceptional/ambiguous failure
+conservatively preserves `request_may_have_been_sent=true`. A lost response,
+receive-limit abort or cancellation cannot undo a remote operation. HTTP 429
+and other completed error statuses are returned as responses for the existing
+Bot API interpreter; backend transport errors are typed failures without
+backend text, URLs, tokens or payloads. The adapter never retries them.
+
+On Windows the pinned kurlyk TLS implementation resolves an empty `ca_file`
+to `curl-ca-bundle.crt` beside the executable. Provision and maintain an
+appropriate PEM trust bundle there before enabling HTTPS. The pinned binary
+siblings and imtg install do not supply it. Other platforms use the backend's
+system trust configuration. Never disable peer/host verification as a
+workaround. Current deterministic tests use plain HTTP loopback and establish
+neither HTTPS trust deployment nor successful live Telegram delivery.
+
+### Next-stage incoming webhook boundary
+
+The optional general HTTP-server foundation is an independent upstream kurlyk
+Draft (#52), not an imtg webhook implementation. Its bounded loopback listener
+and abortive stop do not establish TLS/public deployment, durable intake or
+Telegram update handling. A later imtg adapter must:
+
+- authenticate `X-Telegram-Bot-Api-Secret-Token` before runtime admission;
+- derive `bot_id` from trusted endpoint configuration, never incoming JSON;
+- decode bounded JSON into the existing typed DTO/router and reuse the keyed
+  runtime and deduplication, not create another scheduler;
+- reject overload explicitly (for example HTTP 503), and ensure invalid
+  secrets never reach runtime;
+- make polling and webhook intake mutually exclusive for one bot;
+- acknowledge with 2xx only after the declared responsibility boundary. A
+  crash-surviving mode requires persisted inbox admission before the reply;
+  successful RAM admission alone cannot promise survival after process loss.
+
+`setWebhook`, `deleteWebhook` and `getWebhookInfo` are outgoing Bot API methods,
+separate from the incoming listener and deferred beyond the current three
+implemented methods. Public HTTPS/TLS configuration belongs to the application
+(direct TLS backend or reverse proxy). No durable inbox or webhook registration
+is implemented in the current slice.
 
 ## Gateway and handler modes
 
-The M3 gateway exposes one typed update router with filters, middleware,
-deterministic priority and explicit admission outcomes. It may normalize
-messages, edited messages, callback queries, chat-member changes, join requests
-and payment updates; an application enables only the classes it needs. The
-existing per-`ConversationKey` scheduler and bounded queue remain the ownership
-boundary. A flood produces an observable overload result (`QueueFull` or
-`Closed`) rather than unbounded memory growth.
+The M3a gateway exposes one typed update router with filters, middleware,
+deterministic priority and explicit admission outcomes. It currently supports
+owned text messages, addressed or unaddressed bot commands, and callback
+queries whose source chat/message and user identity are available. Inline
+callback queries without an accessible chat/message are rejected as invalid;
+edited messages, chat-member changes, join requests and payment updates are not
+part of this boundary yet. The existing per-`ConversationKey` scheduler and
+bounded queue remain the ownership boundary. A flood produces an observable
+overload result (`QueueFull` or `Closed`) rather than unbounded memory growth.
+The completed-history ring is allocated when the router is constructed;
+completion reuses the admission node and performs no allocation. Failed
+admission rolls back only a reservation owned by that call, never another
+concurrent admission of the same identity.
+
+For commands, `/start` is unaddressed and `/start@this_bot` is accepted only
+when the router is configured with the trusted bot username. An addressed
+command is rejected when the username is unavailable or does not match;
+arbitrary `@mentions` are never silently stripped. Command tokens use the
+lowercase ASCII alphabet, digits and underscore and are limited to Telegram's
+32-character command boundary; target username tokens are validated separately
+and bounded to the same maximum. Both are checked before routing. Exact callback-data routes
+take precedence over wildcard callback routes, with registration order used for
+ties.
+
+`UpdateRouter::close()` stops admission but does not join the runtime. Accepted
+callbacks retain their bounded deduplication state and may finish after the
+router object is destroyed; the owning application still must keep the runtime,
+handler captures and outcome sink valid until `ReferenceRuntime::shutdown()`
+completes. No callback is started after the runtime rejects admission.
 
 Handlers are either interactive or headless. Interactive handlers may use
 session/FSM state and create a render intent. Headless handlers process

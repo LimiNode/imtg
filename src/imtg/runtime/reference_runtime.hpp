@@ -171,6 +171,8 @@ public:
         const ConversationKey&, const ActionCommand&)>;
     /// \brief Observes task failures; implementations must not throw.
     using ErrorFunction = std::function<void(const ConversationKey&, const Error&)>;
+    /// \brief Owned callback task executed under the same keyed scheduler.
+    using CallbackTask = std::function<Result<void>()>;
 
     /// \brief Starts a bounded keyed worker pool borrowing its callbacks and registry.
     /// \param actions Registry that must outlive the runtime and worker shutdown.
@@ -204,6 +206,11 @@ public:
     /// \param action_token External action token, copied into bounded storage.
     /// \return Success or a validation, capacity, shutdown or runtime failure.
     [[nodiscard]] Result<void> submit(ConversationKey key, std::string action_token);
+    /// \brief Submits an owned callback for FIFO processing under its conversation key.
+    /// \param key Conversation serialization key.
+    /// \param callback Callback whose captures own every value needed until execution.
+    /// \return Success or a bounded-admission, shutdown or runtime failure.
+    [[nodiscard]] Result<void> submit_callback(ConversationKey key, CallbackTask callback);
     /// \brief Stops admission and requests workers to drain accepted tasks.
     void request_shutdown() noexcept;
     /// \brief Requests shutdown, joins workers and reports fail-stop state.
@@ -225,12 +232,14 @@ private:
     struct Task {
         ConversationKey key;
         std::string token;
+        CallbackTask callback;
     };
     struct Mailbox {
         std::deque<Task> queue;
         bool scheduled = false;
     };
 
+    [[nodiscard]] Result<void> submit_task(Task task);
     void execute(Task task) noexcept;
     void report(const ConversationKey& key, const Error& error) const noexcept;
     [[nodiscard]] bool is_worker_thread() const noexcept;

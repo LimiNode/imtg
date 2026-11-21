@@ -5,6 +5,48 @@ on:
   pull_request:
 
 jobs:
+  combined:
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Audit all direct pins before configuration
+        run: cmake -DIMTG_SOURCE_DIR=${{ github.workspace }} -P cmake/CheckFlatDependencies.cmake
+      - name: Install system HTTP providers
+        run: sudo apt-get update && sudo apt-get install --yes ninja-build libcurl4-openssl-dev libssl-dev
+      - name: Configure all modules together offline
+        run: >-
+          cmake -S . -B build/combined -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON
+          -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON -DIMTG_BUILD_MDBX=ON
+          -DIMTG_BUILD_TELEGRAM=ON -DIMTG_BUILD_TELEGRAM_TRANSPORT=ON
+          -DIMTG_BUILD_TELEGRAM_KURLYK=ON -DKURLYK_ALLOW_DOWNLOADS=OFF
+          -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+      - name: Build combined tree with mandatory internal logging
+        run: cmake --build build/combined --parallel 3
+      - name: Test behavior, installed consumers, public headers and parent reuse
+        run: ctest --test-dir build/combined --no-tests=error --output-on-failure
+      - name: Check installed combined-package license
+        run: cmake -DIMTG_SOURCE_DIR=${{ github.workspace }} -DIMTG_INSTALL_PREFIX=${{ github.workspace }}/build/combined/kurlyk-installed-stage -P cmake/CheckInstalledLicense.cmake
+      - name: Configure installed commerce consumer
+        run: cmake -S tests/install_commerce_consumer -B build/combined-commerce-consumer -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/combined/kurlyk-installed-stage
+      - name: Build installed commerce consumer
+        run: cmake --build build/combined-commerce-consumer --parallel 3
+      - name: Run installed commerce consumer
+        run: ctest --test-dir build/combined-commerce-consumer --no-tests=error --output-on-failure
+      - name: Configure installed generic transport consumer
+        run: cmake -S tests/install_telegram_transport_consumer -B build/combined-transport-consumer -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/combined/kurlyk-installed-stage
+      - name: Build installed generic transport consumer
+        run: cmake --build build/combined-transport-consumer --parallel 3
+      - name: Run installed generic transport consumer
+        run: ctest --test-dir build/combined-transport-consumer --no-tests=error --output-on-failure
+
   build:
     strategy:
       fail-fast: false
@@ -14,8 +56,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Initialize combined implementation dependencies
+        run: git submodule update --init -- external/json external/log-it-cpp external/time-shield-cpp
       - name: Configure
-        run: cmake -S . -B build/ci-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON
+        run: cmake -S . -B build/ci-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=ON -DIMTG_BUILD_TELEGRAM=ON -DIMTG_BUILD_TELEGRAM_TRANSPORT=ON
       - name: Build
         run: cmake --build build/ci-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
       - name: Test
@@ -25,7 +69,7 @@ jobs:
       - name: Verify installed license
         run: cmake -DIMTG_SOURCE_DIR=${{ github.workspace }} -DIMTG_INSTALL_PREFIX=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }} -P cmake/CheckInstalledLicense.cmake
       - name: Configure public-header checks
-        run: cmake -S tests/public_headers -B build/headers-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DIMTG_REQUIRE_COMMERCE=ON -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
+        run: cmake -S tests/public_headers -B build/headers-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DIMTG_REQUIRE_COMMERCE=ON -DIMTG_REQUIRE_TELEGRAM=ON -DIMTG_REQUIRE_TELEGRAM_TRANSPORT=ON -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build public-header checks
         run: cmake --build build/headers-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
       - name: Configure installed consumer
@@ -34,6 +78,12 @@ jobs:
         run: cmake --build build/consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
       - name: Run installed consumer smoke test
         run: ctest --test-dir build/consumer-${{ matrix.os }}-${{ matrix.build_type }} --build-config ${{ matrix.build_type }} --output-on-failure
+      - name: Configure installed transport consumer
+        run: cmake -S tests/install_telegram_transport_consumer -B build/transport-consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
+      - name: Build installed transport consumer
+        run: cmake --build build/transport-consumer-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
+      - name: Run installed transport consumer
+        run: ctest --test-dir build/transport-consumer-${{ matrix.os }}-${{ matrix.build_type }} --build-config ${{ matrix.build_type }} --no-tests=error --output-on-failure
       - name: Configure installed commerce consumer
         run: cmake -S tests/install_commerce_consumer -B build/commerce-consumer-${{ matrix.os }}-${{ matrix.build_type }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_PREFIX_PATH=${{ github.workspace }}/build/install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Build installed commerce consumer
@@ -52,6 +102,8 @@ jobs:
           cmake -S . -B build/asan-ubsan -DBUILD_TESTING=ON
           -DCMAKE_BUILD_TYPE=Debug
           -DIMTG_BUILD_COMMERCE=ON
+          -DIMTG_BUILD_TELEGRAM=ON
+          -DIMTG_BUILD_TELEGRAM_TRANSPORT=ON
           -DIMTG_BUILD_MDBX=ON
           -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
@@ -65,6 +117,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Initialize required implementation dependencies
+        run: git submodule update --init -- external/log-it-cpp external/time-shield-cpp
       - name: Configure core-only build
         run: cmake -S . -B build/core-only -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DIMTG_BUILD_COMMERCE=OFF
       - name: Build core-only target
@@ -122,6 +176,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Initialize required implementation dependencies
+        run: git submodule update --init -- external/log-it-cpp external/time-shield-cpp
       - name: Install Doxygen and Graphviz
         run: sudo apt-get update && sudo apt-get install --yes doxygen graphviz
       - name: Configure documentation

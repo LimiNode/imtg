@@ -18,6 +18,35 @@ Do not add speculative submodules. M2d-a pins sibling `external/mdbx-containers`
 and `external/libmdbx` submodules and provides them to CMake as one optional
 dependency boundary. `IMTG_BUILD_MDBX=OFF` remains the default and performs no
 MDBX lookup or download; `IMTG_BUILD_MDBX=ON` requires both initialized
-submodules and uses `MDBXC_DEPS_MODE=BUNDLED` without a FetchContent fallback.
+submodules and uses `MDBXC_DEPS_MODE=SYSTEM` to consume the supplied sibling
+target without a FetchContent fallback.
 The optional adapter is tested with a local persistence/reopen consumer; its
 installed-package export remains a later M2d-b boundary.
+
+The optional `IMTG_BUILD_TELEGRAM_TRANSPORT` slice uses nlohmann/json privately
+at `b1bb9fce0c9ae9db5cecf8e3bd78519ac70683ee`, the JSON gitlink selected by
+`kurlyk@b62cd53f672c47b74bb14d762ea9dc59a9df19ce`. It is a flat
+`external/json` submodule, initialized explicitly and non-recursively. Its MIT
+notice is installed with the optional adapter, while its headers and package
+lookup do not enter imtg's installed public contract. Core-only and the base
+Telegram router require neither this parser nor kurlyk.
+
+When a parent supplies `nlohmann_json::nlohmann_json`, the transport consumes
+that existing target before inspecting its own JSON provider path and preserves
+the parent's configuration. Otherwise `IMTG_JSON_SOURCE_DIR` selects the pinned
+private source provider. JSON usage is build-only: the installed imtg package
+does not require a JSON package lookup. A parent-owned provider also owns its
+license distribution; imtg installs the MIT notice only for its own source
+provider.
+
+`IMTG_BUILD_TELEGRAM_KURLYK=ON` optionally supplies the concrete HTTP adapter.
+It requires the generic transport option and a kurlyk target with the bounded
+response contract from upstream #50. The pinned source is the flat-dependency
+corrective #51 at `72373420175a8414f84307f3b1f59709ce234e5a`.
+Existing parent kurlyk targets win before source-path checks. Source fallback
+is offline and reuses parent/system CURL, OpenSSL, Asio and
+Simple-WebSocket-Server targets before direct sibling providers. Its installed
+static target resolves the kurlyk package only when the `telegram_kurlyk`
+component is requested. See [the direct dependency inventory](../../external/README.md)
+for exact pins, platform packages, installation ownership and initialization
+commands. No core or transport-neutral header exposes a kurlyk type.

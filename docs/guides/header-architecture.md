@@ -3,7 +3,9 @@
 **Status:** normative hybrid profile; root-umbrella migration implemented in this slice,
 pending independent review.
 **Scope:** `core`, `actions`, `storage`, `sessions`, `reconciliation`, `ui`,
-`runtime`, and the optional `commerce` addendum.
+`runtime`, the optional `commerce` addendum, the optional `telegram` gateway
+boundary, the optional `telegram_transport` boundary, and its standalone
+optional kurlyk adapter.
 
 This guide records the current include topology and the selected hybrid
 profile: domain umbrellas plus standalone public components and optional modules
@@ -46,18 +48,35 @@ implementation PRs.
 
 ### Implemented hybrid entry points
 
-The migration now provides all eight root umbrellas: `core`, `actions`,
-`storage`, `sessions`, `reconciliation`, `ui`, `runtime`, and optional `commerce`.
-Each includes lower-level domain umbrellas before its local public components.
+The migration now provides root umbrellas for `core`, `actions`, `storage`,
+`sessions`, `reconciliation`, `ui`, `runtime`, optional `commerce`, the
+optional `telegram` gateway boundary, and the optional `telegram_transport`
+boundary. Each includes lower-level domain
+umbrellas before its local public components. `telegram` depends on `core` and
+`runtime`, but remains outside `imtg_core` and is installed only when its
+optional target is enabled. `telegram_transport` depends on `telegram` and is
+installed only with `IMTG_BUILD_TELEGRAM_TRANSPORT=ON`.
 Public leaves remain self-contained. Normal implementation units start with
 their domain umbrella; no runtime algorithm or public declaration is changed.
 
-`cmake/ImtgPublicHeaders.cmake` explicitly enumerates 29 core-package headers
-and seven optional commerce headers. No recursive source-header installation
-remains. Core-only installation excludes commerce; source-only MDBX is not in
-the public manifest. The installed-header fixture compares the complete real
-header inventory to the manifest and compiles every entry first. It links the
-optional umbrella, as well as its components, to `imtg::commerce`.
+`cmake/ImtgPublicHeaders.cmake` explicitly enumerates 29 core-package headers,
+seven optional commerce headers, two optional Telegram gateway headers, and
+two optional Telegram transport headers. No
+recursive source-header installation remains. Core-only installation excludes
+optional modules; source-only MDBX is not in the public manifest. The
+installed-header fixture compares the complete real header inventory to the
+manifest and compiles every entry first. Optional fixtures link their headers
+to the corresponding `imtg::commerce`, `imtg::telegram`, or
+`imtg::telegram_transport` target.
+
+`<imtg/telegram_transport/KurlykHttpTransport.hpp>` is a separate standalone
+optional component. It is installed only with
+`IMTG_BUILD_TELEGRAM_KURLYK=ON` and links through `imtg::telegram_kurlyk`.
+Its implementation starts with that header, not the generic transport umbrella.
+The public header depends only on the generic imtg transport contract; vendor
+headers stay implementation-only. Neither `telegram_transport.hpp` nor any core
+umbrella includes this adapter. Its manifest entry, topology exception,
+installed first-include check and independent consumer cover this boundary.
 
 The nested `core/core.hpp`, `actions/actions.hpp`, `actions/registry.hpp`,
 `ui/ui.hpp`, and `runtime/runtime.hpp` paths remain forwarding compatibility
@@ -213,13 +232,17 @@ src/imtg/
 ├── reconciliation.hpp
 ├── ui.hpp
 ├── runtime.hpp
+├── telegram.hpp       # optional transport-neutral gateway
+├── telegram_transport.hpp # optional bounded Bot API transport
 ├── core/             # owned leaves and .cpp files
 ├── actions/
 ├── storage/
 ├── sessions/
 ├── reconciliation/
 ├── ui/
-└── runtime/
+├── runtime/
+├── telegram/
+└── telegram_transport/
 ```
 
 The intended topological order is:
@@ -232,6 +255,8 @@ core
   └── storage
         └── sessions
               └── reconciliation
+telegram ────────┘ (optional; depends on core and runtime)
+telegram_transport → telegram (optional)
 ```
 
 This is a partial order, not a requirement that all domains be merged into one
@@ -248,6 +273,8 @@ own declared public components. The proposed include sets are:
 | `ui.hpp` | `<imtg/core.hpp>`, `<imtg/actions.hpp>` | `ui/tree.hpp` |
 | `runtime.hpp` | `<imtg/core.hpp>`, `<imtg/actions.hpp>`, `<imtg/ui.hpp>` | `runtime/reference_runtime.hpp` |
 | `commerce.hpp` (optional) | `<imtg/core.hpp>`, `<imtg/storage.hpp>` after those umbrellas land | `commerce/PaymentTypes.hpp`, `PaymentPolicy.hpp`, `PaymentRecords.hpp`, `PaymentTransaction.hpp`, `PaymentProvider.hpp`, `PaymentServices.hpp` |
+| `telegram.hpp` (optional) | `<imtg/core.hpp>`, `<imtg/runtime.hpp>` | `telegram/UpdateRouter.hpp` |
+| `telegram_transport.hpp` (optional) | `<imtg/telegram.hpp>` | `telegram_transport/TelegramBotApi.hpp` |
 
 The exact component order is part of each implementation PR and must be stable,
 acyclic, and tested. A component that is intentionally standalone may include
@@ -268,6 +295,7 @@ The intended mapping is:
 | `imtg/ui/ui.hpp` | `imtg/ui.hpp` | relocate umbrella |
 | `imtg/runtime/runtime.hpp` | `imtg/runtime.hpp` | relocate umbrella |
 | `imtg/commerce.hpp` (optional) | `imtg/commerce.hpp` | already at the target root; keep excluded from core-only installs |
+| `imtg/telegram.hpp` (optional) | `imtg/telegram.hpp` | typed gateway boundary; installed only with `IMTG_BUILD_TELEGRAM=ON` |
 
 Component leaf paths such as `imtg/core/identifiers.hpp` and
 `imtg/sessions/session.hpp` remain the owning public paths in the target model;
@@ -308,4 +336,3 @@ The original audit was documentation-only. The implemented entry-point addendum
 above is verified by topology CTest, standalone installed-header builds,
 independent consumers, core-only/commerce builds, and Doxygen. Report the actual
 results per reviewed HEAD; this guide alone is not evidence of a passing CI run.
-

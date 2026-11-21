@@ -113,6 +113,11 @@ atomicity remain deferred.
 
 ## M3 — Telegram gateway and delivery
 
+The [architecture remediation plan](ARCHITECTURE_REMEDIATION_PLAN.md) is the
+ordered acceptance gate for the audited foundation before expanding incoming
+Telegram/webhook functionality. It preserves the existing milestone contracts
+and separates behavioral corrections, structural changes and protocol coverage.
+
 Add the verified Telegram boundary for typed message, edited-message,
 callback-query, chat-member, join-request and payment updates; declarative
 filters/middleware; headless and interactive handlers; permission checks;
@@ -123,6 +128,34 @@ claiming a provider adapter. Applications enable only the update classes they
 need.
 
 **Depends on:** M2 and verified official Telegram API behavior.
+**M3a status:** the optional transport-neutral `imtg::telegram` boundary is
+implemented as a Draft slice. It validates owned text/command and callback
+updates, deduplicates bot-scoped identities, applies deterministic
+filters/middleware and serialized authorization/stale checks, and submits
+handlers through the existing keyed scheduler. No HTTP client, Telegram
+credentials, persistent deduplication or live delivery is included.
+**M3b-a status:** the optional `imtg::telegram_transport` boundary now builds
+bounded authenticated requests for `sendMessage`, `editMessageText`, and
+`answerCallbackQuery` through an injected HTTP transport. It classifies
+bounded JSON envelopes and method-specific result identity, exposes API error
+codes and `parameters.retry_after`, and preserves timeout/cancellation and
+`UnknownOutcome` without retries or an idempotency claim. No `kurlyk` dependency
+or worker is included; JSON parsing is a private pinned source dependency.
+**M3b-a concrete adapter:** the separately enabled `imtg::telegram_kurlyk`
+target supplies receive-bounded HTTP through pinned kurlyk #50/#51, with no
+automatic retry or redirect. The application owns the shared asynchronous
+worker and shutdown. This Draft dependency stack is not accepted or merged
+merely because a local loopback/package test passes; upstream exact HEADs
+require independent review. HTTPS/live Telegram acceptance is not claimed.
+
+**Next incoming slice:** review optional kurlyk HTTP-server foundation #52
+independently, then add Telegram secret authentication, endpoint-owned bot
+identity, bounded JSON-to-DTO routing, overload rejection and polling/webhook
+exclusivity in a separate imtg PR. Durable webhook acknowledgement requires a
+persisted inbox; RAM runtime admission alone never promises crash survival.
+The server foundation does not delay review of the outgoing adapter and adds
+no Telegram behavior by itself. See the
+[delivery contract](contracts/TELEGRAM_DELIVERY.md).
 **Acceptance:** fake transport tests cover send/edit/delete/callback-answer,
 429/retry, authorization, duplicate updates, queue overload and
 `UnknownOutcome`; a headless moderation handler and an urgent payment handler

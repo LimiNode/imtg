@@ -24,7 +24,8 @@ umbrella context.
 The audited current graph is `actions → core`, `storage → core`,
 `sessions → storage`, `reconciliation → sessions`, `ui → actions`, and
 `runtime → ui` (with direct core dependencies where required). The graph is
-acyclic. All eight domains now have root umbrellas; the previous nested
+acyclic. The optional `telegram` domain depends on `core` and `runtime`, and
+the optional `telegram_transport` domain depends on `telegram`; the previous nested
 `core/core.hpp`, `actions/actions.hpp`, `ui/ui.hpp`, and `runtime/runtime.hpp`
 paths remain forwarding compatibility headers. The migration,
 install boundary, and compatibility policy are defined in
@@ -39,6 +40,12 @@ the old nested Actions paths remain compatibility shims during migration.
 The implementation preserves public leaf paths and runtime behavior. Installation
 uses the explicit `cmake/ImtgPublicHeaders.cmake` manifest; topology and installed
 first-include checks cover the boundary and compatibility paths.
+
+LogIt++ is a required implementation dependency, confined to `.cpp` files.
+No vendor types or includes enter the core public headers. Applications own
+the backend/configuration, bounded queue/drop policy, and logger shutdown;
+existing runtime/router observers remain application notification channels.
+See [ADR 0012](adr/0012-optional-logit-diagnostics.md).
 
 The runtime is organized as:
 
