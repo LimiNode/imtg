@@ -16,16 +16,26 @@ if(NOT TARGET log-it-cpp::log-it-cpp)
             message(FATAL_ERROR
                 "imtg requires TimeShield for LogIt++; provide time_shield::time_shield or initialize external/time-shield-cpp")
         endif()
-        set(TIME_SHIELD_ENABLE_NTP_CLIENT OFF CACHE BOOL "Enable TimeShield NTP client")
-        set(TIME_SHIELD_CPP_BUILD_TESTS OFF CACHE BOOL "Build TimeShield tests")
-        set(TIME_SHIELD_CPP_BUILD_EXAMPLES OFF CACHE BOOL "Build TimeShield examples")
+        if(NOT DEFINED TIME_SHIELD_ENABLE_NTP_CLIENT)
+            set(TIME_SHIELD_ENABLE_NTP_CLIENT OFF CACHE BOOL "Enable TimeShield NTP client")
+        endif()
+        if(NOT DEFINED TIME_SHIELD_CPP_BUILD_TESTS)
+            set(TIME_SHIELD_CPP_BUILD_TESTS OFF CACHE BOOL "Build TimeShield tests")
+        endif()
+        if(NOT DEFINED TIME_SHIELD_CPP_BUILD_EXAMPLES)
+            set(TIME_SHIELD_CPP_BUILD_EXAMPLES OFF CACHE BOOL "Build TimeShield examples")
+        endif()
         add_subdirectory("${IMTG_TIME_SHIELD_SOURCE_DIR}"
             "${CMAKE_CURRENT_BINARY_DIR}/_deps/time-shield")
         install(FILES "${IMTG_TIME_SHIELD_SOURCE_DIR}/LICENSE"
             DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/time-shield-cpp")
     endif()
-    set(LOGIT_CPP_BUILD_TESTS OFF CACHE BOOL "Build LogIt++ tests")
-    set(LOGIT_CPP_BUILD_EXAMPLES OFF CACHE BOOL "Build LogIt++ examples")
+    if(NOT DEFINED LOGIT_CPP_BUILD_TESTS)
+        set(LOGIT_CPP_BUILD_TESTS OFF CACHE BOOL "Build LogIt++ tests")
+    endif()
+    if(NOT DEFINED LOGIT_CPP_BUILD_EXAMPLES)
+        set(LOGIT_CPP_BUILD_EXAMPLES OFF CACHE BOOL "Build LogIt++ examples")
+    endif()
     # The provider defaults to lightweight backends; preserve every explicit
     # LOGIT_WITH_* choice, including ABI-affecting context support.
     add_subdirectory("${IMTG_LOGIT_SOURCE_DIR}"

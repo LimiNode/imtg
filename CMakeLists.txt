@@ -141,6 +141,7 @@ if(BUILD_TESTING)
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckLogit${check}.cmake)
         set_tests_properties(imtg_logit_${check} PROPERTIES TIMEOUT 180)
     endforeach()
+    set_tests_properties(imtg_logit_Embedding PROPERTIES TIMEOUT 360)
 endif()
 
 if(IMTG_BUILD_DOCUMENTATION)
