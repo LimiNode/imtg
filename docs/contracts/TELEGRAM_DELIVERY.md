@@ -92,6 +92,13 @@ It does not bound kurlyk's header buffers or the entire process; the
 application owns shared worker admission/concurrency policy. No second worker,
 HTTP client implementation or logger interface is created.
 
+The outgoing request-body bound defaults to 16 KiB and must be positive and
+no greater than `LONG_MAX`. Construction rejects an unrepresentable bound:
+the pinned kurlyk backend passes the body length to `CURLOPT_POSTFIELDSIZE`
+as `long`. Every submitted body is checked against that bound before copying
+or submission, so this conversion cannot truncate its size. Boundary tests
+construct limits only; they do not allocate a `LONG_MAX`-sized payload.
+
 The adapter translation unit disables kurlyk automatic initialization. The
 application initializes the shared worker in asynchronous mode before calls,
 keeps it progressing until all callers and pending cancellations finish, and

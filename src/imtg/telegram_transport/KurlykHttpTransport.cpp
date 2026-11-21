@@ -57,8 +57,9 @@ HttpExchange convert_response(kurlyk::HttpResponsePtr response)
 KurlykHttpTransport::KurlykHttpTransport(std::size_t max_request_bytes)
     : m_max_request_bytes(max_request_bytes)
 {
-    if (max_request_bytes == 0) {
-        throw std::invalid_argument("KurlykHttpTransport requires a finite request-body bound");
+    if (max_request_bytes == 0
+        || max_request_bytes > static_cast<std::size_t>((std::numeric_limits<long>::max)())) {
+        throw std::invalid_argument("KurlykHttpTransport requires a positive request-body bound representable as long");
     }
 }
 

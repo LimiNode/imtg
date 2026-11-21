@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <future>
+#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -92,6 +93,18 @@ int main()
         rejected = true;
     }
     CHECK(rejected);
+
+    const auto largest_body_bound = static_cast<std::size_t>((std::numeric_limits<long>::max)());
+    KurlykHttpTransport largest_valid(largest_body_bound);
+    if (largest_body_bound < (std::numeric_limits<std::size_t>::max)()) {
+        rejected = false;
+        try {
+            KurlykHttpTransport invalid(largest_body_bound + 1);
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
+        CHECK(rejected);
+    }
 
     Loopback loopback;
     std::atomic<unsigned int> hits{0};
