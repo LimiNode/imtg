@@ -35,6 +35,13 @@ MDBX target and header remain source-build-only. Scan result counts are bounded;
 physical tombstone examination is not. The merged source-build slice does not
 establish process-crash durability.
 
+The MDBX transaction-safety corrective adds rollback before propagating C++
+write-operation exceptions and preserves the original absent/tombstone generation
+for create-then-erase net-no-ops. Deterministic allocation-failure regressions
+cover partial local staging and earlier unrelated writes; the shared InMemory/MDBX
+conformance case covers repeated net-no-ops and compare-only watches. Persistent
+record/schema formats and uncertain native commit behavior are unchanged.
+
 The Sovetwave header-topology audit is documented in
 [header-architecture.md](guides/header-architecture.md), ADR 0009, and the
 accepted hybrid profile in [ADR 0011](adr/0011-hybrid-public-header-profile.md).

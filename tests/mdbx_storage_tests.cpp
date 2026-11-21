@@ -8,15 +8,67 @@
 #include <atomic>
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <exception>
 #include <iostream>
 #include <memory>
+#include <limits>
+#include <new>
 #include <string>
 #include <thread>
 #include <vector>
 
+namespace allocation_failure {
+
+thread_local std::size_t remaining = std::numeric_limits<std::size_t>::max();
+thread_local bool triggered = false;
+
+bool fail_now() noexcept
+{
+    if (remaining == std::numeric_limits<std::size_t>::max()) return false;
+    if (remaining != 0) {
+        --remaining;
+        return false;
+    }
+    // Fail once so rollback and the caller's diagnostics can allocate normally.
+    remaining = std::numeric_limits<std::size_t>::max();
+    triggered = true;
+    return true;
+}
+
+} // namespace allocation_failure
+
+void* operator new(std::size_t size)
+{
+    if (allocation_failure::fail_now()) throw std::bad_alloc();
+    if (void* pointer = std::malloc(size == 0 ? 1 : size)) return pointer;
+    throw std::bad_alloc();
+}
+
+void* operator new[](std::size_t size) { return ::operator new(size); }
+void operator delete(void* pointer) noexcept { std::free(pointer); }
+void operator delete[](void* pointer) noexcept { std::free(pointer); }
+void operator delete(void* pointer, std::size_t) noexcept { std::free(pointer); }
+void operator delete[](void* pointer, std::size_t) noexcept { std::free(pointer); }
+
 namespace {
+
+class AllocationFailure {
+public:
+    explicit AllocationFailure(std::size_t index) noexcept
+    {
+        allocation_failure::triggered = false;
+        allocation_failure::remaining = index;
+    }
+
+    ~AllocationFailure()
+    {
+        allocation_failure::remaining = std::numeric_limits<std::size_t>::max();
+    }
+
+    bool triggered() const noexcept { return allocation_failure::triggered; }
+};
 
 imtg::StorageSchema stable_schema()
 {
@@ -165,6 +217,108 @@ void test_tombstones_cas_and_scans()
     scan_writer.rollback();
     CHECK(backend->close());
     std::filesystem::remove(path);
+}
+
+void test_allocation_failure_rolls_back_staging()
+{
+    enum class Operation {
+        CreateAbsent, CreateTombstone, WriteStored, WritePending,
+        EraseStored, EraseCreated, EraseRecreated,
+    };
+    const std::string payload(1024, 'x');
+    for (const auto operation : {Operation::CreateAbsent, Operation::CreateTombstone,
+                                Operation::WriteStored, Operation::WritePending,
+                                Operation::EraseStored, Operation::EraseCreated,
+                                Operation::EraseRecreated}) {
+        const auto path = test_path("allocation-failure");
+        auto backend = open_backend(path);
+        const bool stored = operation == Operation::WriteStored
+            || operation == Operation::WritePending || operation == Operation::EraseStored;
+        const bool tombstone = operation == Operation::CreateTombstone
+            || operation == Operation::EraseRecreated;
+        if (stored || tombstone) {
+            auto seed = begin(*backend);
+            CHECK(seed.transaction()->create_if_absent("sessions", "target", "original"));
+            CHECK(seed.commit().outcome == imtg::CommitOutcome::Committed);
+        }
+        if (tombstone) {
+            auto seed = begin(*backend);
+            CHECK(seed.transaction()->erase("sessions", "target", 1));
+            CHECK(seed.commit().outcome == imtg::CommitOutcome::Committed);
+        }
+        bool reached_success = false;
+        // Sweep every C++ allocation, including encoding after shadow-state mutation.
+        for (std::size_t index = 0; index != 64; ++index) {
+            auto work = begin(*backend);
+            CHECK(work.transaction()->create_if_absent("outbox", "must-rollback", "staged"));
+            imtg::StorageRevision visible_revision = 1;
+            if (operation == Operation::WritePending) {
+                CHECK(work.transaction()->write("sessions", "target", payload, 1));
+                visible_revision = 2;
+            } else if (operation == Operation::EraseCreated
+                       || operation == Operation::EraseRecreated) {
+                const auto created = work.transaction()->create_if_absent(
+                    "sessions", "target", payload);
+                CHECK(created);
+                visible_revision = created.value();
+            }
+            bool caught = false;
+            bool injected = false;
+            bool succeeded = false;
+            {
+                AllocationFailure failure(index);
+                try {
+                    switch (operation) {
+                    case Operation::CreateAbsent:
+                    case Operation::CreateTombstone:
+                        succeeded = static_cast<bool>(work.transaction()->create_if_absent(
+                            "sessions", "target", payload));
+                        break;
+                    case Operation::WriteStored:
+                    case Operation::WritePending:
+                        succeeded = static_cast<bool>(work.transaction()->write(
+                            "sessions", "target", payload, visible_revision));
+                        break;
+                    default:
+                        succeeded = static_cast<bool>(work.transaction()->erase(
+                            "sessions", "target", visible_revision));
+                        break;
+                    }
+                } catch (const std::bad_alloc&) {
+                    caught = true;
+                }
+                injected = failure.triggered();
+            }
+            if (!injected) {
+                CHECK(succeeded && !caught && index != 0);
+                work.rollback();
+                reached_success = true;
+                break;
+            }
+            CHECK(caught);
+            CHECK(work.transaction()->state() == imtg::TransactionState::RolledBack);
+            const auto point = work.transaction()->read("sessions", "target");
+            CHECK(!point && point.error().code == imtg::ErrorCode::InvalidState);
+            const auto page = work.transaction()->scan("sessions", {}, 10);
+            CHECK(!page && page.error().code == imtg::ErrorCode::InvalidState);
+            CHECK(work.commit().outcome == imtg::CommitOutcome::Failed);
+            auto verify = begin(*backend, imtg::TransactionMode::ReadOnly);
+            const auto target = verify.transaction()->read("sessions", "target");
+            CHECK(target && static_cast<bool>(target.value()) == stored);
+            if (stored) {
+                CHECK(target.value()->value == "original" && target.value()->revision == 1);
+            }
+            CHECK(verify.transaction()->watch("sessions", "target", stored ? 1 : tombstone ? 2 : 0));
+            const auto prior = verify.transaction()->read("outbox", "must-rollback");
+            CHECK(prior && !prior.value());
+            const auto visible = verify.transaction()->scan("sessions", {}, 10);
+            CHECK(visible && visible.value().size() == (stored ? 1 : 0));
+            CHECK(verify.commit().outcome == imtg::CommitOutcome::Committed);
+        }
+        CHECK(reached_success);
+        CHECK(backend->close());
+        std::filesystem::remove(path);
+    }
 }
 
 void test_schema_gate_and_read_only()
@@ -535,6 +689,7 @@ int main()
         test_persistence_and_read_your_writes();
         test_snapshot_and_atomic_records();
         test_tombstones_cas_and_scans();
+        test_allocation_failure_rolls_back_staging();
         test_schema_gate_and_read_only();
         test_thread_ownership();
         test_namespace_isolation_and_binary_pagination();
