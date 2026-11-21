@@ -169,6 +169,8 @@ public:
     /// \param key Canonical record key.
     /// \param expected_revision Transaction-visible revision to erase.
     /// \return Success when the revision matches, otherwise a typed error.
+    /// \note Erasing a local create of an initially absent key restores its
+    /// original absence or tombstone generation without advancing it.
     [[nodiscard]] virtual Result<void> erase(
         std::string_view name_space,
         std::string_view key,

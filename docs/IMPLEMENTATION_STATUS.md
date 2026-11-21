@@ -35,6 +35,23 @@ MDBX target and header remain source-build-only. Scan result counts are bounded;
 physical tombstone examination is not. The merged source-build slice does not
 establish process-crash durability.
 
+The MDBX transaction-safety corrective adds rollback before propagating C++
+write-operation exceptions and preserves the original absent/tombstone generation
+for create-then-erase net-no-ops. Deterministic allocation-failure regressions
+cover partial local staging and earlier unrelated writes; the shared InMemory/MDBX
+conformance case covers repeated net-no-ops and compare-only watches. Persistent
+record/schema formats and uncertain native commit behavior are unchanged.
+
+On Windows Debug, CI run `44919903577` built successfully and passed tests 1-13,
+but `imtg_mdbx_storage_tests` started at 15:44:00 UTC and did not finish before
+job cancellation at 16:02:52 UTC. The cause is not established; this is not a passing
+Debug result. The test now has a 180-second CTest timeout and flushed subtest,
+operation and allocation-index progress outside allocation-injection scopes;
+these diagnostics bound and localize a repeat without changing storage behavior
+or weakening the allocation-failure regressions. MSVC Debug CRT assertion reports
+go to captured stderr instead of a modal dialog; native assertion termination is
+not disabled. No assertion is yet established as the cause of the observed hang.
+
 The Sovetwave header-topology audit is documented in
 [header-architecture.md](guides/header-architecture.md), ADR 0009, and the
 accepted hybrid profile in [ADR 0011](adr/0011-hybrid-public-header-profile.md).

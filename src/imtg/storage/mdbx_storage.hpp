@@ -31,6 +31,9 @@ struct MdbxStorageConfig {
 /// Public keys are prefixed by format/namespace bytes. New stores use 16 KiB
 /// pages; oversized keys return `StorageRecordTooLarge` before a native lookup.
 /// Scan limits bound returned records, not physical tombstone examination.
+/// An exception from `create_if_absent`, `write`, or `erase` after writable-state
+/// admission rolls back the entire transaction before propagating. Subsequent
+/// reads, scans and commit reject it.
 /// This adapter and its header are source-build-only until M2d-b package review.
 /// \thread_safety Transactions may be created by different workers, but each
 /// live transaction must be used and destroyed on its creating thread. Destroying
