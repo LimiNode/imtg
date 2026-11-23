@@ -61,6 +61,8 @@ struct SessionRecord {
 enum class MetadataPatchMode { Keep, Clear, Set };
 
 /// \brief Small Keep/Clear/Set patch used by metadata-only processor updates.
+/// \details Set requires a value; Keep and Clear must not carry one. Unknown
+/// modes and clearing a screen identity are rejected before update deduplication.
 template <typename T>
 struct MetadataPatch {
     MetadataPatchMode mode = MetadataPatchMode::Keep; ///< Keep, clear, or replace operation.
