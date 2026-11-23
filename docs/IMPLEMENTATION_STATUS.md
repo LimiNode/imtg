@@ -1,5 +1,11 @@
 # Implementation status
 
+The isolated B3 corrective shares render-intent semantic validation across writes
+and persisted reads and rejects malformed metadata patches before deduplication.
+The common storage conformance suite exercises failed-update rollback, corrected
+retries, zero-revision persisted intents and claim admission on InMemory and,
+when enabled, MDBX. It preserves existing record bytes and fencing.
+
 The [architecture remediation plan](ARCHITECTURE_REMEDIATION_PLAN.md) orders
 the 2026-11-21 audit work before further Telegram/webhook expansion. The
 integration publication preserves original composition `467f6f46`; a dedicated

@@ -37,6 +37,12 @@ Strict checks register a storage read dependency and are therefore validated at 
 self-transitions. Canonical timeout events are accepted only when a session deadline exists and `now`
 has reached it; normal events after expiry are deterministically synthesized as timeout events. Metadata
 patches distinguish Keep, Clear and Set and persist state-independent changes with their own CAS revision.
+Set requires a replacement value; Keep and Clear carry none. Unknown modes and
+clearing the screen identity are invalid. The processor rejects invalid patches
+before recording a processed-update marker, so a corrected retry remains new.
+Render-intent append and load share semantic identity validation: session revision
+must be nonzero and any origin must belong to the conversation's bot. Malformed
+persisted intents are rejected before claim inspection or legacy admission.
 Serialized timestamps are signed millisecond values and are range-checked against the platform clock before
 conversion.
 Invalid, unsupported, truncated, oversized, or stale records fail closed. Processed-update identities are retained according to the backend's configured namespace

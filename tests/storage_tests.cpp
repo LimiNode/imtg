@@ -5,6 +5,7 @@
 #endif
 
 #include "test_support.hpp"
+#include <imtg/sessions.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -495,8 +496,79 @@ void test_unit_of_work_move_assignment()
     }
 }
 
+void test_session_invariants(const BackendFixture& fixture)
+{
+    auto backend = fixture.create_backend(imtg::StorageSchema{1,
+        {{"sessions", 1}, {"processed_updates", 1}, {"render_intents", 1}}});
+    imtg::SessionRepository sessions;
+    imtg::ProcessedUpdateRepository processed;
+    imtg::RenderIntentRepository intents;
+    imtg::AtomicUpdateProcessor processor(*backend, sessions, processed, intents);
+    imtg::Fsm fsm;
+    CHECK(fsm.add_transition({"idle", 1}, {"refresh", 1}, {"idle", 1}));
+    for (int mode = 0; mode != 8; ++mode) {
+        const imtg::ConversationKey key{imtg::BotId{731}, imtg::ChatId{mode}, imtg::Chat{}};
+        const imtg::UpdateIdentity update{key.bot_id, static_cast<std::uint64_t>(mode)};
+        const imtg::SessionRecord initial{key, 1, {"idle", 1}, {"idle", 1}};
+        imtg::UpdateProcessOptions options;
+        switch (mode) {
+        case 0: options.pending_input_patch.mode = imtg::MetadataPatchMode::Set; break;
+        case 1: options.deadline_patch.mode = imtg::MetadataPatchMode::Set; break;
+        case 2: options.screen_patch.mode = imtg::MetadataPatchMode::Set; break;
+        case 3: options.pending_input_patch.value = imtg::PendingInput{"bad", 1}; break;
+        case 4: options.deadline_patch = {imtg::MetadataPatchMode::Clear, imtg::ClockTime{}}; break;
+        case 5: options.screen_patch = imtg::MetadataPatch<imtg::ScreenIdentity>::clear(); break;
+        case 6: options.pending_input_patch.mode = static_cast<imtg::MetadataPatchMode>(99); break;
+        case 7: options.screen_patch.value = imtg::ScreenIdentity{"bad", 1}; break;
+        }
+        const imtg::FsmEvent event{{"refresh", 1}, imtg::FsmEventKind::Normal, {}};
+        const auto failed = processor.process(update, key, fsm, event, {}, initial, options);
+        CHECK(failed.outcome == imtg::UpdateProcessOutcome::Failed);
+        CHECK(failed.error && failed.error->code == imtg::ErrorCode::InvalidArgument);
+        {
+            auto read = begin(*backend, imtg::TransactionMode::ReadOnly);
+            const auto marker = read.transaction()->read("processed_updates", update.encode());
+            const auto session = sessions.load(key, *read.transaction());
+            const auto intent = read.transaction()->scan("render_intents", {}, 10);
+            CHECK(marker && !marker.value());
+            CHECK(session && !session.value());
+            CHECK(intent && intent.value().size() == static_cast<std::size_t>(mode));
+        }
+        const auto retry = processor.process(update, key, fsm, event, {}, initial);
+        CHECK(retry.outcome == imtg::UpdateProcessOutcome::Committed);
+        CHECK(retry.session && retry.session->revision == 1 && retry.render_intent);
+        {
+            auto read = begin(*backend, imtg::TransactionMode::ReadOnly);
+            const auto intent = intents.load(*retry.render_intent, *read.transaction());
+            CHECK(intent && intent.value() && intent.value()->session_revision == 1);
+        }
+        CHECK(processor.process(update, key, fsm, event, {}).outcome
+              == imtg::UpdateProcessOutcome::Duplicate);
+    }
+    const imtg::ConversationKey key{imtg::BotId{732}, imtg::ChatId{1}, imtg::Chat{}};
+    const imtg::RenderIntent invalid{imtg::RenderIntentRepository::make_id(key, 0), key, 0, {}, {}};
+    {
+        auto work = begin(*backend);
+        const auto rejected = intents.append(invalid, *work.transaction());
+        CHECK(!rejected && rejected.error().code == imtg::ErrorCode::InvalidArgument);
+        auto encoded = key.encode();
+        encoded.append(14, '\0'); // separator, zero revision, empty metadata, no origin
+        CHECK(work.transaction()->create_if_absent("render_intents", invalid.id.value, encoded));
+        CHECK(work.commit().outcome == imtg::CommitOutcome::Committed);
+    }
+    {
+        auto read = begin(*backend);
+        const auto rejected = intents.load(invalid.id, *read.transaction());
+        CHECK(!rejected && rejected.error().code == imtg::ErrorCode::StorageSerializationFailure);
+        imtg::RenderIntentClaimRepository claims;
+        CHECK(!claims.inspect(invalid.id, {}, *read.transaction()));
+        CHECK(!claims.admit_legacy_intents(*read.transaction()));
+    }
+}
+
 void run_conformance(const BackendFixture& fixture)
 {
+    test_session_invariants(fixture);
     test_schema_and_revision_boundaries(fixture);
     test_read_your_writes_and_revisions(fixture);
     test_snapshot_and_basic_constraints(fixture);
