@@ -9,17 +9,20 @@
 #include <new>
 #include <string>
 #include <thread>
+#include <system_error>
 
 namespace {
 
 thread_local int g_fail_allocation_after = -1;
 thread_local bool g_allocation_failed = false;
+thread_local std::size_t g_min_failure_bytes = 0;
 
 } // namespace
 
 void* operator new(std::size_t size)
 {
-    if (g_fail_allocation_after >= 0 && g_fail_allocation_after-- == 0) {
+    if (size >= g_min_failure_bytes
+        && g_fail_allocation_after >= 0 && g_fail_allocation_after-- == 0) {
         g_fail_allocation_after = -1;
         g_allocation_failed = true;
         throw std::bad_alloc();
@@ -187,6 +190,107 @@ imtg::PayloadCodec<int> codec()
         [](std::string_view) -> imtg::Result<int> { return 0; }};
 }
 
+struct RegistrationCleanup {
+    imtg::ActionRegistry& registry;
+    int& released;
+    bool& lock_failed;
+    RegistrationCleanup(imtg::ActionRegistry& registry, int& released, bool& lock_failed)
+        : registry(registry), released(released), lock_failed(lock_failed) {}
+    ~RegistrationCleanup()
+    {
+        ++released;
+        try {
+            (void)registry.unregister_action(imtg::ActionId{"absent.v1"});
+        } catch (const std::system_error&) {
+            lock_failed = true;
+        }
+    }
+};
+
+void registration_allocation_sweep()
+{
+#if defined(_MSC_VER) && _ITERATOR_DEBUG_LEVEL != 0
+    // Debug STL allocates its tiny iterator proxies even in noexcept string moves.
+    // Sweep entry/function/node/bucket allocations, not those unrecoverable proxies.
+    g_min_failure_bytes = sizeof(std::_Container_proxy) + 1;
+#endif
+    bool reached_success = false;
+    for (int index = 0; index != 128; ++index) {
+        imtg::ManualClock clock(imtg::ClockTime{});
+        imtg::PlainTokenCodec token_codec;
+        imtg::ActionRegistry registry(token_codec, clock);
+        int released = 0;
+        bool lock_failed = false;
+        int invoked = 0;
+        auto payload_codec = codec();
+        // Separate owners prevent the encoder from masking early handler cleanup.
+        auto encoder_capture = std::make_shared<RegistrationCleanup>(registry, released, lock_failed);
+        payload_codec.encode = [encoder_capture](const int&) -> imtg::Result<std::string> {
+            return std::string("0");
+        };
+        encoder_capture.reset();
+        const auto prepare_handler = [&] {
+            auto capture = std::make_shared<RegistrationCleanup>(registry, released, lock_failed);
+            imtg::ActionRegistry::Handler<int> handler =
+                [capture, &invoked](imtg::ActionContext&, const int&) {
+                    ++invoked;
+                    return imtg::Result<void>();
+                };
+            g_allocation_failed = false;
+            g_fail_allocation_after = index;
+            return handler;
+        };
+        bool caught = false;
+        try {
+            auto result = registry.register_action<int>(imtg::ActionId{"primary.v1"},
+                std::move(payload_codec), prepare_handler());
+            g_fail_allocation_after = -1;
+            CHECK(result);
+            CHECK(!g_allocation_failed);
+            const auto token = registry.make_token(result.value(), 0);
+            CHECK(token);
+            CHECK(registry.invoke(token.value(), [](const imtg::ActionCommand&) {
+                return imtg::Result<void>();
+            }));
+            CHECK(invoked == 1);
+            CHECK(registry.unregister_action(imtg::ActionId{"primary.v1"}));
+        } catch (const std::bad_alloc&) {
+            caught = true;
+        }
+        g_fail_allocation_after = -1;
+        CHECK(!lock_failed);
+        CHECK(released == 2);
+        if (caught) {
+            CHECK(g_allocation_failed);
+            CHECK(!registry.unregister_action(imtg::ActionId{"primary.v1"}));
+        }
+        // Every failed publication must leave the same route available for reuse.
+        auto retry = registry.register_action<int>(imtg::ActionId{"primary.v1"}, codec(),
+            [&invoked](imtg::ActionContext&, const int&) {
+                ++invoked;
+                return imtg::Result<void>();
+            });
+        CHECK(retry);
+        const auto token = registry.make_token(retry.value(), 0);
+        CHECK(token);
+        CHECK(registry.invoke(token.value(), [](const imtg::ActionCommand&) {
+            return imtg::Result<void>();
+        }));
+        CHECK(invoked == (caught ? 1 : 2));
+        // Duplicate registration also releases user-owned state outside the lock.
+        {
+            auto capture = std::make_shared<RegistrationCleanup>(registry, released, lock_failed);
+            CHECK(!registry.register_action<int>(imtg::ActionId{"primary.v1"}, codec(),
+                [capture](imtg::ActionContext&, const int&) { return imtg::Result<void>(); }));
+        }
+        CHECK(released == 3 && !lock_failed);
+        CHECK(retry.value().validate());
+        if (!caught) { reached_success = true; break; }
+    }
+    CHECK(reached_success);
+    g_min_failure_bytes = 0;
+}
+
 struct UnregisteringCapture {
     UnregisteringCapture(imtg::ActionRegistry& registry, bool& removed)
         : registry(registry), removed(removed) {}
@@ -272,5 +376,6 @@ int main(int argc, char** argv)
     else if (mode == "action_in_flight") action_in_flight_cleanup();
     else if (mode == "subscribe_entry_failure") subscription_allocation_failure(0);
     else if (mode == "subscribe_vector_failure") subscription_allocation_failure(1);
+    else if (mode == "register_allocation_sweep") registration_allocation_sweep();
     else CHECK(false);
 }

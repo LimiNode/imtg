@@ -21,7 +21,7 @@ add_executable(imtg_callback_capture_lifetime_tests callback_capture_lifetime_te
 target_link_libraries(imtg_callback_capture_lifetime_tests PRIVATE imtg::core)
 foreach(scenario IN ITEMS reset close reset_quiescence close_quiescence
         reset_self_wait close_self_wait unregister action_in_flight
-        subscribe_entry_failure subscribe_vector_failure)
+        subscribe_entry_failure subscribe_vector_failure register_allocation_sweep)
     add_test(NAME imtg_capture_${scenario}
         COMMAND imtg_callback_capture_lifetime_tests ${scenario})
     set_tests_properties(imtg_capture_${scenario} PROPERTIES TIMEOUT 10)

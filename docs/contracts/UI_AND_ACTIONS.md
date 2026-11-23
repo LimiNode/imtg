@@ -25,6 +25,11 @@ last owner disappears during unregistration. Capture cleanup may re-enter the
 live registry; the application must still keep the registry alive until all
 such operations and existing invocations finish.
 
+Registration prepares the handle before acquiring the registry mutex and keeps
+a local owner of the handler entry until publication finishes. Failed insertion
+or rehash publishes no route; handler and encoder captures are released only
+after unlocking, including duplicate-registration and exception paths.
+
 ## Resolution lifecycle
 
 1. **Compose:** before intake, the application registers `save.v1` with its typed payload schema and handler, obtaining an `ActionHandle`.

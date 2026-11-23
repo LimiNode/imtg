@@ -13,6 +13,10 @@ quiescence also counts detached capture cleanup, with allocation-free rejection
 of capture-cleanup self-wait. Timeout-isolated regressions cover reset, close,
 unregister, reentrant destruction, and concurrent close waiting for cleanup;
 entry/vector allocation-failure regressions also cover subscription cleanup.
+Registration additionally retains local entry ownership across throwing map
+insertion and prepares encoder-bearing handles before locking. A bounded
+allocation sweep covers failed publication, reentrant handler/encoder cleanup,
+route reuse and duplicate registration; existing in-flight tests remain active.
 This does not move the notification types or alter callback delivery policy.
 
 Local integration validation combines outgoing #41 with mandatory logging #38.
