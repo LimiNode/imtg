@@ -18,6 +18,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "allocation_diagnostic.hpp"
 
 #if defined(_MSC_VER) && defined(_DEBUG)
 #include <crtdbg.h>
@@ -45,7 +46,15 @@ bool fail_now() noexcept
 
 void* operator new(std::size_t size)
 {
-    if (allocation_failure::fail_now()) throw std::bad_alloc();
+    if (allocation_failure::fail_now()) {
+#if defined(_MSC_VER)
+        if (allocation_diagnostic::enabled) {
+            allocation_diagnostic::out("DIAGNOSTIC_INJECT\n", 18);
+            allocation_diagnostic::stack();
+        }
+#endif
+        throw std::bad_alloc();
+    }
     if (void* pointer = std::malloc(size == 0 ? 1 : size)) return pointer;
     throw std::bad_alloc();
 }
@@ -271,7 +280,11 @@ void test_allocation_failure_rolls_back_staging()
         }
         bool reached_success = false;
         // Sweep every C++ allocation, including encoding after shadow-state mutation.
-        for (std::size_t index = 0; index != 64; ++index) {
+        for (std::size_t index =
+#if defined(_MSC_VER)
+                 allocation_diagnostic::enabled ? 4 :
+#endif
+                 0; index != 64; ++index) {
             allocation_progress(operation_name, index, "setup");
             auto work = begin(*backend);
             CHECK(work.transaction()->create_if_absent("outbox", "must-rollback", "staged"));
@@ -711,12 +724,25 @@ void test_repositories_tx1_tx2_delivery_and_reopen()
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
 #if defined(_MSC_VER) && defined(_DEBUG)
     // Capture native assertion reports instead of opening an unattended dialog.
     _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
     _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+#endif
+#if defined(_MSC_VER)
+    if (argc == 2 && std::string_view(argv[1]) == "--diagnose-create") {
+        std::fprintf(stderr, "MSC=%d ITERATOR=%d STL=%d proxy=%zu default_noexcept=%d\n",
+            _MSC_FULL_VER, _ITERATOR_DEBUG_LEVEL, _MSVC_STL_VERSION,
+            sizeof(std::_Container_proxy), noexcept(std::string{}));
+        allocation_diagnostic::install();
+        test_allocation_failure_rolls_back_staging();
+        return 0;
+    }
+#else
+    (void)argc;
+    (void)argv;
 #endif
     try {
         run_test("persistence_and_read_your_writes", test_persistence_and_read_your_writes);

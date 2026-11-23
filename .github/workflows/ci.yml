@@ -159,7 +159,35 @@ jobs:
       - name: Build optional MDBX adapter
         run: cmake --build build/mdbx-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --parallel
       - name: Test optional MDBX adapter
+        # Diagnostic runs distinguish a caught exception from terminate before CTest's watchdog.
+        if: ${{ !(runner.os == 'Windows' && matrix.build_type == 'Debug') }}
         run: ctest --test-dir build/mdbx-${{ matrix.os }}-${{ matrix.build_type }} -C ${{ matrix.build_type }} --output-on-failure
+      - name: Diagnose MSVC Debug allocation failure and test
+        if: runner.os == 'Windows' && matrix.build_type == 'Debug'
+        shell: pwsh
+        run: |
+          $probe = Get-ChildItem 'build/mdbx-${{ matrix.os }}-${{ matrix.build_type }}' -Recurse -Filter imtg_msvc_noexcept_string_probe.exe | Select-Object -First 1
+          & $probe.FullName
+          Write-Output "standalone_exit=$LASTEXITCODE"
+          $mutation = Get-ChildItem 'build/mdbx-${{ matrix.os }}-${{ matrix.build_type }}' -Recurse -Filter imtg_mdbx_storage_tests.exe | Select-Object -First 1
+          & $mutation.FullName --diagnose-create
+          Write-Output "mutation_diagnostic_exit=$LASTEXITCODE"
+          Get-ChildItem 'build/mdbx-${{ matrix.os }}-${{ matrix.build_type }}/tests' -Recurse -Filter CL.command.1.tlog | ForEach-Object { Get-Content $_.FullName }
+          $install = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath
+          Get-ChildItem "$install/VC/Tools/MSVC/*/include/xstring" | ForEach-Object { Select-String -Path $_.FullName -Pattern 'basic_string\(\) noexcept|void _Construct_empty' -Context 1,12 }
+          Get-ChildItem "$install/VC/Tools/MSVC/*/include/xmemory" | ForEach-Object { Select-String -Path $_.FullName -Pattern 'void _Alloc_proxy|struct _Container_proxy' -Context 1,12 }
+          ctest --test-dir build/mdbx-${{ matrix.os }}-${{ matrix.build_type }} -C Debug --output-on-failure
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Windows' && matrix.build_type == 'Debug'
+        with:
+          name: mdbx-msvc-debug-diagnostics
+          path: |
+            build/mdbx-*/tests/**/*.map
+            build/mdbx-*/tests/**/*.pdb
+            build/mdbx-*/bin/**
+            build/mdbx-*/tests/**/*.tlog/CL.command.1.tlog
+            build/mdbx-*/Testing/Temporary/*
       - name: Install source-only adapter package boundary
         run: cmake --install build/mdbx-${{ matrix.os }}-${{ matrix.build_type }} --config ${{ matrix.build_type }} --prefix build/mdbx-install-${{ matrix.os }}-${{ matrix.build_type }}
       - name: Verify MDBX profile installed license
