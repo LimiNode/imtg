@@ -10,6 +10,13 @@ The conceptual public surface uses `snake_case` (`ui.begin()`, `ui.text()`, `ui.
 
 M1b chooses exception-safe RAII scopes for nested grouping. `UiBuilder::begin()`, `section()`, and `row()` return move-only scope guards; destruction closes the matching scope. A builder has no global context, may be used independently on parallel threads, and is invalidated after `finish()`. The builder must outlive all guards. Duplicate explicit child IDs are rejected, and `finish()` rejects active scopes rather than silently producing an unbalanced tree.
 
+An exception inside node or scope mutation permanently fails that render.
+Existing scope guards remain safe to destroy, but further mutations and
+`finish()` return `InvalidState`; callers retry with a new builder. Exceptions
+while preparing arguments before mutation leave the builder unchanged. This
+fail-closed policy covers child-ID insertion, node growth, parent links and
+scope-stack growth without publishing a partially constructed tree.
+
 ## Two kinds of actions
 
 An **ephemeral callback binding** is a render-local helper that is never encoded into a Telegram control and cannot receive a later update. A **persistent registered action** is the only action kind permitted for a Telegram button: it is a named, versioned application route with a serializable payload schema and handler factory/callback registered during application composition before update intake. M1 routes use canonical `name.vN` syntax: the prefix is non-empty, `N` is a decimal `uint32_t` in the range `1..4294967295`, and leading zeroes are rejected.
