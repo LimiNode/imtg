@@ -16,9 +16,10 @@ namespace imtg::commerce {
 class IPaymentProvider {
 public:
     virtual ~IPaymentProvider() = default;
-    /// \brief Returns static provider identity.
-    /// \return Provider identity.
-    [[nodiscard]] virtual ProviderId id() const noexcept = 0;
+    /// \brief Returns the provider's stable identity without allocation.
+    /// \return Borrowed identity, immutable and valid for this provider's lifetime.
+    /// \note Implementations must retain owned identity storage; lookup never copies it.
+    [[nodiscard]] virtual const ProviderId& id() const noexcept = 0;
     /// \brief Returns static capabilities, not merchant approval.
     /// \return Capability metadata.
     [[nodiscard]] virtual PaymentProviderCapabilities capabilities() const = 0;

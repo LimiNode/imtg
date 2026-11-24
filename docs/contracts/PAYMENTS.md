@@ -28,6 +28,12 @@ The umbrella depends on core value/result contracts and the storage transaction
 contract; it does not introduce a reverse dependency from core to commerce.
 No provider SDK or transport header is installed by this module.
 
+`IPaymentProvider::id()` returns `const ProviderId&` without allocation. The
+provider owns immutable identity storage valid for its entire lifetime; callers
+must retain the provider while borrowing the reference. Registry lookup does
+not copy that identity, including identifiers longer than a short-string buffer.
+Capability metadata is still returned by value and may allocate.
+
 ## Boundaries
 
 The payment module owns payment identity, provider selection, payment state,

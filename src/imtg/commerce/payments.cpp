@@ -314,7 +314,7 @@ Result<void> PaymentProviderRegistry::register_provider(
     std::shared_ptr<IPaymentProvider> provider)
 {
     if (!provider) return invalid("payment provider is null");
-    const auto provider_id = provider->id();
+    const auto& provider_id = provider->id();
     if (!non_empty(provider_id.value)) return invalid("payment provider ID is invalid");
     if (find(provider_id)) {
         return Error{ErrorCode::DuplicateId, "payment provider is already registered"};
@@ -358,7 +358,7 @@ Result<std::shared_ptr<IPaymentProvider>> PaymentProviderRegistry::select(
 
     const auto eligible = [&request, &policy, &context](const auto& provider) {
         if (!provider) return false;
-        const auto provider_id = provider->id();
+        const auto& provider_id = provider->id();
         if (!allowlisted(policy, provider_id)) return false;
         const auto capabilities = provider->capabilities();
         if (!(capabilities.provider == provider_id)
