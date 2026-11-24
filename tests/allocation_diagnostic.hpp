@@ -10,6 +10,7 @@
 #include <io.h>
 #include <cstdlib>
 #include <exception>
+#include <cstdint>
 
 namespace allocation_diagnostic {
 inline bool enabled = false;
@@ -28,9 +29,9 @@ inline void stack() noexcept
         out(line, 19);
     }
 }
-inline void install() noexcept
+inline void install(bool diagnostic = true) noexcept
 {
-    enabled = true;
+    enabled = diagnostic;
     std::set_terminate([] {
         out("DIAGNOSTIC_TERMINATE\n", 21);
         stack();

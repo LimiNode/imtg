@@ -29,8 +29,16 @@ namespace allocation_failure {
 thread_local std::size_t remaining = (std::numeric_limits<std::size_t>::max)();
 thread_local bool triggered = false;
 
-bool fail_now() noexcept
+bool fail_now(std::size_t size) noexcept
 {
+#if defined(_MSC_VER) && _ITERATOR_DEBUG_LEVEL != 0
+    // Debug iterator proxies also allocate inside noexcept string construction
+    // and moves. Those failures terminate by contract, rather than propagate.
+    // Keep iterator diagnostics enabled; sweep recoverable larger allocations.
+    if (!allocation_diagnostic::enabled && size <= sizeof(std::_Container_proxy)) return false;
+#else
+    (void)size;
+#endif
     if (remaining == (std::numeric_limits<std::size_t>::max)()) return false;
     if (remaining != 0) {
         --remaining;
@@ -46,7 +54,7 @@ bool fail_now() noexcept
 
 void* operator new(std::size_t size)
 {
-    if (allocation_failure::fail_now()) {
+    if (allocation_failure::fail_now(size)) {
 #if defined(_MSC_VER)
         if (allocation_diagnostic::enabled) {
             allocation_diagnostic::out("DIAGNOSTIC_INJECT\n", 18);
@@ -279,7 +287,8 @@ void test_allocation_failure_rolls_back_staging()
             CHECK(seed.commit().outcome == imtg::CommitOutcome::Committed);
         }
         bool reached_success = false;
-        // Sweep every C++ allocation, including encoding after shadow-state mutation.
+        // Sweep allocations including encoding after shadow-state mutation.
+        // MSVC iterator-debug mode excludes tiny noexcept proxy allocations above.
         for (std::size_t index =
 #if defined(_MSC_VER)
                  allocation_diagnostic::enabled ? 4 :
@@ -732,6 +741,7 @@ int main(int argc, char** argv)
     _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
 #endif
 #if defined(_MSC_VER)
+    allocation_diagnostic::install(false);
     if (argc == 2 && std::string_view(argv[1]) == "--diagnose-create") {
         std::fprintf(stderr, "MSC=%d ITERATOR=%d STL=%d proxy=%zu default_noexcept=%d\n",
             _MSC_FULL_VER, _ITERATOR_DEBUG_LEVEL, _MSVC_STL_VERSION,

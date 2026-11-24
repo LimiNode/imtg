@@ -1,5 +1,14 @@
 # Implementation status
 
+The B2 allocation harness now distinguishes unrecoverable MSVC Debug STL proxy
+allocation from propagating mutation exceptions. Iterator diagnostics stay at
+their normal Debug setting. Only in that STL profile, allocations no larger than
+`std::_Container_proxy` are outside the recoverable sweep; this also excludes any
+other tiny allocation of that size, not just proxies. Other toolchains retain
+the full sweep. ST-1 rollback assertions and ST-2 revision/watch cases remain.
+The unfiltered diagnostic and standalone string probe are retained separately;
+their expected terminate exit is not evidence of successful rollback.
+
 The [architecture remediation plan](ARCHITECTURE_REMEDIATION_PLAN.md) orders
 the 2026-11-21 audit work before further Telegram/webhook expansion. The
 integration publication preserves original composition `467f6f46`; a dedicated

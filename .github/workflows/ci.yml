@@ -169,9 +169,14 @@ jobs:
           $probe = Get-ChildItem 'build/mdbx-${{ matrix.os }}-${{ matrix.build_type }}' -Recurse -Filter imtg_msvc_noexcept_string_probe.exe | Select-Object -First 1
           & $probe.FullName
           Write-Output "standalone_exit=$LASTEXITCODE"
+          if ($LASTEXITCODE -ne 77) { throw 'Expected noexcept string allocation to terminate with diagnostic exit 77' }
           $mutation = Get-ChildItem 'build/mdbx-${{ matrix.os }}-${{ matrix.build_type }}' -Recurse -Filter imtg_mdbx_storage_tests.exe | Select-Object -First 1
-          & $mutation.FullName --diagnose-create
-          Write-Output "mutation_diagnostic_exit=$LASTEXITCODE"
+          Push-Location 'build/mdbx-${{ matrix.os }}-${{ matrix.build_type }}'
+          try {
+            & $mutation.FullName --diagnose-create
+            Write-Output "mutation_diagnostic_exit=$LASTEXITCODE"
+            if ($LASTEXITCODE -ne 77) { throw 'Expected the original unfiltered index-4 diagnostic to terminate' }
+          } finally { Pop-Location }
           Get-ChildItem 'build/mdbx-${{ matrix.os }}-${{ matrix.build_type }}/tests' -Recurse -Filter CL.command.1.tlog | ForEach-Object { Get-Content $_.FullName }
           $install = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath
           Get-ChildItem "$install/VC/Tools/MSVC/*/include/xstring" | ForEach-Object { Select-String -Path $_.FullName -Pattern 'basic_string\(\) noexcept|void _Construct_empty' -Context 1,12 }
