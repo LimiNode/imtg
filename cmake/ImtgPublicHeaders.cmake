@@ -1,4 +1,7 @@
 # Supported installed entry points; implementation-only headers are never glob-installed.
+# Installed components are narrow public contracts as well as umbrella contents.
+set(IMTG_PRIVATE_HEADERS)
+set(IMTG_SOURCE_ONLY_HEADERS imtg/storage/mdbx_storage.hpp)
 set(IMTG_CORE_PUBLIC_HEADERS
     imtg/actions.hpp
     imtg/actions/ActionCommand.hpp

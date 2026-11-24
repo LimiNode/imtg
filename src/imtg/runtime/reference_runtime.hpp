@@ -96,6 +96,7 @@ struct NotificationState {
     std::unordered_map<std::thread::id, std::size_t> callback_depth; ///< Reentrancy depth.
     std::unordered_map<std::thread::id, std::size_t> publication_depth; ///< Publish depth.
     std::size_t active_publications{}; ///< Publish calls retaining callback references.
+    std::size_t active_retirements{}; ///< Detached callback ownership being released outside the mutex.
     std::function<void(std::exception_ptr)> error_sink; ///< Callback exception observer.
     std::size_t max_callback_depth = 64; ///< Fail-stop recursion bound.
 };
@@ -116,6 +117,7 @@ public:
     ~NotificationSubscription();
 
     /// \brief Prevents future callback selection without waiting for in-flight work.
+    /// \note Releases removed callback captures outside the dispatcher mutex.
     void reset() noexcept;
 
 private:
@@ -146,6 +148,7 @@ public:
 
     /// \brief Registers a callback until its returned subscription is reset/destroyed.
     /// \param callback Synchronous callback; concurrent publications may invoke it concurrently.
+    /// \note Failed preparation and rejected admission release captures outside the mutex.
     /// \return RAII subscription or an error when closed/invalid.
     [[nodiscard]] Result<NotificationSubscription> subscribe(Callback callback);
     /// \brief Synchronously publishes to callbacks selected at publication start.
@@ -153,7 +156,8 @@ public:
     /// \note Callback exceptions are reported to the configured error sink.
     void publish(const Notification& notification);
     /// \brief Closes admission and waits for callbacks and retained references to quiesce.
-    /// \return Success, or `InvalidState` when called reentrantly from delivery.
+    /// \note Includes detached capture destruction; captures are released outside the mutex.
+    /// \return Success, or `InvalidState` when called reentrantly from delivery or capture cleanup.
     [[nodiscard]] Result<void> close_and_wait();
 
 private:

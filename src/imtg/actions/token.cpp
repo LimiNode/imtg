@@ -55,10 +55,15 @@ Result<std::string> PlainTokenCodec::encode(const DecodedAction& action) const
     if (action.action_id.value.empty()) {
         return Error{ErrorCode::InvalidArgument, "action id cannot be empty"};
     }
-    const auto expiry = action.expires_at.has_value()
-        ? std::chrono::duration_cast<std::chrono::milliseconds>(
-              action.expires_at->time_since_epoch()).count()
-        : -1;
+    std::int64_t expiry = -1;
+    if (action.expires_at) {
+        const auto converted = detail::checked_duration_cast<std::chrono::milliseconds>(
+            action.expires_at->time_since_epoch());
+        if (!converted || action.expires_at->time_since_epoch() < ClockTime::duration::zero()) {
+            return Error{ErrorCode::InvalidArgument, "token expiry is outside the supported range"};
+        }
+        expiry = converted->count();
+    }
     return "v1|" + std::to_string(action.action_id.value.size()) + ":"
         + action.action_id.value + "|" + std::to_string(action.payload_version) + "|"
         + std::to_string(action.payload.size()) + ":" + action.payload + "|"
@@ -104,7 +109,14 @@ Result<DecodedAction> PlainTokenCodec::decode(std::string_view token) const
 
     std::optional<ClockTime> expires_at;
     if (expiry.value() >= 0) {
-        expires_at = ClockTime{std::chrono::milliseconds{expiry.value()}};
+        const auto converted = detail::checked_duration_cast<ClockTime::duration>(
+            std::chrono::milliseconds{expiry.value()});
+        if (!converted) {
+            return Error{ErrorCode::MalformedAction, "token expiry is outside the clock range"};
+        }
+        expires_at = ClockTime{*converted};
+    } else if (expiry.value() != -1) {
+        return Error{ErrorCode::MalformedAction, "token expiry marker is invalid"};
     }
     return DecodedAction{
         ActionId{std::string(action_field.value().second)},

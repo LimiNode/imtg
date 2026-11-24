@@ -8,15 +8,102 @@
 #include <atomic>
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <exception>
 #include <iostream>
 #include <memory>
+#include <limits>
+#include <new>
 #include <string>
 #include <thread>
 #include <vector>
+#include "allocation_diagnostic.hpp"
+
+#if defined(_MSC_VER) && defined(_DEBUG)
+#include <crtdbg.h>
+#endif
+
+namespace allocation_failure {
+
+thread_local std::size_t remaining = (std::numeric_limits<std::size_t>::max)();
+thread_local bool triggered = false;
+
+bool fail_now(std::size_t size) noexcept
+{
+#if defined(_MSC_VER) && _ITERATOR_DEBUG_LEVEL != 0
+    // Debug iterator proxies also allocate inside noexcept string construction
+    // and moves. Those failures terminate by contract, rather than propagate.
+    // Keep iterator diagnostics enabled; sweep recoverable larger allocations.
+    if (!allocation_diagnostic::enabled && size <= sizeof(std::_Container_proxy)) return false;
+#else
+    (void)size;
+#endif
+    if (remaining == (std::numeric_limits<std::size_t>::max)()) return false;
+    if (remaining != 0) {
+        --remaining;
+        return false;
+    }
+    // Fail once so rollback and the caller's diagnostics can allocate normally.
+    remaining = (std::numeric_limits<std::size_t>::max)();
+    triggered = true;
+    return true;
+}
+
+} // namespace allocation_failure
+
+void* operator new(std::size_t size)
+{
+    if (allocation_failure::fail_now(size)) {
+#if defined(_MSC_VER)
+        if (allocation_diagnostic::enabled) {
+            allocation_diagnostic::out("DIAGNOSTIC_INJECT\n", 18);
+            allocation_diagnostic::stack();
+        }
+#endif
+        throw std::bad_alloc();
+    }
+    if (void* pointer = std::malloc(size == 0 ? 1 : size)) return pointer;
+    throw std::bad_alloc();
+}
+
+void* operator new[](std::size_t size) { return ::operator new(size); }
+void operator delete(void* pointer) noexcept { std::free(pointer); }
+void operator delete[](void* pointer) noexcept { std::free(pointer); }
+void operator delete(void* pointer, std::size_t) noexcept { std::free(pointer); }
+void operator delete[](void* pointer, std::size_t) noexcept { std::free(pointer); }
 
 namespace {
+
+class AllocationFailure {
+public:
+    explicit AllocationFailure(std::size_t index) noexcept
+    {
+        allocation_failure::triggered = false;
+        allocation_failure::remaining = index;
+    }
+
+    ~AllocationFailure()
+    {
+        allocation_failure::remaining = (std::numeric_limits<std::size_t>::max)();
+    }
+
+    bool triggered() const noexcept { return allocation_failure::triggered; }
+};
+
+// I/O must not consume an allocation selected by the failure sweep.
+void allocation_progress(const char* operation, std::size_t index, const char* phase)
+{
+    std::cerr << "[ allocation ] operation=" << operation << " index=" << index
+              << " phase=" << phase << std::endl;
+}
+
+void run_test(const char* name, void (*test)())
+{
+    std::cerr << "[ run ] " << name << std::endl;
+    test();
+    std::cerr << "[ passed ] " << name << std::endl;
+}
 
 imtg::StorageSchema stable_schema()
 {
@@ -165,6 +252,123 @@ void test_tombstones_cas_and_scans()
     scan_writer.rollback();
     CHECK(backend->close());
     std::filesystem::remove(path);
+}
+
+void test_allocation_failure_rolls_back_staging()
+{
+    enum class Operation {
+        CreateAbsent, CreateTombstone, WriteStored, WritePending,
+        EraseStored, EraseCreated, EraseRecreated,
+    };
+    const char* const operation_names[] = {
+        "create_absent", "create_tombstone", "write_stored", "write_pending",
+        "erase_stored", "erase_created", "erase_recreated"};
+    const std::string payload(1024, 'x');
+    for (const auto operation : {Operation::CreateAbsent, Operation::CreateTombstone,
+                                Operation::WriteStored, Operation::WritePending,
+                                Operation::EraseStored, Operation::EraseCreated,
+                                Operation::EraseRecreated}) {
+        const auto* operation_name = operation_names[static_cast<std::size_t>(operation)];
+        std::cerr << "[ allocation ] operation=" << operation_name << " begin" << std::endl;
+        const auto path = test_path("allocation-failure");
+        auto backend = open_backend(path);
+        const bool stored = operation == Operation::WriteStored
+            || operation == Operation::WritePending || operation == Operation::EraseStored;
+        const bool tombstone = operation == Operation::CreateTombstone
+            || operation == Operation::EraseRecreated;
+        if (stored || tombstone) {
+            auto seed = begin(*backend);
+            CHECK(seed.transaction()->create_if_absent("sessions", "target", "original"));
+            CHECK(seed.commit().outcome == imtg::CommitOutcome::Committed);
+        }
+        if (tombstone) {
+            auto seed = begin(*backend);
+            CHECK(seed.transaction()->erase("sessions", "target", 1));
+            CHECK(seed.commit().outcome == imtg::CommitOutcome::Committed);
+        }
+        bool reached_success = false;
+        // Sweep allocations including encoding after shadow-state mutation.
+        // MSVC iterator-debug mode excludes tiny noexcept proxy allocations above.
+        for (std::size_t index =
+#if defined(_MSC_VER)
+                 allocation_diagnostic::enabled ? 4 :
+#endif
+                 0; index != 64; ++index) {
+            allocation_progress(operation_name, index, "setup");
+            auto work = begin(*backend);
+            CHECK(work.transaction()->create_if_absent("outbox", "must-rollback", "staged"));
+            imtg::StorageRevision visible_revision = 1;
+            if (operation == Operation::WritePending) {
+                CHECK(work.transaction()->write("sessions", "target", payload, 1));
+                visible_revision = 2;
+            } else if (operation == Operation::EraseCreated
+                       || operation == Operation::EraseRecreated) {
+                const auto created = work.transaction()->create_if_absent(
+                    "sessions", "target", payload);
+                CHECK(created);
+                visible_revision = created.value();
+            }
+            bool caught = false;
+            bool injected = false;
+            bool succeeded = false;
+            allocation_progress(operation_name, index, "inject");
+            {
+                AllocationFailure failure(index);
+                try {
+                    switch (operation) {
+                    case Operation::CreateAbsent:
+                    case Operation::CreateTombstone:
+                        succeeded = static_cast<bool>(work.transaction()->create_if_absent(
+                            "sessions", "target", payload));
+                        break;
+                    case Operation::WriteStored:
+                    case Operation::WritePending:
+                        succeeded = static_cast<bool>(work.transaction()->write(
+                            "sessions", "target", payload, visible_revision));
+                        break;
+                    default:
+                        succeeded = static_cast<bool>(work.transaction()->erase(
+                            "sessions", "target", visible_revision));
+                        break;
+                    }
+                } catch (const std::bad_alloc&) {
+                    caught = true;
+                }
+                injected = failure.triggered();
+            }
+            allocation_progress(operation_name, index, "returned");
+            if (!injected) {
+                CHECK(succeeded && !caught && index != 0);
+                work.rollback();
+                reached_success = true;
+                break;
+            }
+            CHECK(caught);
+            CHECK(work.transaction()->state() == imtg::TransactionState::RolledBack);
+            const auto point = work.transaction()->read("sessions", "target");
+            CHECK(!point && point.error().code == imtg::ErrorCode::InvalidState);
+            const auto page = work.transaction()->scan("sessions", {}, 10);
+            CHECK(!page && page.error().code == imtg::ErrorCode::InvalidState);
+            CHECK(work.commit().outcome == imtg::CommitOutcome::Failed);
+            allocation_progress(operation_name, index, "verify");
+            auto verify = begin(*backend, imtg::TransactionMode::ReadOnly);
+            const auto target = verify.transaction()->read("sessions", "target");
+            CHECK(target && static_cast<bool>(target.value()) == stored);
+            if (stored) {
+                CHECK(target.value()->value == "original" && target.value()->revision == 1);
+            }
+            CHECK(verify.transaction()->watch("sessions", "target", stored ? 1 : tombstone ? 2 : 0));
+            const auto prior = verify.transaction()->read("outbox", "must-rollback");
+            CHECK(prior && !prior.value());
+            const auto visible = verify.transaction()->scan("sessions", {}, 10);
+            CHECK(visible && visible.value().size() == (stored ? 1 : 0));
+            CHECK(verify.commit().outcome == imtg::CommitOutcome::Committed);
+            allocation_progress(operation_name, index, "verified");
+        }
+        CHECK(reached_success);
+        CHECK(backend->close());
+        std::filesystem::remove(path);
+    }
 }
 
 void test_schema_gate_and_read_only()
@@ -529,19 +733,39 @@ void test_repositories_tx1_tx2_delivery_and_reopen()
 
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+#if defined(_MSC_VER) && defined(_DEBUG)
+    // Capture native assertion reports instead of opening an unattended dialog.
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+#endif
+#if defined(_MSC_VER)
+    allocation_diagnostic::install(false);
+    if (argc == 2 && std::string_view(argv[1]) == "--diagnose-create") {
+        std::fprintf(stderr, "MSC=%d ITERATOR=%d STL=%d proxy=%zu default_noexcept=%d\n",
+            _MSC_FULL_VER, _ITERATOR_DEBUG_LEVEL, _MSVC_STL_VERSION,
+            sizeof(std::_Container_proxy), noexcept(std::string{}));
+        allocation_diagnostic::install();
+        test_allocation_failure_rolls_back_staging();
+        return 0;
+    }
+#else
+    (void)argc;
+    (void)argv;
+#endif
     try {
-        test_persistence_and_read_your_writes();
-        test_snapshot_and_atomic_records();
-        test_tombstones_cas_and_scans();
-        test_schema_gate_and_read_only();
-        test_thread_ownership();
-        test_namespace_isolation_and_binary_pagination();
-        test_public_meta_and_sparse_scans();
-        test_close_with_live_transactions();
-        test_unprefixed_draft_is_rejected();
-        test_repositories_tx1_tx2_delivery_and_reopen();
+        run_test("persistence_and_read_your_writes", test_persistence_and_read_your_writes);
+        run_test("snapshot_and_atomic_records", test_snapshot_and_atomic_records);
+        run_test("tombstones_cas_and_scans", test_tombstones_cas_and_scans);
+        run_test("allocation_failure_rolls_back_staging", test_allocation_failure_rolls_back_staging);
+        run_test("schema_gate_and_read_only", test_schema_gate_and_read_only);
+        run_test("thread_ownership", test_thread_ownership);
+        run_test("namespace_isolation_and_binary_pagination", test_namespace_isolation_and_binary_pagination);
+        run_test("public_meta_and_sparse_scans", test_public_meta_and_sparse_scans);
+        run_test("close_with_live_transactions", test_close_with_live_transactions);
+        run_test("unprefixed_draft_is_rejected", test_unprefixed_draft_is_rejected);
+        run_test("repositories_tx1_tx2_delivery_and_reopen", test_repositories_tx1_tx2_delivery_and_reopen);
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

@@ -2,12 +2,28 @@ add_executable(imtg_identity_tests identifiers_tests.cpp)
 add_test(NAME imtg_header_topology
     COMMAND ${CMAKE_COMMAND} -DIMTG_SOURCE_DIR=${PROJECT_SOURCE_DIR}
         -P ${PROJECT_SOURCE_DIR}/cmake/CheckHeaderTopology.cmake)
+add_test(NAME imtg_header_topology_fixtures
+    COMMAND ${CMAKE_COMMAND} -DIMTG_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+        -DIMTG_BINARY_DIR=${PROJECT_BINARY_DIR}
+        -P ${PROJECT_SOURCE_DIR}/cmake/CheckHeaderTopologyFixtures.cmake)
 target_link_libraries(imtg_identity_tests PRIVATE imtg::core)
 add_test(NAME imtg_identity_tests COMMAND imtg_identity_tests)
+
+add_executable(imtg_checked_time_tests checked_time_tests.cpp)
+target_link_libraries(imtg_checked_time_tests PRIVATE imtg::core)
+add_test(NAME imtg_checked_time_tests COMMAND imtg_checked_time_tests)
+set_tests_properties(imtg_checked_time_tests PROPERTIES TIMEOUT 15)
 
 add_executable(imtg_ui_tree_tests ui_tree_tests.cpp)
 target_link_libraries(imtg_ui_tree_tests PRIVATE imtg::core)
 add_test(NAME imtg_ui_tree_tests COMMAND imtg_ui_tree_tests)
+
+add_executable(imtg_ui_allocation_tests ui_allocation_tests.cpp)
+target_link_libraries(imtg_ui_allocation_tests PRIVATE imtg::core)
+foreach(scenario IN ITEMS root text scope)
+    add_test(NAME imtg_ui_allocation_${scenario} COMMAND imtg_ui_allocation_tests ${scenario})
+    set_tests_properties(imtg_ui_allocation_${scenario} PROPERTIES TIMEOUT 15)
+endforeach()
 
 add_executable(imtg_action_registry_tests action_registry_tests.cpp)
 target_link_libraries(imtg_action_registry_tests PRIVATE imtg::core)
@@ -16,6 +32,16 @@ add_test(NAME imtg_action_registry_tests COMMAND imtg_action_registry_tests)
 add_executable(imtg_reference_runtime_tests reference_runtime_tests.cpp)
 target_link_libraries(imtg_reference_runtime_tests PRIVATE imtg::core)
 add_test(NAME imtg_reference_runtime_tests COMMAND imtg_reference_runtime_tests)
+
+add_executable(imtg_callback_capture_lifetime_tests callback_capture_lifetime_tests.cpp)
+target_link_libraries(imtg_callback_capture_lifetime_tests PRIVATE imtg::core)
+foreach(scenario IN ITEMS reset close reset_quiescence close_quiescence
+        reset_self_wait close_self_wait unregister action_in_flight
+        subscribe_entry_failure subscribe_vector_failure register_allocation_sweep)
+    add_test(NAME imtg_capture_${scenario}
+        COMMAND imtg_callback_capture_lifetime_tests ${scenario})
+    set_tests_properties(imtg_capture_${scenario} PROPERTIES TIMEOUT 10)
+endforeach()
 
 add_executable(imtg_storage_tests storage_tests.cpp)
 target_link_libraries(imtg_storage_tests PRIVATE imtg::core)
@@ -121,7 +147,38 @@ endif()
 if(IMTG_BUILD_MDBX)
     add_executable(imtg_mdbx_storage_tests mdbx_storage_tests.cpp)
     target_link_libraries(imtg_mdbx_storage_tests PRIVATE imtg::mdbx)
+    set_target_properties(imtg_mdbx_storage_tests PROPERTIES
+        CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS OFF)
+    if(MINGW)
+        # Keep STL allocations in this executable's replacement-new fault boundary.
+        target_link_options(imtg_mdbx_storage_tests PRIVATE -static-libstdc++ -static-libgcc)
+    endif()
+    if(MSVC)
+        add_executable(imtg_msvc_noexcept_string_probe msvc_noexcept_string_probe.cpp)
+        target_compile_features(imtg_msvc_noexcept_string_probe PRIVATE cxx_std_17)
+        foreach(diagnostic_target IN ITEMS imtg_mdbx_storage_tests imtg_msvc_noexcept_string_probe)
+            target_compile_options(${diagnostic_target} PRIVATE /Zi)
+            target_link_options(${diagnostic_target} PRIVATE /DEBUG "/MAP:$<TARGET_FILE_DIR:${diagnostic_target}>/${diagnostic_target}.map")
+        endforeach()
+    endif()
     add_test(NAME imtg_mdbx_storage_tests COMMAND imtg_mdbx_storage_tests)
+    set_tests_properties(imtg_mdbx_storage_tests PROPERTIES TIMEOUT 180)
+    add_test(NAME imtg_mdbx_Embedding
+        COMMAND ${CMAKE_COMMAND}
+            -DIMTG_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+            -DIMTG_BINARY_DIR=${CMAKE_BINARY_DIR}
+            -DIMTG_CONFIG=$<CONFIG>
+            "-DIMTG_GENERATOR=${CMAKE_GENERATOR}"
+            -DIMTG_C_COMPILER=${CMAKE_C_COMPILER}
+            -DIMTG_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+            -DIMTG_NATIVE_SOURCE_DIR=${IMTG_LIBMDBX_SOURCE_DIR}
+            -DIMTG_CONTAINER_SOURCE_DIR=${IMTG_MDBX_CONTAINERS_SOURCE_DIR}
+            -DIMTG_LOGIT_PROVIDER_SOURCE_DIR=${IMTG_LOGIT_SOURCE_DIR}
+            -DIMTG_TIME_PROVIDER_SOURCE_DIR=${IMTG_TIME_SHIELD_SOURCE_DIR}
+            "-DIMTG_CONSUMER_CXX_FLAGS=${CMAKE_CXX_FLAGS}"
+            "-DIMTG_CONSUMER_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS}"
+            -P ${PROJECT_SOURCE_DIR}/cmake/CheckMdbxEmbedding.cmake)
+    set_tests_properties(imtg_mdbx_Embedding PROPERTIES TIMEOUT 600)
     add_test(NAME imtg_flat_dependencies
         COMMAND ${CMAKE_COMMAND} -DIMTG_SOURCE_DIR=${PROJECT_SOURCE_DIR}
             -P ${PROJECT_SOURCE_DIR}/cmake/CheckFlatDependencies.cmake)

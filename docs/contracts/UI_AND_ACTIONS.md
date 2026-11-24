@@ -10,6 +10,13 @@ The conceptual public surface uses `snake_case` (`ui.begin()`, `ui.text()`, `ui.
 
 M1b chooses exception-safe RAII scopes for nested grouping. `UiBuilder::begin()`, `section()`, and `row()` return move-only scope guards; destruction closes the matching scope. A builder has no global context, may be used independently on parallel threads, and is invalidated after `finish()`. The builder must outlive all guards. Duplicate explicit child IDs are rejected, and `finish()` rejects active scopes rather than silently producing an unbalanced tree.
 
+An exception inside node or scope mutation permanently fails that render.
+Existing scope guards remain safe to destroy, but further mutations and
+`finish()` return `InvalidState`; callers retry with a new builder. Exceptions
+while preparing arguments before mutation leave the builder unchanged. This
+fail-closed policy covers child-ID insertion, node growth, parent links and
+scope-stack growth without publishing a partially constructed tree.
+
 ## Two kinds of actions
 
 An **ephemeral callback binding** is a render-local helper that is never encoded into a Telegram control and cannot receive a later update. A **persistent registered action** is the only action kind permitted for a Telegram button: it is a named, versioned application route with a serializable payload schema and handler factory/callback registered during application composition before update intake. M1 routes use canonical `name.vN` syntax: the prefix is non-empty, `N` is a decimal `uint32_t` in the range `1..4294967295`, and leading zeroes are rejected.
@@ -17,6 +24,30 @@ An **ephemeral callback binding** is a render-local helper that is never encoded
 During rendering, `ui.button(id, label, action_handle, payload)` (or the equivalent payload-first overload) computes component identity from the `ConversationKey`, screen identity, and component path, then stores the handle's stable action ID/version and encoded payload in the transport-neutral descriptor. The delivery adapter later asks the registry/token codec for a Telegram callback token. The token must fit the Telegram callback-data limit; oversized payloads are rejected or replaced by a durable token reference.
 
 The application registry holds executable handlers in process memory and stable route metadata; durable storage holds only action ID/version, payload data (or a reference), binding constraints, and expiry. It never serializes C++ callbacks, captured pointers, references, or object addresses. Startup must rebuild and validate the complete route registry before accepting updates. A controller or handler is located by route and constructed or kept alive for the invocation. Registered handler captures are limited to application-lifetime services or immutable owned values; invocation references are synchronous and cannot escape.
+
+Unregistering a route invalidates its handles and prevents future lookup, but
+does not join an invocation that already owns the entry. The removed handler
+and its captures are released outside the registry mutex, including when the
+last owner disappears during unregistration. Capture cleanup may re-enter the
+live registry; the application must still keep the registry alive until all
+such operations and existing invocations finish.
+
+Registration prepares the handle before acquiring the registry mutex and keeps
+a local owner of the handler entry until publication finishes. Failed insertion
+or rehash publishes no route; handler and encoder captures are released only
+after unlocking, including duplicate-registration and exception paths.
+
+The unauthenticated test codec's v1 expiry uses nonnegative epoch milliseconds;
+`-1` alone denotes no expiry. Other negative markers and values outside the
+platform clock range are rejected before conversion; pre-epoch expiry cannot
+be encoded in v1. Existing valid bytes are unchanged. This does not change
+storage's distinct round-toward-future timestamp policy.
+
+`ManualClock::advance(milliseconds)` checks both duration conversion and
+addition. Out-of-range input throws `std::overflow_error` without changing the
+clock. Supported integral clock periods use whole-factor scaling; conversion
+to a coarser tick truncates toward zero. It remains a wall-clock test boundary,
+not an anchored monotonic clock.
 
 ## Resolution lifecycle
 

@@ -73,6 +73,10 @@ is stable, reads include pending writes, and all writes in one commit are publis
 key with no generation. Each changed key advances exactly once per successful transaction;
 repeated writes expose the same candidate committed revision, and a fresh transaction observes
 that exact revision after commit.
+Creating and then erasing a key that was absent at transaction start is a net
+no-op: the original absence or tombstone generation is restored, even after
+repeated create/write/erase cycles. If the key was initially visible, its final
+deletion still advances its generation once.
 `ITransaction::watch(namespace, key, expected_revision)` registers a compare-only read dependency;
 the in-memory backend validates it under the publication lock, so strict session revision checks also
 fence self-transitions that have no session write. Backends without this capability fail closed when
@@ -227,6 +231,13 @@ thread ownership, and schema migration-state admission. Native commit errors
 remain conservatively `Unknown`; crash injection, due indexes, migration
 execution and installed-package export remain M2d-b/M2e work. **Dependencies:**
 none in core; the MDBX adapter is optional.
+
+The MDBX adapter fails closed when a C++ exception escapes an owner-thread
+`create_if_absent`, `write`, or `erase` after writable-state admission. It rolls
+back the whole transaction, including earlier staged records, before propagating
+the exception. The terminal transaction rejects reads, scans and commit; callers
+must start a new transaction. Allocation failure is not converted into a newly
+allocated diagnostic. This rule does not change uncertain native commit handling.
 
 The fixed logical-namespace routing and version-1 binary physical key encoding
 are specified in [the MDBX ADR](../adr/0006-m2d-mdbx-storage-adapter.md).

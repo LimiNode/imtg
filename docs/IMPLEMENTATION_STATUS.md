@@ -1,11 +1,79 @@
 # Implementation status
 
+The 2026-11-24 corrective composition is separate from #42 and merged `main`.
+It assembles B1–B6, D1 and E1 with exact source/provenance recorded in the
+[composition note](research/CORRECTIVE_COMPOSITION_2026_11_24.md).
+Combined-tree hosted results are tracked by exact HEAD in Draft #51;
+successful sibling checks do not close that gate. Local explicit-C++17 combined
+Debug and Release passed 37/37 each, plus six installed consumers and strict
+Doxygen. B2's current hosted workflows passed 17/17 and 7/7; D1 now includes
+that verified base and is checked independently. Independent review remains.
+D2, E2–E5, F, incoming
+server/webhook work and releases are not part of this corrective.
+
+The MinGW MDBX allocation-injection executable links a static C++ runtime so
+out-of-line STL allocations enter its replacement global new. Explicit C++17
+Release exposed the dynamic-DLL interception gap; same-object relinking restored
+the complete sweep. This is test-only, not a production runtime requirement.
+
+The B2 allocation harness now distinguishes unrecoverable MSVC Debug STL proxy
+allocation from propagating mutation exceptions. Iterator diagnostics stay at
+their normal Debug setting. Only in that STL profile, allocations no larger than
+`std::_Container_proxy` are outside the recoverable sweep; this also excludes any
+other tiny allocation of that size, not just proxies. Other toolchains retain
+the full sweep. ST-1 rollback assertions and ST-2 revision/watch cases remain.
+The unfiltered diagnostic and standalone string probe are retained separately;
+their expected terminate exit is not evidence of successful rollback.
+
+The isolated B3 corrective shares render-intent semantic validation across writes
+and persisted reads and rejects malformed metadata patches before deduplication.
+The common storage conformance suite exercises failed-update rollback, corrected
+retries, zero-revision persisted intents and claim admission on InMemory and,
+when enabled, MDBX. It preserves existing record bytes and fencing.
+
+The isolated B4 corrective makes node/scope mutation exceptions terminal for
+that render. Allocation sweeps cover root, child and nested-scope growth;
+`finish()` cannot publish a partially built tree. Duplicate-ID and scope-lifetime
+semantics remain unchanged.
+
+The isolated B6 corrective makes provider identity a lifetime-bound const
+reference. Registry lookup and identity comparison do not allocate; the public
+interface, fake implementation and callers use the same contract. This is an
+interface change for provider implementations, not a provider/payment-policy
+change. Concrete external payment adapters remain unimplemented.
+
+The isolated B5 corrective checks token-expiry conversion and ManualClock
+addition, and compares conversation keys numerically without encoding or
+allocation. Storage rounding and wire bytes are unchanged. The pinned TimeShield
+`DeadlineTimer::start` uses steady-clock duration_cast and saturation, not the
+required checked wall-clock conversion/rejection contract; it is not substituted.
+The local integral conversion helper is limited to supported whole-factor clock
+periods. Full TimeShield integration (F) remains separately planned.
+
+The isolated E1 corrective audits the actual include DAG, including source-only
+MDBX, local paths and spaced include directives. The manifest distinguishes
+public, private and source-only headers; narrow public contracts remain valid
+cross-domain entry points. Positive and negative fixtures cover boundary and
+cycle violations without new blanket exclusions or file moves.
+
 The [architecture remediation plan](ARCHITECTURE_REMEDIATION_PLAN.md) orders
 the 2026-11-21 audit work before further Telegram/webhook expansion. The
 integration publication preserves original composition `467f6f46`; a dedicated
 Linux Debug/Release CI job enables all modules simultaneously and checks the
 flat boundary before configure. See [source and local evidence](research/M3_COMPOSITION_EVIDENCE_2026_11_21.md).
 This does not mark the behavioral or structural remediation as complete.
+
+The isolated callback-lifetime corrective detaches notification and action
+entries under their mutexes and destroys captures after unlocking. Notification
+quiescence also counts detached capture cleanup, with allocation-free rejection
+of capture-cleanup self-wait. Timeout-isolated regressions cover reset, close,
+unregister, reentrant destruction, and concurrent close waiting for cleanup;
+entry/vector allocation-failure regressions also cover subscription cleanup.
+Registration additionally retains local entry ownership across throwing map
+insertion and prepares encoder-bearing handles before locking. A bounded
+allocation sweep covers failed publication, reentrant handler/encoder cleanup,
+route reuse and duplicate registration; existing in-flight tests remain active.
+This does not move the notification types or alter callback delivery policy.
 
 Local integration validation combines outgoing #41 with mandatory logging #38.
 The implementation uses LogIt++ privately in core/router, preserves semantic
@@ -34,6 +102,34 @@ size admission and real M2b/M2c repository integration/reopen tests. Both the
 MDBX target and header remain source-build-only. Scan result counts are bounded;
 physical tombstone examination is not. The merged source-build slice does not
 establish process-crash durability.
+
+The MDBX transaction-safety corrective adds rollback before propagating C++
+write-operation exceptions and preserves the original absent/tombstone generation
+for create-then-erase net-no-ops. Deterministic allocation-failure regressions
+cover partial local staging and earlier unrelated writes; the shared InMemory/MDBX
+conformance case covers repeated net-no-ops and compare-only watches. Persistent
+record/schema formats and uncertain native commit behavior are unchanged.
+
+On Windows Debug, CI run `44919903577` built successfully and passed tests 1-13,
+but `imtg_mdbx_storage_tests` started at 15:44:00 UTC and did not finish before
+job cancellation at 16:02:52 UTC. That historical run is not passing evidence.
+The subsequent exact hosted diagnostic at `dec41c12` resolves original
+`create_absent/index=4` to allocation of a Debug STL proxy inside the noexcept
+default string constructor; both standalone and mutation probes terminate with
+exit 77. Matching MAP/PDB, compiler flags and installed STL excerpts are recorded
+in the [diagnosis](research/MSVC_ALLOCATION_HARNESS_2026_11_24.md).
+The ordinary harness now sweeps recoverable sizes with iterator diagnostics
+enabled; successful corrected hosted execution is a separate acceptance gate.
+No production MDBX workaround or longer timeout is used as a fix.
+
+The MDBX provider corrective reuses existing targets, including explicitly loaded
+local/system packages, before inspecting explicit or pinned source paths. It
+performs no implicit package lookup. Defaults no longer overwrite
+parent normal/cache dependency choices, and unresolved native providers fail
+before the containers source can enter a nested/download fallback. The
+`imtg_mdbx_Embedding` fixture builds and executes source/imported/package parent
+consumers and verifies unused-path bypass, option preservation and absent-provider
+failure. This does not complete the installed MDBX adapter package boundary.
 
 The Sovetwave header-topology audit is documented in
 [header-architecture.md](guides/header-architecture.md), ADR 0009, and the

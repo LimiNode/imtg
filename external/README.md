@@ -35,18 +35,39 @@ ctest --test-dir build/mdbx -C Debug --output-on-failure
 Do not use recursive initialization. The upstream mdbx-containers checkout
 contains its own libmdbx and documentation-theme gitlinks. They remain
 uninitialized; imtg does not modify upstream metadata or maintain duplicate
-copies. `external/CMakeLists.txt` adds the sibling libmdbx target first, then
-mdbx-containers consumes that existing target. `MDBXC_DEPS_MODE=SYSTEM` prevents
-its nested-submodule/FetchContent fallback; missing siblings fail configuration.
-Configuration never downloads or updates dependencies. The existing
-`IMTG_MDBX_CONTAINERS_SOURCE_DIR` override is intended for deliberate local
-experiments, not the pinned CI or release path; the Git audit checks the checkout.
+copies. `external/CMakeLists.txt` first reuses an existing
+`mdbx_containers::mdbx_containers` target. A parent may explicitly load a local
+or system package before adding imtg; imtg performs no implicit package lookup.
+Only when the target is absent does it inspect `IMTG_MDBX_CONTAINERS_SOURCE_DIR`,
+which defaults to the pinned flat sibling. A containers target owns its native
+dependency and bypasses both unused source paths. When adding containers from
+source, existing compatible libmdbx targets win before
+`IMTG_LIBMDBX_SOURCE_DIR` (the pinned `external/libmdbx` by default).
+The native target is resolved before the containers source is added, so its
+nested-source and FetchContent fallback cannot run. Missing providers fail
+configuration; configuration never downloads or updates dependencies.
+Explicit source overrides are for deliberate local providers, not the pinned
+CI or release path; the Git audit still checks the direct checkout.
+The pinned libmdbx source fallback requires CMake 3.19 or newer to read its
+version metadata. Core retains CMake 3.18; reusing compatible existing targets
+does not enter that native-source requirement.
 
-Third-party tools, examples and tests are disabled. The MSVC C11 selection is
-owned here for the pinned libmdbx compiler compatibility issue. Adapter code
+Third-party tools, examples and tests default to disabled only when unset.
+Parent normal/cache options and dependency modes are preserved. The default
+containers mode is `SYSTEM`; an explicit parent `AUTO`/`BUNDLED` mode is also
+safe because an existing native target resolves first. The MSVC C11 default
+and `/Zc:__cplusplus` adjustment apply only to imtg-owned libmdbx source targets;
+existing parent/imported targets are not modified. Adapter code
 and its `imtg::mdbx` target stay owned by imtg, not by this dependency provider.
 The adapter remains source-build-only until M2d-b defines installed dependency
 resolution and exports.
+
+`imtg_mdbx_Embedding` builds and runs a real adapter consumer with source,
+imported and explicitly package-provided targets, deliberately unavailable unused paths,
+native-only target reuse, and normal/cache option preservation. It also checks
+that implicit package lookup cannot override explicit/pinned sources, and that
+absent providers fail before a download-capable fallback is entered. These
+source-build fixtures do not establish the M2d-b installed adapter contract.
 
 `json` is a private MIT-licensed parser for `imtg::telegram_transport` only.
 Without a parent-owned `nlohmann_json::nlohmann_json` target, that option requires

@@ -5,6 +5,22 @@
 #include <memory>
 #include <optional>
 #include <vector>
+#include <cstdlib>
+#include <new>
+#include <type_traits>
+
+namespace { thread_local bool forbid_allocation = false; }
+void* operator new(std::size_t size)
+{
+    if (forbid_allocation) throw std::bad_alloc();
+    if (auto* memory = std::malloc(size ? size : 1)) return memory;
+    throw std::bad_alloc();
+}
+void operator delete(void* memory) noexcept { std::free(memory); }
+void operator delete(void* memory, std::size_t) noexcept { std::free(memory); }
+void* operator new[](std::size_t size) { return ::operator new(size); }
+void operator delete[](void* memory) noexcept { std::free(memory); }
+void operator delete[](void* memory, std::size_t) noexcept { std::free(memory); }
 
 namespace {
 
@@ -21,7 +37,7 @@ public:
     {
     }
 
-    ProviderId id() const noexcept override { return m_capabilities.provider; }
+    const ProviderId& id() const noexcept override { return m_capabilities.provider; }
     PaymentProviderCapabilities capabilities() const override { return m_capabilities; }
 
     Result<PaymentCreateResult> create_payment(
@@ -445,6 +461,27 @@ void test_registry_is_account_scoped_and_allowlisted()
     CHECK(!registry.select(value, policy(value, eligible_id), selection_context));
 }
 
+void test_identity_lookup_does_not_allocate()
+{
+    static_assert(std::is_same<decltype(std::declval<const IPaymentProvider&>().id()),
+                               const ProviderId&>::value, "identity must be borrowed");
+    const ProviderId identity{std::string(128, 'p')};
+    const ProviderId missing{std::string(128, 'x')};
+    auto provider = std::make_shared<FakeProvider>(identity,
+        std::vector<PaymentMethod>{PaymentMethod::Card}, std::vector<AssetId>{});
+    PaymentProviderRegistry registry;
+    CHECK(registry.register_provider(provider));
+    const auto* retained = &provider->id();
+    forbid_allocation = true;
+    const bool stable = retained == &provider->id() && provider->id() == identity;
+    const auto found = registry.find(identity);
+    const auto absent = registry.find(missing);
+    forbid_allocation = false;
+    CHECK(stable && found == provider && !absent);
+    provider.reset();
+    CHECK(&found->id() == retained && *retained == identity);
+}
+
 void test_telegram_policy_is_fail_closed()
 {
     auto value = request();
@@ -481,6 +518,7 @@ void test_telegram_policy_is_fail_closed()
 
 int main()
 {
+    test_identity_lookup_does_not_allocate();
     test_money_and_validation();
     test_registry_is_account_scoped_and_allowlisted();
     test_telegram_policy_is_fail_closed();

@@ -10,6 +10,42 @@ namespace imtg {
 
 namespace {
 thread_local std::size_t g_error_sink_depth = 0;
+
+// A detached callback may re-enter the dispatcher while its captures unwind.
+// Count that ownership until destruction completes, without allocating in reset().
+class NotificationRetirement {
+public:
+    explicit NotificationRetirement(NotificationState& state) noexcept
+        : m_state(state), m_previous(m_current)
+    {
+        m_current = this;
+    }
+    NotificationRetirement(const NotificationRetirement&) = delete;
+    NotificationRetirement& operator=(const NotificationRetirement&) = delete;
+
+    ~NotificationRetirement()
+    {
+        m_current = m_previous;
+        std::lock_guard<std::mutex> lock(m_state.mutex);
+        --m_state.active_retirements;
+        m_state.condition.notify_all();
+    }
+
+    static bool contains(const NotificationState& state) noexcept
+    {
+        for (auto* current = m_current; current != nullptr; current = current->m_previous) {
+            if (&current->m_state == &state) return true;
+        }
+        return false;
+    }
+
+private:
+    NotificationState& m_state;
+    NotificationRetirement* m_previous;
+    static thread_local NotificationRetirement* m_current;
+};
+
+thread_local NotificationRetirement* NotificationRetirement::m_current = nullptr;
 }
 
 Result<UiRevisions> FakeReconciler::reconcile(const ConversationKey& key,
@@ -64,22 +100,24 @@ NotificationSubscription::~NotificationSubscription()
 void NotificationSubscription::reset() noexcept
 {
     const auto state = m_state.lock();
+    std::shared_ptr<NotificationEntry> retired;
     if (state) {
         std::lock_guard<std::mutex> lock(state->mutex);
-        for (const auto& entry : state->entries) {
-            if (entry->id == m_id) {
-                entry->active = false;
-                break;
-            }
-        }
-        if (state->in_flight == 0) {
-            state->entries.erase(std::remove_if(state->entries.begin(), state->entries.end(),
-                                                [](const auto& entry) { return !entry->active; }),
-            state->entries.end());
+        const auto found = std::find_if(state->entries.begin(), state->entries.end(),
+            [this](const auto& entry) { return entry->id == m_id; });
+        if (found != state->entries.end()) {
+            (*found)->active = false;
+            retired = std::move(*found);
+            state->entries.erase(found);
+            ++state->active_retirements;
         }
     }
     m_state.reset();
     m_id = 0;
+    if (retired) {
+        NotificationRetirement retirement(*state);
+        retired.reset();
+    }
 }
 
 NotificationDispatcher::NotificationDispatcher(ErrorSink error_sink)
@@ -98,13 +136,17 @@ Result<NotificationSubscription> NotificationDispatcher::subscribe(Callback call
     if (!callback) {
         return Error{ErrorCode::InvalidArgument, "notification callback is empty"};
     }
+    auto entry = std::make_shared<NotificationEntry>(
+        NotificationEntry{0, std::move(callback), true});
     std::lock_guard<std::mutex> lock(m_state->mutex);
     if (m_state->closed) {
         return Error{ErrorCode::InvalidState, "notification dispatcher is closed"};
     }
     const std::size_t id = ++m_state->next_id;
-    m_state->entries.push_back(
-        std::make_shared<NotificationEntry>(NotificationEntry{id, std::move(callback), true}));
+    entry->id = id;
+    m_state->entries.push_back(entry);
+    // Accepted ownership must not outlive the lock in this local variable.
+    entry.reset();
     return NotificationSubscription(m_state, id);
 }
 
@@ -213,11 +255,6 @@ void NotificationDispatcher::publish(const Notification& notification)
                 m_state->callback_depth.erase(depth);
             }
             --m_state->in_flight;
-            if (m_state->in_flight == 0) {
-                m_state->entries.erase(std::remove_if(m_state->entries.begin(), m_state->entries.end(),
-                                                      [](const auto& item) { return !item->active; }),
-                                       m_state->entries.end());
-            }
             m_state->condition.notify_all();
         }
         if (callback_error && m_state->error_sink
@@ -233,16 +270,26 @@ void NotificationDispatcher::publish(const Notification& notification)
 
 Result<void> NotificationDispatcher::close_and_wait()
 {
-    std::unique_lock<std::mutex> lock(m_state->mutex);
-    m_state->closed = true;
-    if (m_state->callback_depth.count(std::this_thread::get_id()) != 0
-        || m_state->publication_depth.count(std::this_thread::get_id()) != 0) {
-        return Error{ErrorCode::InvalidState, "cannot wait for dispatcher from callback"};
+    std::vector<std::shared_ptr<NotificationEntry>> retired;
+    {
+        std::unique_lock<std::mutex> lock(m_state->mutex);
+        m_state->closed = true;
+        if (m_state->callback_depth.count(std::this_thread::get_id()) != 0
+            || m_state->publication_depth.count(std::this_thread::get_id()) != 0
+            || NotificationRetirement::contains(*m_state)) {
+            return Error{ErrorCode::InvalidState, "cannot wait for dispatcher from callback"};
+        }
+        m_state->condition.wait(lock, [this] {
+            return m_state->in_flight == 0 && m_state->active_publications == 0
+                && m_state->active_retirements == 0;
+        });
+        retired.swap(m_state->entries);
+        if (!retired.empty()) ++m_state->active_retirements;
     }
-    m_state->condition.wait(lock, [this] {
-        return m_state->in_flight == 0 && m_state->active_publications == 0;
-    });
-    m_state->entries.clear();
+    if (!retired.empty()) {
+        NotificationRetirement retirement(*m_state);
+        retired.clear();
+    }
     return Result<void>();
 }
 

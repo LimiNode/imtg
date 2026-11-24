@@ -80,9 +80,15 @@ Result<void> ActionRegistry::invoke(std::string_view token,
 
 Result<void> ActionRegistry::unregister_action(const ActionId& action_id)
 {
-    std::unique_lock<std::shared_mutex> lock(m_mutex);
-    if (m_entries.erase(action_id.value) == 0) {
-        return Error{ErrorCode::UnknownAction, "action route is not registered"};
+    std::shared_ptr<Entry> retired;
+    {
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        const auto found = m_entries.find(action_id.value);
+        if (found == m_entries.end()) {
+            return Error{ErrorCode::UnknownAction, "action route is not registered"};
+        }
+        retired = std::move(found->second);
+        m_entries.erase(found);
     }
     return Result<void>();
 }
