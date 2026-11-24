@@ -216,6 +216,8 @@ public:
     }
 
     /// \brief Finishes a render after all RAII scopes have closed.
+    /// \note An exception during node or scope mutation permanently fails this
+    /// render. Scope guards still close safely; use a new builder to retry.
     /// \return Immutable tree or an unbalanced-scope/state error.
     [[nodiscard]] Result<UiTree> finish();
 

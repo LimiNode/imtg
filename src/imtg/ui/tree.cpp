@@ -97,7 +97,7 @@ Result<UiTree> UiBuilder::finish()
 Result<UiBuilder::Scope> UiBuilder::open_scope(NodeKind kind,
                                                 std::string_view id,
                                                 std::string_view text)
-{
+try {
     if (m_finished || m_scope_error || (kind != NodeKind::Root && m_stack.empty())) {
         return invalid_state("scope is outside an active render");
     }
@@ -109,13 +109,16 @@ Result<UiBuilder::Scope> UiBuilder::open_scope(NodeKind kind,
     const std::size_t node_index = m_nodes.size() - 1;
     m_stack.push_back(Frame{node_index, {}});
     return Scope(this, node_index);
+} catch (...) {
+    m_scope_error = true;
+    throw;
 }
 
 Result<void> UiBuilder::append_node(NodeKind kind,
                                     std::string_view id,
                                     std::string_view text,
                                     std::optional<ButtonDescriptor> button)
-{
+try {
     if (m_finished || m_scope_error || (m_stack.empty() && kind != NodeKind::Root)) {
         return invalid_state("node is outside an active render scope");
     }
@@ -150,6 +153,9 @@ Result<void> UiBuilder::append_node(NodeKind kind,
                              std::string(text), std::move(button), {}});
     m_nodes[parent.node_index].children.push_back(node_index);
     return Result<void>();
+} catch (...) {
+    m_scope_error = true;
+    throw;
 }
 
 void UiBuilder::close_scope(std::size_t node_index) noexcept

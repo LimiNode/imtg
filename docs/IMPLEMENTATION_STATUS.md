@@ -15,6 +15,11 @@ The common storage conformance suite exercises failed-update rollback, corrected
 retries, zero-revision persisted intents and claim admission on InMemory and,
 when enabled, MDBX. It preserves existing record bytes and fencing.
 
+The isolated B4 corrective makes node/scope mutation exceptions terminal for
+that render. Allocation sweeps cover root, child and nested-scope growth;
+`finish()` cannot publish a partially built tree. Duplicate-ID and scope-lifetime
+semantics remain unchanged.
+
 The [architecture remediation plan](ARCHITECTURE_REMEDIATION_PLAN.md) orders
 the 2026-11-21 audit work before further Telegram/webhook expansion. The
 integration publication preserves original composition `467f6f46`; a dedicated
