@@ -1,5 +1,12 @@
 # Implementation status
 
+The 2026-11-24 corrective composition is separate from #42 and merged `main`.
+It assembles B1–B6, D1 and E1 with exact source/provenance recorded in the
+[composition note](research/CORRECTIVE_COMPOSITION_2026_11_24.md).
+Combined-tree hosted acceptance and independent review remain required;
+successful sibling checks do not close those gates. D2, E2–E5, F, incoming
+server/webhook work and releases are not part of this corrective.
+
 The B2 allocation harness now distinguishes unrecoverable MSVC Debug STL proxy
 allocation from propagating mutation exceptions. Iterator diagnostics stay at
 their normal Debug setting. Only in that STL profile, allocations no larger than
@@ -96,13 +103,15 @@ record/schema formats and uncertain native commit behavior are unchanged.
 
 On Windows Debug, CI run `44919903577` built successfully and passed tests 1-13,
 but `imtg_mdbx_storage_tests` started at 15:44:00 UTC and did not finish before
-job cancellation at 16:02:52 UTC. The cause is not established; this is not a passing
-Debug result. The test now has a 180-second CTest timeout and flushed subtest,
-operation and allocation-index progress outside allocation-injection scopes;
-these diagnostics bound and localize a repeat without changing storage behavior
-or weakening the allocation-failure regressions. MSVC Debug CRT assertion reports
-go to captured stderr instead of a modal dialog; native assertion termination is
-not disabled. No assertion is yet established as the cause of the observed hang.
+job cancellation at 16:02:52 UTC. That historical run is not passing evidence.
+The subsequent exact hosted diagnostic at `dec41c12` resolves original
+`create_absent/index=4` to allocation of a Debug STL proxy inside the noexcept
+default string constructor; both standalone and mutation probes terminate with
+exit 77. Matching MAP/PDB, compiler flags and installed STL excerpts are recorded
+in the [diagnosis](research/MSVC_ALLOCATION_HARNESS_2026_11_24.md).
+The ordinary harness now sweeps recoverable sizes with iterator diagnostics
+enabled; successful corrected hosted execution is a separate acceptance gate.
+No production MDBX workaround or longer timeout is used as a fix.
 
 The MDBX provider corrective reuses existing targets, including explicitly loaded
 local/system packages, before inspecting explicit or pinned source paths. It
