@@ -121,6 +121,12 @@ endif()
 if(IMTG_BUILD_MDBX)
     add_executable(imtg_mdbx_storage_tests mdbx_storage_tests.cpp)
     target_link_libraries(imtg_mdbx_storage_tests PRIVATE imtg::mdbx)
+    set_target_properties(imtg_mdbx_storage_tests PROPERTIES
+        CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS OFF)
+    if(MINGW)
+        # Keep STL allocations in this executable's replacement-new fault boundary.
+        target_link_options(imtg_mdbx_storage_tests PRIVATE -static-libstdc++ -static-libgcc)
+    endif()
     if(MSVC)
         add_executable(imtg_msvc_noexcept_string_probe msvc_noexcept_string_probe.cpp)
         target_compile_features(imtg_msvc_noexcept_string_probe PRIVATE cxx_std_17)

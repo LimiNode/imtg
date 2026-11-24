@@ -1,5 +1,10 @@
 # Implementation status
 
+The MinGW MDBX allocation-injection executable links a static C++ runtime so
+out-of-line STL allocations enter its replacement global new. Explicit C++17
+Release exposed the dynamic-DLL interception gap; same-object relinking restored
+the complete sweep. This is test-only, not a production runtime requirement.
+
 The B2 allocation harness now distinguishes unrecoverable MSVC Debug STL proxy
 allocation from propagating mutation exceptions. Iterator diagnostics stay at
 their normal Debug setting. Only in that STL profile, allocations no larger than

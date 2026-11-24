@@ -77,3 +77,20 @@ the STL path.
 
 No timeout increase, ordinal skip, iterator-diagnostics disablement, production
 workaround, wire-format change or alteration of Unknown semantics is involved.
+
+## MinGW C++17 injection boundary
+
+The explicit C++17 GNU 16.1 Release composition exposed a second harness issue:
+`write_pending/index=0` completed successfully without any intercepted allocation,
+so the active coverage assertion correctly rejected the sweep. The same result
+reproduced in the isolated B2 build. The executable imported `libstdc++-6.dll`;
+out-of-line STL allocations in that DLL did not enter its replacement global new.
+Relinking the same C++17 object files with `-static-libstdc++ -static-libgcc`
+restored interception: indices 0 through 2 injected exceptions and verified
+rollback, and index 3 completed successfully. The entire MDBX suite then passed.
+This discriminates a test allocation boundary from a production rollback defect.
+
+Only the MinGW MDBX fault-injection executable now links the static C++ runtime.
+Production libraries, installed consumers, other tests and the ordinary MSVC
+Debug profile are unchanged. The test still requires at least one injected
+allocation per mutation path; it does not silently accept an unobserved path.
