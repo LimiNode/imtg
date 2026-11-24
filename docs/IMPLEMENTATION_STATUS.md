@@ -3,8 +3,12 @@
 The 2026-11-24 corrective composition is separate from #42 and merged `main`.
 It assembles B1–B6, D1 and E1 with exact source/provenance recorded in the
 [composition note](research/CORRECTIVE_COMPOSITION_2026_11_24.md).
-Combined-tree hosted acceptance and independent review remain required;
-successful sibling checks do not close those gates. D2, E2–E5, F, incoming
+Combined-tree hosted results are tracked by exact HEAD in Draft #51;
+successful sibling checks do not close that gate. Local explicit-C++17 combined
+Debug and Release passed 37/37 each, plus six installed consumers and strict
+Doxygen. B2's current hosted workflows passed 17/17 and 7/7; D1 now includes
+that verified base and is checked independently. Independent review remains.
+D2, E2–E5, F, incoming
 server/webhook work and releases are not part of this corrective.
 
 The MinGW MDBX allocation-injection executable links a static C++ runtime so

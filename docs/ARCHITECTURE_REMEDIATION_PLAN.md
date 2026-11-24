@@ -44,17 +44,18 @@ individual PR is not combined-tree evidence.
 | Slice | Published Draft | Scope and remaining gate |
 | --- | --- | --- |
 | A | [imtg #42](https://github.com/LimiNode/imtg/pull/42) | Original composition is GitHub-accessible; combined CI added; exact source/run evidence is linked from the PR |
-| B2 | [imtg #43](https://github.com/LimiNode/imtg/pull/43), `6f954849f43e98a8255dacd95d289058c26f3af9` | ST-1/ST-2 implemented; exact hosted MAP resolves the original MSVC failure to noexcept STL proxy allocation. Corrected hosted suite remains a gate; see the [diagnosis](research/MSVC_ALLOCATION_HARNESS_2026_11_24.md) |
-| B1 | [imtg #44](https://github.com/LimiNode/imtg/pull/44), `038bdd73c613f9870ac0b754bebb19615dd4b076` | Retirement/quiescence plus registration entry ownership fixed; moved-from libc++ fixture corrected; current hosted checks and independent review remain |
-| D1 | [imtg #45](https://github.com/LimiNode/imtg/pull/45), `0ac99235be6d4e55f843ec66dd959ab2058c763e` | Existing target > explicit source > pin, parent options and offline fixtures implemented; restack/recheck after corrected B2 hosted acceptance |
-| B3 | [imtg #46](https://github.com/LimiNode/imtg/pull/46), `4fb03f322859967337c8f96eb188a0d2cbeb5641` | Shared intent validation and pre-transaction metadata admission; common InMemory/MDBX regressions; hosted checks/review remain |
-| B4 | [imtg #47](https://github.com/LimiNode/imtg/pull/47), `12817552c0ff0130aa97c784fce5995498e5f8db` | Node/scope mutation exceptions mark the render failed; allocation regressions; hosted checks/review remain |
-| B5 | [imtg #49](https://github.com/LimiNode/imtg/pull/49), `652c1019acedf4dd6ebc522d8d012ec1a326bcf7` | Checked duration conversion/addition and allocation-free numeric ordering; TimeShield full integration remains F; hosted checks/review remain |
-| B6 | [imtg #48](https://github.com/LimiNode/imtg/pull/48), `a4d1d311f9efd8aa759277bb2bd9138f1e56fbb7` | Lifetime-bound provider identity reference; long-ID allocation prohibition; hosted checks/review remain |
-| E1 | [imtg #50](https://github.com/LimiNode/imtg/pull/50), `f890961f30d5da4e39a95986d197dac0f2c39c6d` | Real include graph, source-only MDBX classification and 15 positive/negative fixtures; hosted checks/review remain |
-| C | [kurlyk #53](https://github.com/LimiNode/kurlyk/pull/53), `c59795c8` | Structural completion stacked on #52; review/incorporate before merging #52 |
+| B2 | [imtg #43](https://github.com/LimiNode/imtg/pull/43), `458e39c8dcc2ba7a314132489125ab0cf82d6d5d` | ST-1/ST-2 and test injection corrected; exact-head normal 17/17 and adapter 7/7 succeeded, including ordinary MSVC Debug. Independent review remains; see the [diagnosis](research/MSVC_ALLOCATION_HARNESS_2026_11_24.md) |
+| B1 | [imtg #44](https://github.com/LimiNode/imtg/pull/44), `038bdd73c613f9870ac0b754bebb19615dd4b076` | Retirement/quiescence and registration ownership fixed; libc++ fixture corrected; both exact-head workflows succeeded; independent review remains |
+| D1 | [imtg #45](https://github.com/LimiNode/imtg/pull/45), `bb8e2c4437c8ba38d96e3dd01d73cdc953414e4a` | Updated onto verified B2 without rewriting history; provider diff unchanged. Seven consumers/two expected configure failures retained; current local/hosted results are recorded in the PR |
+| B3 | [imtg #46](https://github.com/LimiNode/imtg/pull/46), `4fb03f322859967337c8f96eb188a0d2cbeb5641` | Shared intent validation and pre-transaction metadata admission; common InMemory/MDBX regressions; both workflows succeeded; independent review remains |
+| B4 | [imtg #47](https://github.com/LimiNode/imtg/pull/47), `12817552c0ff0130aa97c784fce5995498e5f8db` | Mutation exceptions make the render terminal; allocation regressions and both workflows succeeded; independent review remains |
+| B5 | [imtg #49](https://github.com/LimiNode/imtg/pull/49), `652c1019acedf4dd6ebc522d8d012ec1a326bcf7` | Checked duration conversion/addition and numeric ordering; both workflows succeeded; independent review remains. Full TimeShield integration remains F |
+| B6 | [imtg #48](https://github.com/LimiNode/imtg/pull/48), `a4d1d311f9efd8aa759277bb2bd9138f1e56fbb7` | Lifetime-bound provider identity reference and long-ID allocation prohibition; both workflows succeeded; independent review remains |
+| E1 | [imtg #50](https://github.com/LimiNode/imtg/pull/50), `f890961f30d5da4e39a95986d197dac0f2c39c6d` | Real include graph, source-only classification and 15 fixtures; both workflows succeeded; independent review remains |
+| C | [kurlyk #53](https://github.com/LimiNode/kurlyk/pull/53), `c59795c8a05fa4ed2a167273b6dcad94d386cf3e` | Separate server slice, current 10/10 succeeded; review/incorporate before merging #52. Not exercised by imtg's outgoing composition |
 
 These source HEADs are composed separately from #42 in
+Draft [#51](https://github.com/LimiNode/imtg/pull/51),
 `integration/architecture-corrective-batch`; its own commit/tree and test evidence
 are recorded in the [corrective composition note](research/CORRECTIVE_COMPOSITION_2026_11_24.md).
 Sibling CI is not combined-tree evidence. The registration finding and MSVC
