@@ -6,6 +6,19 @@
 
 Typed events carry value-owned DTOs or explicitly immutable shared payloads. Synchronous delivery is bounded to the current dispatch scope; deferred delivery transfers ownership into a bounded queue. A subscription handle removes a handler from future selection, but removal is not a join: an already-running callback may still be executing.
 
+Removing a callback detaches its owned entry while holding the dispatcher mutex,
+then releases the entry outside that mutex. Destructors of callback captures may
+therefore remove other subscriptions without lock reentrancy. Already-selected
+publications retain their own entry references until delivery finishes.
+`close_and_wait()` includes both publication ownership and detached-capture
+destruction in its quiescence boundary. Waiting on the same dispatcher from a
+callback, its error sink, or its capture cleanup returns `InvalidState` rather
+than waiting for the caller's own work. Admission is still closed on rejection.
+Subscription preparation and vector-growth exceptions also release the
+unregistered callback outside the mutex. Callers provide quiescence for their
+own concurrent subscription attempts; rejected callbacks were never admitted
+and are not covered by the dispatcher's registered-callback drain guarantee.
+
 `ActionContext::dispatch()` denotes the synchronous transactional command path defined by the storage contract. EventBus publication denotes notification/fan-out and may be asynchronous or non-persistent. A required state transition, processed-update decision, render intent, or delivery request must not depend solely on EventBus delivery.
 
 The event endpoint therefore has three distinct states:

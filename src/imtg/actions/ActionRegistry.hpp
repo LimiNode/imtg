@@ -74,6 +74,15 @@ public:
             return handler(context, decoded.value());
         };
 
+        // All user-owned encoder/handler state must unwind after the lock.
+        ActionHandle<Payload> handle;
+        handle.m_action_id = action_id;
+        handle.m_payload_version = payload_version;
+        handle.m_owner = this;
+        handle.m_registry_identity = m_identity;
+        handle.m_encode = std::move(encode);
+        handle.m_validate = &detail::validate_action_handle;
+
         std::unique_lock<std::shared_mutex> lock(m_mutex);
         if (m_entries.find(action_id.value) != m_entries.end()) {
             return Error{ErrorCode::InvalidArgument, "action id is already registered"};
@@ -81,18 +90,13 @@ public:
         const auto generation = m_next_generation++;
         entry->generation = generation;
 
-        ActionHandle<Payload> handle;
-        handle.m_action_id = action_id;
-        handle.m_payload_version = payload_version;
         handle.m_generation = generation;
-        handle.m_owner = this;
-        handle.m_registry_identity = m_identity;
-        handle.m_encode = std::move(encode);
-        handle.m_validate = &detail::validate_action_handle;
 
         // Publish only after all handle state is prepared. The remaining
         // operation is the map insertion itself; failures leave no route.
-        m_entries.emplace(action_id.value, std::move(entry));
+        // Keep the local owner if node construction or rehash throws.
+        m_entries.emplace(action_id.value, entry);
+        lock.unlock();
         return handle;
     }
 
@@ -136,6 +140,7 @@ public:
                                       ActionContext::DispatchSink sink) const;
 
     /// \brief Removes one route and permanently stales handles to its generation.
+    /// \note Does not join existing invocations. Removed handler captures are released outside the registry mutex.
     /// \param action_id Route to unregister.
     /// \return Success or `UnknownAction` when absent.
     [[nodiscard]] Result<void> unregister_action(const ActionId& action_id);
