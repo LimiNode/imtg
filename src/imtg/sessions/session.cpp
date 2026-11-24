@@ -19,6 +19,33 @@ Error encoding_error(ErrorCode code, const char* message)
     return Error{code, message};
 }
 
+Result<void> validate_render_intent(const RenderIntent& intent, ErrorCode code)
+{
+    if (intent.session_revision == 0
+        || (intent.origin
+            ? RenderIntentRepository::make_id(intent.conversation, intent.session_revision,
+                                               *intent.origin)
+            : RenderIntentRepository::make_id(intent.conversation, intent.session_revision)).value
+                != intent.id.value) {
+        return encoding_error(code, "render intent identity is invalid");
+    }
+    if (intent.origin && !(intent.origin->bot_id == intent.conversation.bot_id)) {
+        return encoding_error(code, "render intent origin bot does not match conversation");
+    }
+    return {};
+}
+
+template <typename T>
+bool valid_metadata_patch(const MetadataPatch<T>& patch) noexcept
+{
+    switch (patch.mode) {
+    case MetadataPatchMode::Set: return patch.value.has_value();
+    case MetadataPatchMode::Keep:
+    case MetadataPatchMode::Clear: return !patch.value.has_value();
+    }
+    return false;
+}
+
 void append_u32(std::string& output, std::uint32_t value)
 {
     for (unsigned shift = 0; shift < 32; shift += 8) {
@@ -435,16 +462,8 @@ RenderIntentId RenderIntentRepository::make_id(const ConversationKey& conversati
 Result<RenderIntentId> RenderIntentRepository::append(const RenderIntent& intent,
                                                       ITransaction& transaction) const
 {
-    if (intent.session_revision == 0 || intent.conversation.encode().empty()
-        || (intent.origin
-            ? intent.id.value != make_id(intent.conversation, intent.session_revision, *intent.origin).value
-            : intent.id.value != make_id(intent.conversation, intent.session_revision).value)) {
-        return encoding_error(ErrorCode::InvalidArgument, "render intent identity is invalid");
-    }
-    if (intent.origin && !(intent.origin->bot_id == intent.conversation.bot_id)) {
-        return encoding_error(ErrorCode::InvalidArgument,
-                              "render intent origin bot does not match conversation");
-    }
+    const auto valid = validate_render_intent(intent, ErrorCode::InvalidArgument);
+    if (!valid) return valid.error();
     if (intent.metadata.size() > max_encoded_field) {
         return encoding_error(ErrorCode::StorageRecordTooLarge, "render intent metadata is too large");
     }
@@ -522,14 +541,8 @@ Result<std::optional<RenderIntent>> RenderIntentRepository::load(
         return encoding_error(ErrorCode::StorageSerializationFailure, "render intent payload is malformed");
     }
     RenderIntent intent{ id, key.value(), revision.value(), metadata.value(), origin };
-    if (origin && !(origin->bot_id == intent.conversation.bot_id)) {
-        return encoding_error(ErrorCode::StorageSerializationFailure,
-                              "render intent origin bot does not match conversation");
-    }
-    if ((origin ? make_id(intent.conversation, intent.session_revision, *origin)
-                : make_id(intent.conversation, intent.session_revision)).value != id.value) {
-        return encoding_error(ErrorCode::StorageSerializationFailure, "render intent identity does not match payload");
-    }
+    const auto valid = validate_render_intent(intent, ErrorCode::StorageSerializationFailure);
+    if (!valid) return valid.error();
     return std::optional<RenderIntent>{std::move(intent)};
 }
 
@@ -548,6 +561,13 @@ UpdateProcessResult AtomicUpdateProcessor::process(
     if (!(update.bot_id == conversation.bot_id)) {
         return UpdateProcessResult{UpdateProcessOutcome::Failed,
             encoding_error(ErrorCode::InvalidArgument, "update bot identity does not match conversation"), {}, {}};
+    }
+    if (!valid_metadata_patch(options.pending_input_patch)
+        || !valid_metadata_patch(options.deadline_patch)
+        || !valid_metadata_patch(options.screen_patch)
+        || options.screen_patch.mode == MetadataPatchMode::Clear) {
+        return UpdateProcessResult{UpdateProcessOutcome::Failed,
+            encoding_error(ErrorCode::InvalidArgument, "session metadata patch is invalid"), {}, {}};
     }
     auto work = UnitOfWork::begin(m_backend, TransactionMode::ReadWrite);
     if (!work) return UpdateProcessResult{UpdateProcessOutcome::Failed, work.error(), {}, {}};
