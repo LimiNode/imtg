@@ -1,7 +1,7 @@
 #ifndef IMTG_STORAGE_MDBX_STORAGE_HPP
 #define IMTG_STORAGE_MDBX_STORAGE_HPP
 
-#include "imtg/storage/storage.hpp"
+#include "storage.hpp"
 
 #include <cstdint>
 #include <memory>

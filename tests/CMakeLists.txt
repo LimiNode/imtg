@@ -2,6 +2,10 @@ add_executable(imtg_identity_tests identifiers_tests.cpp)
 add_test(NAME imtg_header_topology
     COMMAND ${CMAKE_COMMAND} -DIMTG_SOURCE_DIR=${PROJECT_SOURCE_DIR}
         -P ${PROJECT_SOURCE_DIR}/cmake/CheckHeaderTopology.cmake)
+add_test(NAME imtg_header_topology_fixtures
+    COMMAND ${CMAKE_COMMAND} -DIMTG_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+        -DIMTG_BINARY_DIR=${PROJECT_BINARY_DIR}
+        -P ${PROJECT_SOURCE_DIR}/cmake/CheckHeaderTopologyFixtures.cmake)
 target_link_libraries(imtg_identity_tests PRIVATE imtg::core)
 add_test(NAME imtg_identity_tests COMMAND imtg_identity_tests)
 
