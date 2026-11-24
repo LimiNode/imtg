@@ -18,6 +18,18 @@ During rendering, `ui.button(id, label, action_handle, payload)` (or the equival
 
 The application registry holds executable handlers in process memory and stable route metadata; durable storage holds only action ID/version, payload data (or a reference), binding constraints, and expiry. It never serializes C++ callbacks, captured pointers, references, or object addresses. Startup must rebuild and validate the complete route registry before accepting updates. A controller or handler is located by route and constructed or kept alive for the invocation. Registered handler captures are limited to application-lifetime services or immutable owned values; invocation references are synchronous and cannot escape.
 
+Unregistering a route invalidates its handles and prevents future lookup, but
+does not join an invocation that already owns the entry. The removed handler
+and its captures are released outside the registry mutex, including when the
+last owner disappears during unregistration. Capture cleanup may re-enter the
+live registry; the application must still keep the registry alive until all
+such operations and existing invocations finish.
+
+Registration prepares the handle before acquiring the registry mutex and keeps
+a local owner of the handler entry until publication finishes. Failed insertion
+or rehash publishes no route; handler and encoder captures are released only
+after unlocking, including duplicate-registration and exception paths.
+
 ## Resolution lifecycle
 
 1. **Compose:** before intake, the application registers `save.v1` with its typed payload schema and handler, obtaining an `ActionHandle`.

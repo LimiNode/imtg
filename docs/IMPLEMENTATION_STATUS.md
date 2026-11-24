@@ -16,6 +16,18 @@ Linux Debug/Release CI job enables all modules simultaneously and checks the
 flat boundary before configure. See [source and local evidence](research/M3_COMPOSITION_EVIDENCE_2026_11_21.md).
 This does not mark the behavioral or structural remediation as complete.
 
+The isolated callback-lifetime corrective detaches notification and action
+entries under their mutexes and destroys captures after unlocking. Notification
+quiescence also counts detached capture cleanup, with allocation-free rejection
+of capture-cleanup self-wait. Timeout-isolated regressions cover reset, close,
+unregister, reentrant destruction, and concurrent close waiting for cleanup;
+entry/vector allocation-failure regressions also cover subscription cleanup.
+Registration additionally retains local entry ownership across throwing map
+insertion and prepares encoder-bearing handles before locking. A bounded
+allocation sweep covers failed publication, reentrant handler/encoder cleanup,
+route reuse and duplicate registration; existing in-flight tests remain active.
+This does not move the notification types or alter callback delivery policy.
+
 Local integration validation combines outgoing #41 with mandatory logging #38.
 The implementation uses LogIt++ privately in core/router, preserves semantic
 error hooks and application logger ownership, and retains optional Telegram
