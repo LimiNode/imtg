@@ -258,6 +258,9 @@ void registration_allocation_sweep()
             caught = true;
         }
         g_fail_allocation_after = -1;
+        // A moved-from std::function may retain its small callable (libc++).
+        // Release the caller's unspecified residual ownership before counting.
+        payload_codec = {};
         CHECK(!lock_failed);
         CHECK(released == 2);
         if (caught) {
