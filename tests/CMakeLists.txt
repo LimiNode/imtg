@@ -121,7 +121,22 @@ endif()
 if(IMTG_BUILD_MDBX)
     add_executable(imtg_mdbx_storage_tests mdbx_storage_tests.cpp)
     target_link_libraries(imtg_mdbx_storage_tests PRIVATE imtg::mdbx)
+    set_target_properties(imtg_mdbx_storage_tests PROPERTIES
+        CXX_STANDARD 17 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS OFF)
+    if(MINGW)
+        # Keep STL allocations in this executable's replacement-new fault boundary.
+        target_link_options(imtg_mdbx_storage_tests PRIVATE -static-libstdc++ -static-libgcc)
+    endif()
+    if(MSVC)
+        add_executable(imtg_msvc_noexcept_string_probe msvc_noexcept_string_probe.cpp)
+        target_compile_features(imtg_msvc_noexcept_string_probe PRIVATE cxx_std_17)
+        foreach(diagnostic_target IN ITEMS imtg_mdbx_storage_tests imtg_msvc_noexcept_string_probe)
+            target_compile_options(${diagnostic_target} PRIVATE /Zi)
+            target_link_options(${diagnostic_target} PRIVATE /DEBUG "/MAP:$<TARGET_FILE_DIR:${diagnostic_target}>/${diagnostic_target}.map")
+        endforeach()
+    endif()
     add_test(NAME imtg_mdbx_storage_tests COMMAND imtg_mdbx_storage_tests)
+    set_tests_properties(imtg_mdbx_storage_tests PROPERTIES TIMEOUT 180)
     add_test(NAME imtg_flat_dependencies
         COMMAND ${CMAKE_COMMAND} -DIMTG_SOURCE_DIR=${PROJECT_SOURCE_DIR}
             -P ${PROJECT_SOURCE_DIR}/cmake/CheckFlatDependencies.cmake)
