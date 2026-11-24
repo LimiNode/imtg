@@ -50,10 +50,14 @@ public:
 class PlainTokenCodec final : public ITokenCodec {
 public:
     /// \brief Deterministically encodes without authentication.
+    /// \note v1 represents only nonnegative expiry milliseconds; -1 means no
+    /// expiry. Pre-epoch or unrepresentable expiry values are rejected.
     /// \param action Logical token contents.
     /// \return Encoded token or a validation error.
     [[nodiscard]] Result<std::string> encode(const DecodedAction& action) const override;
     /// \brief Parses the deterministic unauthenticated format.
+    /// \note Rejects expiry values outside the platform clock range and negative
+    /// markers other than -1; no overflowing chrono conversion is performed.
     /// \param token Untrusted token bytes.
     /// \return Logical contents or a decoding error.
     [[nodiscard]] Result<DecodedAction> decode(std::string_view token) const override;

@@ -26,6 +26,14 @@ interface, fake implementation and callers use the same contract. This is an
 interface change for provider implementations, not a provider/payment-policy
 change. Concrete external payment adapters remain unimplemented.
 
+The isolated B5 corrective checks token-expiry conversion and ManualClock
+addition, and compares conversation keys numerically without encoding or
+allocation. Storage rounding and wire bytes are unchanged. The pinned TimeShield
+`DeadlineTimer::start` uses steady-clock duration_cast and saturation, not the
+required checked wall-clock conversion/rejection contract; it is not substituted.
+The local integral conversion helper is limited to supported whole-factor clock
+periods. Full TimeShield integration (F) remains separately planned.
+
 The [architecture remediation plan](ARCHITECTURE_REMEDIATION_PLAN.md) orders
 the 2026-11-21 audit work before further Telegram/webhook expansion. The
 integration publication preserves original composition `467f6f46`; a dedicated

@@ -37,6 +37,18 @@ a local owner of the handler entry until publication finishes. Failed insertion
 or rehash publishes no route; handler and encoder captures are released only
 after unlocking, including duplicate-registration and exception paths.
 
+The unauthenticated test codec's v1 expiry uses nonnegative epoch milliseconds;
+`-1` alone denotes no expiry. Other negative markers and values outside the
+platform clock range are rejected before conversion; pre-epoch expiry cannot
+be encoded in v1. Existing valid bytes are unchanged. This does not change
+storage's distinct round-toward-future timestamp policy.
+
+`ManualClock::advance(milliseconds)` checks both duration conversion and
+addition. Out-of-range input throws `std::overflow_error` without changing the
+clock. Supported integral clock periods use whole-factor scaling; conversion
+to a coarser tick truncates toward zero. It remains a wall-clock test boundary,
+not an anchored monotonic clock.
+
 ## Resolution lifecycle
 
 1. **Compose:** before intake, the application registers `save.v1` with its typed payload schema and handler, obtaining an `ActionHandle`.
