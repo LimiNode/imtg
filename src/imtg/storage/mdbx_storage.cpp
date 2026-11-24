@@ -81,6 +81,24 @@ struct PendingRecord {
     std::optional<StorageBytes> value;
     StorageRevision expected_revision{};
     StorageRevision resulting_revision{};
+    bool originally_present = false;
+};
+
+class RollbackOnException {
+public:
+    explicit RollbackOnException(ITransaction& transaction) noexcept
+        : m_transaction(transaction), m_uncaught_exceptions(std::uncaught_exceptions())
+    {
+    }
+
+    ~RollbackOnException()
+    {
+        if (std::uncaught_exceptions() > m_uncaught_exceptions) m_transaction.rollback();
+    }
+
+private:
+    ITransaction& m_transaction;
+    int m_uncaught_exceptions;
 };
 
 Error storage_error(ErrorCode code, std::string message)
@@ -535,6 +553,7 @@ public:
     {
         const auto precondition = check_write();
         if (!precondition) return precondition.error();
+        const RollbackOnException rollback_on_exception(*this);
         const auto dbi = resolve_dbi(name_space);
         if (!dbi) return dbi.error();
         const RecordKey identity{std::string(name_space), std::string(key)};
@@ -550,7 +569,7 @@ public:
         if (!revision) return revision.error();
         if (pending == m_writes.end()) {
             m_writes.emplace(identity, PendingRecord{
-                StorageBytes(value), state.value().revision, revision.value()});
+                StorageBytes(value), state.value().revision, revision.value(), false});
         } else {
             pending->second.value = StorageBytes(value);
         }
@@ -568,6 +587,7 @@ public:
     {
         const auto precondition = check_write();
         if (!precondition) return precondition.error();
+        const RollbackOnException rollback_on_exception(*this);
         const auto dbi = resolve_dbi(name_space);
         if (!dbi) return dbi.error();
         const RecordKey identity{std::string(name_space), std::string(key)};
@@ -586,7 +606,7 @@ public:
         if (!revision) return revision.error();
         if (pending == m_writes.end()) {
             m_writes.emplace(identity, PendingRecord{
-                StorageBytes(value), state.value().revision, revision.value()});
+                StorageBytes(value), state.value().revision, revision.value(), true});
         } else {
             pending->second.value = StorageBytes(value);
         }
@@ -602,6 +622,7 @@ public:
     {
         const auto precondition = check_write();
         if (!precondition) return precondition.error();
+        const RollbackOnException rollback_on_exception(*this);
         const auto dbi = resolve_dbi(name_space);
         if (!dbi) return dbi.error();
         const RecordKey identity{std::string(name_space), std::string(key)};
@@ -614,9 +635,13 @@ public:
             return storage_error(ErrorCode::StorageConflict, "record revision is stale");
         }
         const auto pending = m_writes.find(identity);
-        if (pending != m_writes.end() && pending->second.expected_revision == 0) {
+        if (pending != m_writes.end() && !pending->second.originally_present) {
+            const auto restored = pending->second.expected_revision == 0
+                ? erase_physical(dbi.value(), key)
+                : put_record(dbi.value(), key, std::nullopt, pending->second.expected_revision);
+            if (!restored) return restored.error();
             m_writes.erase(pending);
-            return erase_physical(dbi.value(), key);
+            return Result<void>();
         }
         if (pending != m_writes.end()) {
             pending->second.value.reset();
@@ -628,7 +653,7 @@ public:
         const auto revision = next_storage_revision(state.value().revision);
         if (!revision) return revision.error();
         m_writes.emplace(identity, PendingRecord{
-            std::nullopt, state.value().revision, revision.value()});
+            std::nullopt, state.value().revision, revision.value(), true});
         const auto written = put_record(dbi.value(), key, std::nullopt, revision.value());
         if (!written) return written.error();
         return Result<void>();
