@@ -17,6 +17,10 @@ foreach(include_dir IN LISTS imtg_include_dirs)
 endforeach()
 
 add_executable(imtg_install_consumer main.cpp)
+if(MINGW)
+    # Avoid Windows installer detection requesting elevation for an unmanifested test.
+    set_target_properties(imtg_install_consumer PROPERTIES OUTPUT_NAME imtg_core_consumer)
+endif()
 target_compile_features(imtg_install_consumer PRIVATE cxx_std_17)
 target_link_libraries(imtg_install_consumer PRIVATE imtg::core)
 add_test(NAME imtg_install_consumer_smoke COMMAND imtg_install_consumer)

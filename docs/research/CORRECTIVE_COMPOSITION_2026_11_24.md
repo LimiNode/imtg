@@ -66,3 +66,22 @@ Persistent IMR1/IMS1 bytes, clock injection, storage rounding-to-future,
 fencing/Unknown semantics and transaction ownership remain unchanged. There is
 no process-crash durability, installed MDBX export or live transport claim.
 The root checkout's unfinished rebase and unrelated staged changes are untouched.
+
+## Additional Windows test boundaries
+
+Explicit C++17 MinGW Release initially failed the MDBX sweep because the dynamic
+STL bypassed the executable's replacement allocator on `write_pending`. Identical
+objects relinked with static libstdc++/libgcc passed; the isolated #43 reproduced
+both outcomes. The correction is restricted to that injection executable and
+keeps the active requirement that every mutation path encounter an allocation.
+The corrected C++17 Debug/Release isolated storage suites pass 2/2 each. Current
+Debug objects relinked to the old implementation still fail ST-1 terminal rollback
+and ST-2 net-no-op watches. See the [harness diagnosis](MSVC_ALLOCATION_HARNESS_2026_11_24.md).
+
+The MinGW installed core and commerce smoke executables also triggered Windows
+installer detection (`ERROR_ELEVATION_REQUIRED`, code 740) because their output
+names contained `install` without a manifest. Their fixture output names now
+omit that substring on MinGW only. CMake targets and test names are unchanged;
+both run through ordinary CTest without elevation. All six extra installed
+core/commerce/generic-transport consumers (Debug and Release) pass. This does not
+change production executable manifests or introduce an elevation workaround.
