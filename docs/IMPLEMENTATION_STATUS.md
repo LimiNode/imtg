@@ -1,5 +1,11 @@
 # Implementation status
 
+The isolated E1 corrective audits the actual include DAG, including source-only
+MDBX, local paths and spaced include directives. The manifest distinguishes
+public, private and source-only headers; narrow public contracts remain valid
+cross-domain entry points. Positive and negative fixtures cover boundary and
+cycle violations without new blanket exclusions or file moves.
+
 The [architecture remediation plan](ARCHITECTURE_REMEDIATION_PLAN.md) orders
 the 2026-11-21 audit work before further Telegram/webhook expansion. The
 integration publication preserves original composition `467f6f46`; a dedicated

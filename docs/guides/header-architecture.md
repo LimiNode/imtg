@@ -33,6 +33,8 @@ implementation PRs.
 6. Cross-domain includes use an installed public entry point such as
    `<imtg/core.hpp>`. Intra-domain includes use local paths such as
    `"session.hpp"`; `..` relative includes are forbidden.
+   Narrow data/contract components explicitly named in the public manifest are
+   also valid cross-domain entry points; the full umbrella is not mandatory.
 7. Public include paths describe contracts, not the physical implementation
    layout. The install manifest names the supported umbrellas and standalone
    headers explicitly; implementation-only headers are excluded.
@@ -85,7 +87,12 @@ note. All old component paths remain supported. No private leaves are introduced
 
 `cmake/CheckHeaderTopology.cmake` checks the declared domain DAG, include spelling,
 owning-umbrella implementation entry, public manifest, and missing local headers.
-The separate source-only MDBX slice is not audited by this include migration.
+Source-only MDBX headers are explicitly classified outside the installed public
+manifest and audited with their implementation. Their implementation starts
+with its local standalone header. There is no file-level audit bypass.
+The audit resolves quoted local paths, recognizes spaced directives, verifies
+domain edges and local include cycles, and rejects installed dependencies on
+uninstalled headers. Positive/negative fixtures exercise these decisions.
 
 The following historical snapshots explain the original migration; references
 to absent umbrellas or recursive installation below describe those snapshots,
