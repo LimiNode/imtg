@@ -20,6 +20,12 @@ that render. Allocation sweeps cover root, child and nested-scope growth;
 `finish()` cannot publish a partially built tree. Duplicate-ID and scope-lifetime
 semantics remain unchanged.
 
+The isolated B6 corrective makes provider identity a lifetime-bound const
+reference. Registry lookup and identity comparison do not allocate; the public
+interface, fake implementation and callers use the same contract. This is an
+interface change for provider implementations, not a provider/payment-policy
+change. Concrete external payment adapters remain unimplemented.
+
 The [architecture remediation plan](ARCHITECTURE_REMEDIATION_PLAN.md) orders
 the 2026-11-21 audit work before further Telegram/webhook expansion. The
 integration publication preserves original composition `467f6f46`; a dedicated
