@@ -1,7 +1,7 @@
 # MSVC allocation-failure harness diagnosis
 
-**Status:** local diagnosis verified; exact hosted toolset confirmation remains
-a gate. **Owner:** storage test harness. This changes test injection, not the
+**Status:** local and exact hosted diagnosis verified; corrected hosted suite
+remains a separate gate. **Owner:** storage test harness. This changes test injection, not the
 MDBX production implementation or its exception guarantee.
 
 The original unrestricted sweep at `create_absent/index=4` reached a
@@ -40,6 +40,40 @@ log under the workspace `build/msvc-fault-diagnostic/`. Hosted Windows Debug
 prints the exact compiler/STL/iterator settings, compiler command records and
 installed-header excerpts; its artifact retains MAP/PDB and CTest logs. Hosted
 confirmation must be reported by exact SHA/run, separately from this local result.
+
+## Exact hosted confirmation and negative controls
+
+[Run 45291273293, Windows Debug job 138100358331](https://github.com/LimiNode/imtg/actions/runs/45291273293/job/138100358331)
+at diagnostic source `dec41c12ae70593e6a19f9ae9da1fed63645ffff` reports
+MSVC 19.52.37029, STL 145, iterator level 2, proxy size 16, and a noexcept default
+string constructor. Both the standalone probe and original unfiltered mutation
+exit 77. The job's `mdbx-msvc-debug-diagnostics` artifact contains matching
+MAP/PDB files. Mutation injection RVAs resolve as follows:
+
+| RVA | MAP symbol (simplified) |
+| --- | --- |
+| `0x4de01` | `allocator<_Container_proxy>::allocate` |
+| `0x2af6e` | `_Container_base12::_Alloc_proxy` |
+| `0x48298` | `basic_string::_Construct_empty` |
+| `0x3a1ce` | `basic_string::basic_string()` |
+| `0x5442d` | `encode_physical_key` |
+| `0x56ccb` | `Transaction::read_state` |
+| `0x82aa4` | `Transaction::create_if_absent` |
+| `0x16d92` | `test_allocation_failure_rolls_back_staging` |
+
+The flags include `/EHsc /Zi /Ob0 /Od /RTC1 /MDd /std:c++17`. Installed
+`xstring`/`xmemory` excerpts in that job corroborate the same path. Its ordinary
+unfiltered suite still times out at index 4: this failed diagnostic run is not
+corrected-suite acceptance. The filtered suite is checked in a later run.
+
+With the current GNU 16.1 Debug test objects and the old implementation file
+from `a5cdf3259792eb600f6bfb50cf78853bf568dc62`, separate control executables
+fail respectively on terminal `RolledBack` after allocation index 0 and on
+the `net-no-op` watch revision. Rebuilding against the corrected implementation
+passes both storage suites in Debug and Release (2/2 each). This is an old-source
+relink experiment, not a full baseline build. Artifacts remain under
+`build/negative-control/`; no production implementation was changed to diagnose
+the STL path.
 
 No timeout increase, ordinal skip, iterator-diagnostics disablement, production
 workaround, wire-format change or alteration of Unknown semantics is involved.
