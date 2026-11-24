@@ -114,10 +114,12 @@ struct ConversationKey {
 [[nodiscard]] Result<ConversationKey> parse_conversation_key(std::string_view encoded);
 
 /// \brief Provides deterministic lexicographic ordering by typed components.
+/// \details Compares numeric bot, signed chat, scope (Chat before UserInChat),
+/// then numeric user identity, without allocation. Wire bytes are not compared.
 /// \param left First typed identity or scope.
 /// \param right Second typed identity or scope.
 /// \return True when the left typed identity precedes the right.
-[[nodiscard]] bool operator<(const ConversationKey& left, const ConversationKey& right);
+[[nodiscard]] bool operator<(const ConversationKey& left, const ConversationKey& right) noexcept;
 
 } // namespace imtg
 

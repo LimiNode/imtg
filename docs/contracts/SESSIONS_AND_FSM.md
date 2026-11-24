@@ -15,6 +15,10 @@ bot_id + chat_id + session_scope
 
 The minimum M1 scheduler must support `Chat` and `UserInChat`; `Thread` is a reserved, serializable variant whose Telegram mapping is completed before M3. Equality and byte encoding of every variant are tested before scheduler implementation. This closes the identity blocker without preventing later scope variants.
 
+Conversation ordering is numeric bot ID, signed chat ID, scope discriminator
+(`Chat` before `UserInChat`), then numeric user ID. Comparison is allocation-free
+and `noexcept`; canonical wire encoding is unchanged, not an ordering key.
+
 ## Session and transitions
 
 A session contains FSM state, current screen metadata, revision, selected scope, pending-input metadata, and timestamps. It does not contain the user profile, mutable global locale, or message-history content. A transition consumes a typed event, evaluates guards against a consistent model snapshot, and returns either a new state/effects or a typed rejection. Timeouts and cancellation are explicit transitions.

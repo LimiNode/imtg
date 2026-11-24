@@ -18,6 +18,18 @@ During rendering, `ui.button(id, label, action_handle, payload)` (or the equival
 
 The application registry holds executable handlers in process memory and stable route metadata; durable storage holds only action ID/version, payload data (or a reference), binding constraints, and expiry. It never serializes C++ callbacks, captured pointers, references, or object addresses. Startup must rebuild and validate the complete route registry before accepting updates. A controller or handler is located by route and constructed or kept alive for the invocation. Registered handler captures are limited to application-lifetime services or immutable owned values; invocation references are synchronous and cannot escape.
 
+The unauthenticated test codec's v1 expiry uses nonnegative epoch milliseconds;
+`-1` alone denotes no expiry. Other negative markers and values outside the
+platform clock range are rejected before conversion; pre-epoch expiry cannot
+be encoded in v1. Existing valid bytes are unchanged. This does not change
+storage's distinct round-toward-future timestamp policy.
+
+`ManualClock::advance(milliseconds)` checks both duration conversion and
+addition. Out-of-range input throws `std::overflow_error` without changing the
+clock. Supported integral clock periods use whole-factor scaling; conversion
+to a coarser tick truncates toward zero. It remains a wall-clock test boundary,
+not an anchored monotonic clock.
+
 ## Resolution lifecycle
 
 1. **Compose:** before intake, the application registers `save.v1` with its typed payload schema and handler, obtaining an `ActionHandle`.

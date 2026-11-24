@@ -106,9 +106,15 @@ Result<ConversationKey> parse_conversation_key(std::string_view encoded)
     return Error{ErrorCode::InvalidEncoding, "conversation key scope is unknown"};
 }
 
-bool operator<(const ConversationKey& left, const ConversationKey& right)
+bool operator<(const ConversationKey& left, const ConversationKey& right) noexcept
 {
-    return left.encode() < right.encode();
+    if (left.bot_id.value != right.bot_id.value) return left.bot_id.value < right.bot_id.value;
+    if (left.chat_id.value != right.chat_id.value) return left.chat_id.value < right.chat_id.value;
+    if (left.session_scope.index() != right.session_scope.index()) {
+        return left.session_scope.index() < right.session_scope.index();
+    }
+    const auto* user = std::get_if<UserInChat>(&left.session_scope);
+    return user && user->user_id.value < std::get<UserInChat>(right.session_scope).user_id.value;
 }
 
 bool operator==(const ConversationKey& left, const ConversationKey& right) noexcept
